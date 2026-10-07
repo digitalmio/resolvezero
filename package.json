@@ -1,0 +1,14 @@
+{
+  "name": "resolvezero",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "db:generate": "bun run --filter '@resolvezero/db' db:generate",
+    "db:migrate": "bun run --filter '@resolvezero/db' db:migrate",
+    "db:push": "bun run --filter '@resolvezero/db' db:push",
+    "db:studio": "bun run --filter '@resolvezero/db' db:studio"
+  }
+}
