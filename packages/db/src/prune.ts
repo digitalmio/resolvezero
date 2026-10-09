@@ -1,0 +1,43 @@
+import { sql } from "drizzle-orm";
+import { db } from "./client";
+
+/**
+ * Retention job (readme §3 C / §6.5):
+ *   - stats_minute: rows older than 6 hours are always pruned
+ *     (short-range chart data; hard bound, independent of profiles).
+ *   - stats_hourly: rows older than each profile's log_retention_days.
+ * Raw-log lifetime in S3 is enforced by the bucket's lifecycle rules
+ * (deploy-side); this job bounds the Postgres side. Run daily:
+ * startPruneLoop() from boot or `bun run db:prune` via cron.
+ */
+export async function pruneExpiredStats(): Promise<number> {
+  const res = (await db.execute(sql`
+    WITH deleted AS (
+      DELETE FROM stats_minute
+      WHERE minute < now() - interval '6 hours'
+      RETURNING 1
+    ), deleted_hourly AS (
+      DELETE FROM stats_hourly s
+      USING profiles p
+      WHERE s.profile_id = p.id
+        AND s.hour < now() - (p.log_retention_days * interval '1 day')
+      RETURNING 1
+    )
+    SELECT
+      (SELECT count(*)::int FROM deleted) AS minute_pruned,
+      (SELECT count(*)::int FROM deleted_hourly) AS hourly_pruned
+  `)) as unknown as Array<{ minute_pruned: number; hourly_pruned: number }>;
+
+  return (res[0]?.minute_pruned ?? 0) + (res[0]?.hourly_pruned ?? 0);
+}
+
+/** Interval loop for long-running processes. Returns a stop function. */
+export function startPruneLoop(intervalHours = 24): () => void {
+  const t = setInterval(() => {
+    pruneExpiredStats().catch((err) => {
+      console.error("[prune] failed:", err);
+    });
+  }, intervalHours * 3600_000);
+  t.unref?.();
+  return () => clearInterval(t);
+}

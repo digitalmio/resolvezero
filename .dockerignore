@@ -1,0 +1,11 @@
+node_modules
+bun.lockb
+.git
+.env
+.env.*
+*.md
+appstore
+coverage
+**/*.test.ts
+**/*.spec.ts
+docs

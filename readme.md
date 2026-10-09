@@ -22,7 +22,12 @@ ResolveZero is a personal DNS & DoH (DNS-over-HTTPS) resolver you fully control.
 * **Policy Cache:** A plain in-memory `Map` of ALL profiles' policies. Bounded set — NEVER evict (LRU is reserved for the resolver cache only).
 * **DNS Response Cache:** `lru-cache`, the only unbounded-by-nature data — safe to evict.
 * **DNS Parsing:** `dns2` or `dns-packet` (npm).
-* **Upstream Resolver:** DoH to Quad9 (`https://dns.quad9.net/dns-query`) for MVP; self-hosters can point it anywhere (e.g. local `Unbound` via plain DNS `127.0.0.1:5353`) with a 1-line config change.
+* **Upstream Resolver:** DoH, **selectable per profile**: presets `cloudflare` (default), `google`, or a custom `upstream_url` (self-hosters can point it at a local Unbound DoH listener with a 1-line change).
+    * `quad9` exists as a preset but is **HTTP/2-only** ("505 requires HTTP/2" on Bun's h1 fetch); it runs through the h2 transport where reachable (verified 13ms p50 from lhr via `node:http2`) — needs verification from every deploy PoP before being offered in the UI.
+    * **Bench decision (2026-10-09, `apps/edge/scripts/bench-upstream.ts`, fra+lhr):** warm per-query RTT: DoH-h1 ≈ 2ms vs UDP 53 ≈ 1ms (CF, fra); Google 4 vs 2ms (lhr); Quad9 13 vs 11ms (lhr). UDP wins **1–2ms p50** — rejected: not worth the drop in transport privacy (plaintext to the provider), a second socket stack, and a per-profile protocol column. DoH-h1 is the default path; warm conns make the protocol overhead irrelevant.
+    * Mullvad was excluded as a preset: dead from Fly egress (300/300 timeouts on all transports) and from the PL home ISP — provider emits no EU-reachable endpoint for our vantages.
+* **Custom zones:** per-profile DNS records (`profile_zones`: A/AAAA/CNAME/TXT, exact or `*.` suffix-wildcard, TTL) served from the edge cache via a second `zone_updates` NOTIFY channel — split-horizon names (`nas.lan`), LAN rewrites, and explicit overrides **win over blocklists** (user-authored config). Updated live, no upstream round-trip.
+* **Raw Log Storage:** S3-compatible object storage (`Bun.S3Client` — iDrive E2 / R2 / Tigris / AWS via env endpoint). Postgres holds **stats rollups only** (raw logs never in PG).
 
 ## 3. System Architecture
 
@@ -43,7 +48,14 @@ When a rule changes, a Postgres trigger fires a `NOTIFY profile_updates` event w
 
 ### C. Query Logging & Analytics (the differentiator)
 
-Every decidable query (domain, profile, action, client IP, timestamp, response RTT) is logged to Postgres — **unless the profile opts out**. The edge batches writes asynchronously (non-blocking on the hot path). `query_log` rows carry a `log_until` retention timestamp; a periodic job prunes expired data.
+**Raw logs live in S3-compatible object storage — Postgres never touches raw logs.**
+
+1. **Raw events →** batcher flush → one compressed NDJSON object per profile per 15-min window (`{S3_FLUSH_MINUTES}`): `s3://…/logs/{profile_id}/{date}/{HHmm}.{seq}.jsonl.gz` (`Bun.S3Client`, works with iDrive E2 / R2 / Tigris / AWS). Event shape: `{kind:"query", time, profile, domain, action, rttMs, clientIp}`. Cost at household scale: ~90 MB compressed/month → **pennies for two years of history**.
+2. **Stats →** the same flush updates **rollup rows** in Postgres:
+    * `stats_minute` (totals only, PK profile+minute) — powers the live charts; hard-pruned after 6 h.
+    * `stats_hourly` (totals, blocked, RTT mean, top-200 domains, top-100 blocked, top-50 clients — all bounded) — powers dashboard tiles + long ranges; pruned by `log_retention_days`.
+    * `/stats` serves an adaptive-resolution ladder (NextDNS parity, ~30 points/chart): `30m`→1-min, `6h`→15-min (from `stats_minute`), `24h`→1-h, `7d`→6-h, `30d`/`90d`→daily (from `stats_hourly`). **Raw-log lifetime in S3 = bucket lifecycle rules** (deploy-side, NextDNS-style 1h→730d).
+3. **Ingestion paths (exactly one on):** `QUERY_LOG_STDOUT=1` → pino `kind:"query"` lines on stdout → [Fly Log Shipper](https://github.com/superfly/fly-log-shipper) (Vector) S3 sink writes the same key layout (hosted default; raw-log delivery is best-effort, stats unaffected); or `S3_*` env → in-process sink (self-host default, any platform). Neither → rollups-only mode (OSS no-config case), stats still work.
 
 ## 4. Authentication (Profiles)
 
@@ -84,17 +96,30 @@ CREATE TABLE profile_source_ips (
     profile_id UUID REFERENCES profiles(id)
 );
 
--- Full query log (NextDNS-style analytics). Retention per profile.
-CREATE TABLE query_log (
+-- Minute rollups: live-chart data (totals only). Hard-pruned after 6h.
+CREATE TABLE stats_minute (
+    profile_id UUID NOT NULL REFERENCES profiles(id),
+    minute TIMESTAMPTZ NOT NULL,
+    total_queries INT NOT NULL DEFAULT 0,
+    blocked INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (profile_id, minute)
+);
+
+-- Hourly stats rollups: the ONLY query-log-derived PG data (raw logs → S3).
+-- Bounded rows (one per profile per hour, top-lists capped in app code).
+CREATE TABLE stats_hourly (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     profile_id UUID NOT NULL REFERENCES profiles(id),
-    domain VARCHAR(255) NOT NULL,
-    action VARCHAR(20) NOT NULL,         -- 'block' | 'forward'
-    client_ip INET,
-    rtt_ms INT,
-    logged_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    hour TIMESTAMPTZ NOT NULL,                    -- UTC hour floor
+    total_queries INT NOT NULL DEFAULT 0,
+    blocked INT NOT NULL DEFAULT 0,
+    rtt_sum_ms BIGINT NOT NULL DEFAULT 0,
+    rtt_count INT NOT NULL DEFAULT 0,
+    top_domains JSONB NOT NULL DEFAULT '[]',      -- capped 200
+    top_blocked JSONB NOT NULL DEFAULT '[]',      -- capped 100
+    top_clients JSONB NOT NULL DEFAULT '[]'       -- capped 50
 );
-CREATE INDEX query_log_logged_at_idx ON query_log (logged_at);
+CREATE INDEX stats_hourly_profile_hour_idx ON stats_hourly (profile_id, hour);
 
 -- Trigger function for pub/sub (renamed for profiles)
 CREATE OR REPLACE FUNCTION notify_rule_change()
@@ -127,11 +152,37 @@ FOR EACH ROW EXECUTE FUNCTION notify_rule_change();
 4. **UDP ingress (legacy devices):**
     * Single `Bun.udpSocket()` bound to `fly-global-services:53` (mandatory on Fly; same port in/out).
     * Silent-drop unauthenticated; rate-limit permitted sources; TC flag fallback for oversized responses.
-5. **Query log batcher:** async buffered inserts (`INSERT ... ON CONFLICT DO NOTHING`-safe), respects `log_queries = false`; prune job for `log_retention_days`.
-6. **Profile config API + dashboard data endpoints** (CRUD rules, fetch stats) — the "API-based from ground up" surface.
+5. **Query log batching:** async ring-buffer flushes (2 s / 500 rows): raw events → S3 object per 15-min window (or stdout → Fly Log Shipper), rollup upserts → `stats_minute` + `stats_hourly`; flush failure = retain + exponential backoff, DNS resolution never blocked; respects `log_queries = false`; daily prune of rollups by `log_retention_days`.
+6. **Log manager + stats endpoints** (NextDNS parity): `GET /v1/:p/logs?format=csv|jsonl[&date=]` (streamed download), `DELETE /v1/:p/logs` (prefix clear), `GET /v1/:p/stats?range=30m|6h|24h|7d|30d|90d` (adaptive ~30-pt chart ladder + aggregates).
+7. **Profile config API + dashboard** (CRUD rules, fetch stats) — the "API-based from ground up" surface.
 
 ## 7. Deployment Notes (hosted)
 
-* One Fly app = one edge binary; deploy per region (anycast handles routing).
-* `fly.toml`: dedicated IPv4 allocated (`fly ips allocate-v4`), HTTP/TLS handled by Fly for DoH.
+* One Fly app = one edge binary; deploy per region (anycast handles routing). `scripts/deploy.sh` pushes to every region in `FLY_REGIONS` and sizes machines via `FLY_SCALE`.
+* `fly.toml`: three dedicated anycast IPv4s (`66.51.122.23` era replaced by the 37.16.x trio), HTTP/TLS handled by Fly for DoH, port 53 TCP+UDP services enabled for router ingress.
+* **Published addresses (Miral IP set):**
+    * `dns1.resolvezero.com` → `37.16.24.24` (UDP primary, router/Deco)
+    * `dns2.resolvezero.com` → `37.16.24.46` (UDP secondary)
+    * `dns.resolvezero.com` → `37.16.24.212` (DoH; `fly certs add` after DNS glues)
+    * All three IPs serve BOTH DoH and UDP (app services are IP-agnostic); the naming is pure user-side DNS.
 * Postgres keeps the app-shaped `DATABASE_URL`; edge holds two configs: pooled (queries) + direct (LISTEN).
+* Log shipper (hosted): deploy [fly-log-shipper](https://github.com/superfly/fly-log-shipper) with `SUBJECT="logs.<edge-app>.>"`, Vector S3 sink keyed `logs/{profile}/{date}/{HHmm}.{seq}.jsonl.gz`, bucket region = data-residency choice. Raw-log lifetime via bucket lifecycle (up to 730 d).
+
+### Scaling model (warm machines, not scale-to-zero)
+
+* **Anycast keep-warm rule:** a stopped Machine drops out of BGP, and UDP traffic cannot wake a stopped machine (`auto_start` doesn't apply to UDP) — so the DNS edge runs **always-warm**, N machines per region (`min_machines_running = N`, `auto_stop_machines = "off"` in fly.toml).
+* **Signal = CPU, not requests.** Fly's proxy meters HTTP but does **not count UDP datagrams**, so req-count-based autoscaling is impossible for the DNS path. Each edge exposes `GET /metrics` (Prometheus):
+    * `rz_cpu_percent` — in-process CPU% delta since last scrape (the autoscale signal; stable across HTTP/UDP/DoH load)
+    * `rz_queries_total{action}` — block/forward counters · `rz_query_rtt_ms` — upstream RTT histogram
+    * `rz_rules`, `rz_dns_cache_entries` — memory-safety gauges
+* **Autoscale path (when load demands it):** run [fly-autoscaler](https://github.com/superfly/fly-autoscaler) reading `rz_cpu_percent` per machine → `fly machines run --region …` scale-up, idle-timeout scale-down *only between machines* (never below 1 warm per anycast region). Simpler interim lever: `FLY_SCALE=2 ./scripts/deploy.sh`.
+* Verification: `fly checks list` (healthz) + Grafana on `fly metrics` shows the same registry.
+
+## 8. Infra Growth Ladder
+
+| Stage | Setup | Cost |
+|---|---|---|
+| Now (household / early) | Fly anycast + dedicated IPv4, PlanetScale, S3 logs | ~$10–30/mo total |
+| Growth (10M+ queries/day) | Leased /24 + own ASN + **Vultr BGP** VMs in ~8 regions (the edge binary deploys unchanged) | ~$300/mo all-in |
+| NextDNS-scale endgame | Owned /24 (~$20–40k) + own metal in carrier-hotel PoPs, DPDK Go resolvers | capex + $1k+/mo/PoP — only pays for itself after years of sustained volume |
+| DoH capacity bolt-on (any stage) | Cloudflare Workers DoH-only edge (blocklist via KV, upstream DoH fetch) — **no UDP possible on Workers** | ~$5/mo tier |

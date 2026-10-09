@@ -1,6 +1,15 @@
-import { db } from "@resolvezero/db/client";
-import { profileRules, profiles, profileSourceIps } from "@resolvezero/db/schema";
-import { isRuleUpdateEvent, type RuleUpdateEvent } from "@resolvezero/shared";
+import { db, sanitizePgUrl } from "@resolvezero/db/client";
+import { moduleLogger } from "./logger";
+import { profileRules, profiles, profileSourceIps, profileZones } from "@resolvezero/db/schema";
+import {
+  isIpUpdateEvent,
+  isRuleUpdateEvent,
+  isZoneUpdateEvent,
+  type IpUpdateEvent,
+  type RuleUpdateEvent,
+  type ZoneRecordType,
+  type ZoneUpdateEvent,
+} from "@resolvezero/shared";
 import createListener, { type Subscriber } from "pg-listen";
 import {
   RuleStore,
@@ -8,7 +17,10 @@ import {
   type RuleAction,
   type RuleRow,
   type SourceIpRow,
+  type ZoneRow,
 } from "./ruleStore";
+
+const log = moduleLogger("ruleSync");
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -26,34 +38,71 @@ if (!DATABASE_URL) {
  * A change committed between steps 2-4 can only be *double-applied*, never
  * lost — events are upsert semantics, so replay is harmless.
  */
-export async function startRuleSync(store: RuleStore): Promise<Subscriber> {
+export async function startRuleSync(
+  store: RuleStore,
+  /** Called (debounced) when blocklist subscriptions change in PG. */
+  onBlocklistEvent?: () => void,
+): Promise<Subscriber> {
   // NOTE: dedicated direct postgres connection — must NOT pass through
   // PgBouncer in transaction pooling mode (LISTEN is unsupported there).
   const subscriber = createListener({
-    connectionString: DATABASE_URL,
+    // same sslrootcert sanitization as the query client (pg-connection-
+    // string would otherwise read sslrootcert=system as a file path)
+    connectionString: sanitizePgUrl(DATABASE_URL!),
     maxAttempts: Infinity,
   });
 
-  const buffered: RuleUpdateEvent[] = [];
+  const bufferedRules: RuleUpdateEvent[] = [];
+  const bufferedZones: ZoneUpdateEvent[] = [];
+  const bufferedIps: IpUpdateEvent[] = [];
   let snapshotLoaded = false;
 
   // 1. Listener event handlers registered before connecting.
   subscriber.events.on("connected", () => {
-    console.log("[ruleSync] LISTEN connection established");
+    log.info("LISTEN connection established");
   });
   subscriber.events.on("error", (err) => {
-    console.error("[ruleSync] connection error:", err.message);
+    log.error({ err }, "LISTEN connection error");
   });
 
   subscriber.notifications.on("profile_updates", (payload) => {
     if (!isRuleUpdateEvent(payload)) {
-      console.warn("[ruleSync] unrecognized NOTIFY payload, ignoring");
+      log.warn("unrecognized NOTIFY payload, ignoring");
       return;
     }
     if (snapshotLoaded) {
       store.applyEvent(payload);
     } else {
-      buffered.push(payload);
+      bufferedRules.push(payload);
+    }
+  });
+
+  subscriber.notifications.on("zone_updates", (payload) => {
+    if (!isZoneUpdateEvent(payload)) {
+      log.warn("unrecognized zone NOTIFY payload, ignoring");
+      return;
+    }
+    if (snapshotLoaded) {
+      store.applyZoneEvent(payload);
+    } else {
+      bufferedZones.push(payload);
+    }
+  });
+
+  subscriber.notifications.on("blocklist_updates", () => {
+    // Only the trigger matters — sync reloads ALL enabled lists itself.
+    onBlocklistEvent?.();
+  });
+
+  subscriber.notifications.on("ip_updates", (payload) => {
+    if (!isIpUpdateEvent(payload)) {
+      log.warn("unrecognized ip NOTIFY payload, ignoring");
+      return;
+    }
+    if (snapshotLoaded) {
+      store.applySourceIpEvent(payload);
+    } else {
+      bufferedIps.push(payload);
     }
   });
 
@@ -61,21 +110,29 @@ export async function startRuleSync(store: RuleStore): Promise<Subscriber> {
   // its cached channels); re-reconcile the snapshot afterwards in case we
   // missed events while disconnected.
   subscriber.events.on("reconnect", () => {
-    console.warn("[ruleSync] reconnected — re-snapshotting rules");
+    log.warn("reconnected — re-snapshotting rules");
     snapshotLoaded = false;
     void reconcile();
   });
 
-  // 2-4. Connect + LISTEN, then snapshot, then replay the buffer.
+  // 2-4. Connect + LISTEN, then snapshot, then replay the buffers.
   await subscriber.connect();
   await subscriber.listenTo("profile_updates");
+  await subscriber.listenTo("zone_updates");
+  await subscriber.listenTo("ip_updates");
+  await subscriber.listenTo("blocklist_updates");
   await reconcile();
 
   async function reconcile(): Promise<void> {
     try {
-      const [profileRows, ruleRows, sourceIpRows] = await Promise.all([
+      const [profileRows, ruleRows, sourceIpRows, zoneRows] = await Promise.all([
         db
-          .select({ id: profiles.id, dohToken: profiles.dohToken })
+          .select({
+            id: profiles.id,
+            dohToken: profiles.dohToken,
+            logQueries: profiles.logQueries,
+            upstream: profiles.upstream,
+          })
           .from(profiles),
         db
           .select({
@@ -90,6 +147,15 @@ export async function startRuleSync(store: RuleStore): Promise<Subscriber> {
             profileId: profileSourceIps.profileId,
           })
           .from(profileSourceIps),
+        db
+          .select({
+            profileId: profileZones.profileId,
+            domain: profileZones.domain,
+            recordType: profileZones.recordType,
+            values: profileZones.values,
+            ttl: profileZones.ttl,
+          })
+          .from(profileZones),
       ]);
 
       // Snapshot replaces state atomically, then buffered events re-apply.
@@ -101,19 +167,35 @@ export async function startRuleSync(store: RuleStore): Promise<Subscriber> {
           (s): SourceIpRow => ({ ipAddress: s.ipAddress, profileId: s.profileId }),
         ),
         profileRows.map(
-          (p): ProfileRow => ({ id: p.id, dohToken: p.dohToken }),
+          (p): ProfileRow => ({
+            id: p.id,
+            dohToken: p.dohToken,
+            logQueries: p.logQueries,
+            upstream: p.upstream,
+          }),
+        ),
+        zoneRows.map(
+          (z): ZoneRow => ({ ...z, recordType: z.recordType as ZoneRecordType }),
         ),
       );
 
-      const events = buffered.splice(0);
-      for (const event of events) {
+      const ruleEvents = bufferedRules.splice(0);
+      for (const event of ruleEvents) {
         store.applyEvent(event);
+      }
+      const zoneEvents = bufferedZones.splice(0);
+      for (const event of zoneEvents) {
+        store.applyZoneEvent(event);
+      }
+      const ipEvents = bufferedIps.splice(0);
+      for (const event of ipEvents) {
+        store.applySourceIpEvent(event);
       }
 
       snapshotLoaded = true;
-      console.log(`[ruleSync] snapshot loaded: ${JSON.stringify(store.stats)}`);
+      log.info({ stats: store.stats }, "snapshot loaded");
     } catch (err) {
-      console.error("[ruleSync] reconcile failed, retrying in 2s:", err);
+      log.error({ err }, "reconcile failed, retrying in 2s");
       await Bun.sleep(2000);
       void reconcile();
     }

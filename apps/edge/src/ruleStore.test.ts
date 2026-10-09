@@ -8,8 +8,8 @@ const rows: RuleRow[] = [
 ];
 
 const profiles = [
-  { id: "p1", dohToken: null },
-  { id: "p2", dohToken: null },
+  { id: "p1", dohToken: null, logQueries: true, upstream: null },
+  { id: "p2", dohToken: null, logQueries: true, upstream: null },
 ];
 
 const sourceIps: SourceIpRow[] = [
@@ -51,6 +51,30 @@ describe("RuleStore", () => {
     expect(store.resolve("p1", "other.example.com")).toBeUndefined();
   });
 
+  test("doubleclick.net behaves as *.doubleclick.net (label-boundary safe)", () => {
+    const store = new RuleStore();
+    store.replaceAll(
+      [{ profileId: "p1", domain: "doubleclick.net", action: "block" }],
+      sourceIps,
+      profiles,
+    );
+
+    // exact + all subdomains
+    expect(store.resolve("p1", "doubleclick.net")).toBe("block");
+    expect(store.resolve("p1", "ads.doubleclick.net")).toBe("block");
+    expect(store.resolve("p1", "stats.g.doubleclick.net")).toBe("block");
+    // label boundary: raw-string suffix must NOT match
+    expect(store.resolve("p1", "notdoubleclick.net")).toBeUndefined();
+    expect(store.resolve("p1", "doubleclick.com")).toBeUndefined();
+    expect(store.resolve("p1", "net")).toBeUndefined();
+    expect(store.resolve("p1", "click.net")).toBeUndefined();
+    // one-way: block rule never matches the parent domain
+    expect(store.resolve("p1", "com")).toBeUndefined();
+    // empty-root and trailing-dot inputs must not blow up or over-match
+    expect(store.resolve("p1", "")).toBeUndefined();
+    expect(store.resolve("p1", "doubleclick.net.")).toBeUndefined();
+  });
+
   test("authorizes source IP to profile", () => {
     const store = new RuleStore();
     store.replaceAll(rows, sourceIps, profiles);
@@ -82,5 +106,68 @@ describe("RuleStore", () => {
     store.applyEvent({ op: "DELETE", profile_id: "p1", domain: "corp.example.com", action: null });
     expect(store.resolve("p1", "corp.example.com")).toBeUndefined();
     expect(store.resolve("p1", "a.corp.example.com")).toBeUndefined();
+  });
+});
+
+describe("shouldLog (opt-out)", () => {
+  test("returns true when logQueries enabled / unknown profile", () => {
+    const store = new RuleStore();
+    store.replaceAll(rows, sourceIps, [
+      { id: "p1", dohToken: null, logQueries: true, upstream: null },
+      { id: "p2", dohToken: null, logQueries: false, upstream: null },
+    ]);
+    expect(store.shouldLog("p1")).toBe(true);
+    expect(store.shouldLog("p2")).toBe(false);
+    expect(store.shouldLog("unknown")).toBe(true); // default "log the lot"
+  });
+});
+
+describe("zone overrides", () => {
+  const ZP = "33333333-3333-3333-3333-333333333333";
+  const zp = [{ id: ZP, dohToken: null, logQueries: true, upstream: null }];
+
+  test("exact A record resolves (case-insensitive)", () => {
+    const store = new RuleStore();
+    store.replaceAll(
+      [], [], zp,
+      [{ profileId: ZP, domain: "NAS.LAN", recordType: "A", values: ["192.168.1.24"], ttl: 60 }],
+    );
+    expect(store.resolveZone(ZP, "nas.lan", "A")).toEqual({ values: ["192.168.1.24"], ttl: 60, recordType: "A" });
+    expect(store.resolveZone(ZP, "nas.lan", "AAAA")).toBeUndefined(); // per-type
+  });
+
+  test("*. wildcard zones match subdomains, not the base", () => {
+    const store = new RuleStore();
+    store.replaceAll(
+      [], [], zp,
+      [{ profileId: ZP, domain: "*.home.example.com", recordType: "A", values: ["10.0.0.5"], ttl: 300 }],
+    );
+    expect(store.resolveZone(ZP, "printer.home.example.com", "A")).toEqual({
+      values: ["10.0.0.5"], ttl: 300, recordType: "A",
+    });
+    expect(store.resolveZone(ZP, "home.example.com", "A")).toBeUndefined();
+  });
+
+  test("applyZoneEvent INSERT/UPDATE/DELETE keeps snapshots live", () => {
+    const store = new RuleStore();
+    store.replaceAll([], [], zp);
+
+    store.applyZoneEvent({ op: "INSERT", profile_id: ZP, domain: "cam.lan", record_type: "A", values: ["192.168.1.50"], ttl: 60 });
+    expect(store.resolveZone(ZP, "cam.lan", "A")).toBeDefined();
+
+    store.applyZoneEvent({ op: "UPDATE", profile_id: ZP, domain: "cam.lan", record_type: "A", values: ["192.168.1.51"], ttl: 60 });
+    expect(store.resolveZone(ZP, "cam.lan", "A")!.values).toEqual(["192.168.1.51"]);
+
+    store.applyZoneEvent({ op: "DELETE", profile_id: ZP, domain: "cam.lan", record_type: "A", values: null, ttl: null });
+    expect(store.resolveZone(ZP, "cam.lan", "A")).toBeUndefined();
+  });
+
+  test("profileUpstream returns per-profile selection", () => {
+    const store = new RuleStore();
+    store.replaceAll([], [], [
+      { id: ZP, dohToken: null, logQueries: true, upstream: "google" },
+    ]);
+    expect(store.profileUpstream(ZP)).toBe("google");
+    expect(store.profileUpstream("unknown")).toBeNull();
   });
 });

@@ -1,29 +1,30 @@
 import { Hono } from "hono";
+import { decode } from "dns-packet";
 import {
-  AUTHORITATIVE_ANSWER,
-  RECURSION_AVAILABLE,
-  RECURSION_DESIRED,
-  decode,
-  encode,
-  type Question,
-} from "dns-packet";
+  RESPONSE,
+  SINKHOLE_TTL,
+  decodeQuestion,
+  sinkholeResponse,
+  servfailResponse,
+  wireEncode,
+  zoneAnswer,
+} from "./wire";
 import type { RuleAction } from "./ruleStore";
-import type { RuleStore } from "./ruleStore";
+import type { RuleStore, ZoneAnswer } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
-
-const RESPONSE = 0x8000; // QR header bit (dns-packet exposes named flags only)
-const SINKHOLE_TTL = 300; // 5 min is plenty for filtering churn
+import type { Recorder } from "./metrics";
+import type { ZoneRecordType } from "@resolvezero/shared";
 
 export interface QueryLogEntry {
   profileId: string;
   domain: string;
-  action: RuleAction | "forward"; // 'forward' = allowed & sent upstream
+  action: RuleAction | "forward" | "override"; // 'override' = served from local zone
   rttMs: number | null;
   clientIp: string | null;
 }
 
 export interface Upstream {
-  resolveWire(wire: Uint8Array): Promise<{ wire: Uint8Array; rttMs: number }>;
+  resolveWire(wire: Uint8Array, upstreamUrl?: string): Promise<{ wire: Uint8Array; rttMs: number }>;
 }
 
 export interface DohAppDeps {
@@ -31,6 +32,8 @@ export interface DohAppDeps {
   dnsCache: DnsCache;
   upstream: Upstream;
   logQuery(entry: QueryLogEntry): void;
+  /** Optional Prometheus recorder (wired by index.ts when metrics are on). */
+  recorder?: Recorder;
 }
 
 export function createDohApp(deps: DohAppDeps) {
@@ -44,7 +47,6 @@ export function createDohApp(deps: DohAppDeps) {
     if (!deps.store.hasProfile(profileId, token)) {
       return c.body(null, 404); // silent — never authenticate the attacker
     }
-
     // ---- Extract wire-format query (RFC 8484) ----
     let queryWire: Uint8Array | undefined;
     try {
@@ -70,8 +72,31 @@ export function createDohApp(deps: DohAppDeps) {
 
     const clientAddr = clientIp(c);
 
-    // ---- Rule check (exact + longest-suffix wildcard, O(domain depth)) ----
-    if (deps.store.resolve(profileId, question.name) === "block") {
+    // ---- Local zone overrides (split-horizon answers; user config wins) ----
+    // Checked BEFORE policy: an explicitly authored override answers even
+    // if the domain is on the blocklist (Pi-hole rewrite semantics).
+    const zone = deps.store.resolveZone(
+      profileId,
+      question.name,
+      question.type as ZoneRecordType,
+    );
+    if (zone) {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: clientAddr,
+      });
+      deps.recorder?.recordQuery("forward");
+      return c.body(zoneAnswer(question, zone), 200, {
+        "content-type": "application/dns-message",
+      });
+    }
+
+    // ---- Rule check (explicit user rules beat remote lists) ----
+    const explicit = deps.store.resolve(profileId, question.name);
+    if (explicit === "block") {
       deps.logQuery({
         profileId,
         domain: question.name,
@@ -79,7 +104,24 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
       });
-      return c.body(sinkhole(question), 200, {
+      deps.recorder?.recordQuery("block");
+      return c.body(sinkholeResponse(question), 200, {
+        "content-type": "application/dns-message",
+        "cache-control": `max-age=${SINKHOLE_TTL}`,
+      });
+    }
+
+    // ---- Remote blocklists (custom-URL subscriptions; @@ allows win first) ----
+    if (!explicit && deps.store.resolveRemote(profileId, question.name) === "block") {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "block",
+        rttMs: null,
+        clientIp: clientAddr,
+      });
+      deps.recorder?.recordQuery("block");
+      return c.body(sinkholeResponse(question), 200, {
         "content-type": "application/dns-message",
         "cache-control": `max-age=${SINKHOLE_TTL}`,
       });
@@ -88,14 +130,18 @@ export function createDohApp(deps: DohAppDeps) {
     // ---- DNS response LRU cache ----
     const cached = deps.dnsCache.get(queryWire);
     if (cached) {
+      deps.recorder?.recordQuery("forward");
       return c.body(cached, 200, { "content-type": "application/dns-message" });
     }
 
-    // ---- Forward upstream over DoH ----
+    // ---- Forward upstream over DoH (per-profile upstream choice) ----
     let rttMs: number;
     let responseWire: Uint8Array;
     try {
-      const result = await deps.upstream.resolveWire(queryWire);
+      const result = await deps.upstream.resolveWire(
+        queryWire,
+        deps.store.profileUpstream(profileId) ?? undefined,
+      );
       responseWire = result.wire;
       rttMs = result.rttMs;
     } catch {
@@ -107,7 +153,8 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
       });
-      return c.body(encodeServfail(question), 200, {
+      deps.recorder?.recordQuery("forward");
+      return c.body(servfailResponse(question), 200, {
         "content-type": "application/dns-message",
       });
     }
@@ -120,6 +167,8 @@ export function createDohApp(deps: DohAppDeps) {
       rttMs,
       clientIp: clientAddr,
     });
+    deps.recorder?.recordQuery("forward");
+    deps.recorder?.recordRtt(rttMs);
 
     return c.body(responseWire, 200, {
       "content-type": "application/dns-message",
@@ -127,50 +176,6 @@ export function createDohApp(deps: DohAppDeps) {
   });
 
   return app;
-}
-
-// ---- Wire helpers ----
-
-function decodeQuestion(wire: Uint8Array): { id: number; name: string; type: string } {
-  const packet = decode(Buffer.from(wire));
-  const q = packet.questions![0] as Question | undefined;
-  if (!q) throw new Error("no question section");
-  return {
-    id: wire[0]! << 8 | wire[1]!,
-    name: String(q.name),
-    type: String(q.type),
-  };
-}
-
-function sinkhole(question: { id: number; name: string; type: string }): Uint8Array {
-  // A -> 0.0.0.0, AAAA -> ::, other qtypes -> empty NOERROR
-  const answers =
-    question.type === "A"
-      ? [{ name: question.name, type: "A" as const, class: "IN" as const, ttl: SINKHOLE_TTL, data: "0.0.0.0" }]
-      : question.type === "AAAA"
-        ? [{ name: question.name, type: "AAAA" as const, class: "IN" as const, ttl: SINKHOLE_TTL, data: "::" }]
-        : [];
-
-  return new Uint8Array(
-    encode({
-      id: question.id,
-      type: "response",
-      flags: RESPONSE | AUTHORITATIVE_ANSWER | RECURSION_DESIRED | RECURSION_AVAILABLE,
-      questions: [{ name: question.name, type: question.type }] as never,
-      answers,
-    } as never),
-  );
-}
-
-function encodeServfail(question: { id: number; name: string; type: string }): Uint8Array {
-  return new Uint8Array(
-    encode({
-      id: question.id,
-      type: "response",
-      flags: RESPONSE | RECURSION_DESIRED | RECURSION_AVAILABLE | 0x0002, // RCODE 2 = SERVFAIL
-      questions: [{ name: question.name, type: question.type }] as never,
-    }),
-  );
 }
 
 function clientIp(c: { req: { header(name: string): string | undefined } }): string | null {

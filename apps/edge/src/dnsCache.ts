@@ -40,6 +40,11 @@ export class DnsCache {
     this.cache.set(key, wire, { ttl: Math.min(ttl, 86_400_000) });
   }
 
+  /** Drop every cached upstream answer (blocklist refresh may change policy). */
+  clear(): void {
+    this.cache.clear();
+  }
+
   get stats() {
     return {
       entries: this.cache.size,

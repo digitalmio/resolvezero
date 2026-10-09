@@ -1,0 +1,116 @@
+import {
+  AUTHORITATIVE_ANSWER,
+  RECURSION_AVAILABLE,
+  RECURSION_DESIRED,
+  decode,
+  encode,
+  TRUNCATED_RESPONSE,
+  type Question } from "dns-packet";
+import type { ZoneAnswer } from "./ruleStore";
+
+export const RESPONSE = 0x8000; // QR header bit (dns-packet exposes named flags only)
+export const SINKHOLE_TTL = 300; // 5 min is plenty for filtering churn
+
+export interface QuestionInfo {
+  id: number;
+  name: string;
+  type: string;
+}
+
+/** Parses the wire query's question history; canonicalizes name. */
+export function decodeQuestion(wire: Uint8Array): QuestionInfo {
+  const packet = decode(Buffer.from(wire));
+  const q = packet.questions![0] as Question | undefined;
+  if (!q) throw new Error("no question section");
+  return {
+    id: wire[0]! << 8 | wire[1]!,
+    // lowercase + strip FQDN root dot so policy matching is canonical
+    name: String(q.name).toLowerCase().replace(/\.+$/, ""),
+    type: String(q.type),
+  };
+}
+
+/** Sinkhole (blocked): A → 0.0.0.0, AAAA → ::, other qtypes → empty NOERROR. */
+export function sinkholeResponse(question: QuestionInfo): Uint8Array {
+  const answers =
+    question.type === "A"
+      ? [{ name: question.name, type: "A" as const, class: "IN" as const, ttl: SINKHOLE_TTL, data: "0.0.0.0" }]
+      : question.type === "AAAA"
+        ? [{ name: question.name, type: "AAAA" as const, class: "IN" as const, ttl: SINKHOLE_TTL, data: "::" }]
+        : [];
+
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    flags: RESPONSE | AUTHORITATIVE_ANSWER | RECURSION_DESIRED | RECURSION_AVAILABLE,
+    questions: [{ name: question.name, type: question.type }],
+    answers,
+  });
+}
+
+export interface WirePacket {
+  id: number;
+  type: string;
+  flags: number;
+  questions: unknown;
+  answers: unknown;
+}
+
+export function wireEncode(packet: object): Uint8Array {
+  return new Uint8Array(encode(packet as never));
+}
+
+/** SERVFAIL: upstream unavailable — the client stub resolver will retry. */
+export function servfailResponse(question: QuestionInfo): Uint8Array {
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    // RCODE 2 = SERVFAIL
+    flags: RESPONSE | RECURSION_DESIRED | RECURSION_AVAILABLE | 0x0002,
+    questions: [{ name: question.name, type: question.type }],
+  });
+}
+
+/** Truncated-cue response (UDP > ~1232 bytes): TC set, client retries via TCP. */
+export function truncatedResponse(question: QuestionInfo): Uint8Array {
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    flags: RESPONSE | TRUNCATED_RESPONSE | RECURSION_DESIRED | RECURSION_AVAILABLE,
+    questions: [{ name: question.name, type: question.type }],
+  });
+}
+
+/** Builds a wire answer from a local zone record (A/AAAA/CNAME/TXT). */
+export function zoneAnswer(
+  question: QuestionInfo,
+  zone: ZoneAnswer,
+): Uint8Array {
+  const answers = zone.values.map((value) => {
+    const base = { name: question.name, class: "IN" as const, ttl: zone.ttl };
+    switch (zone.recordType) {
+      case "A": return { ...base, type: "A" as const, data: value };
+      case "AAAA": return { ...base, type: "AAAA" as const, data: value };
+      case "CNAME": return { ...base, type: "CNAME" as const, data: value };
+      case "TXT": return { ...base, type: "TXT" as const, data: [value] };
+    }
+  });
+
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    // AA bit: the profile zone is authoritative for its overrides
+    flags: RESPONSE | AUTHORITATIVE_ANSWER | RECURSION_DESIRED | RECURSION_AVAILABLE,
+    questions: [{ name: question.name, type: question.type }],
+    answers,
+  });
+}
+
+/** "::ffff:9.9.9.9" → "9.9.9.9"; strips v6-mapped+zone and trims brackets. */
+export function normalizeIp(addr: string): string {
+  const stripped = addr.replace(/^\[|\]$/g, "").split("%")[0];
+  return stripped.startsWith("::ffff:") ? stripped.slice("::ffff:".length) : stripped;
+}
+
+/** Max payload we answer over UDP before flipping the TC bit (DNS-safe size). */
+export const UDP_MAX_PAYLOAD = 1232;

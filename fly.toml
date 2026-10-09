@@ -1,0 +1,58 @@
+# resolvezero edge — Fly.io deployment
+# Multi-region: deploy per region with scripts/deploy.sh (fly deploy --region);
+# every region runs the same image and joins the anycast IPv4 automatically.
+# primary_region = fra (Frankfurt): hosts the EU PlanetScale DB read path on
+# the same continent; UK users route to fra via anycast until lhr is added.
+
+app = "resolvezero-edge"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  LOG_LEVEL = "info"
+  # Raw-log persistence is the in-process S3 sink (S3_* secrets in Fly).
+  # Flip to QUERY_LOG_STDOUT=1 + Fly Log Shipper instead if ever preferred.
+  # Secrets (set once, shared by all regions):
+  #   DATABASE_URL           — app role (EU PlanetScale)
+  #   S3_*                   — iDrive E2 eu-central-1 archive bucket
+  #   UPSTREAM_DOH_URL       — optional (default preset)
+
+[http_service]
+  # DoH + stats + logs API (TLS terminated by Fly)
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"   # anycast keep-warm: a stopped machine drops out of BGP
+  auto_start_machines = false  # no UDP wake-up exists; keep machines warm
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/healthz"
+
+# Port 53 ingress (Deco/router path, readme §6.4): UDP requires a dedicated
+# IPv4 (we have three: dns/dns1/dns2). The edge binds fly-global-services:53
+# itself; internal and external ports must match — Fly does not rewrite
+# ports for UDP.
+[[services]]
+  protocol = "tcp"
+  internal_port = 53
+  [[services.ports]]
+    port = 53
+
+[[services]]
+  protocol = "udp"
+  internal_port = 53
+  [[services.ports]]
+    port = 53

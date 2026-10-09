@@ -22,8 +22,8 @@ const STORE_FIXTURE = () => {
     [{ profileId: "11111111-1111-1111-1111-111111111111", domain: "evil.com", action: "block" }],
     [{ ipAddress: "10.0.0.1", profileId: "11111111-1111-1111-1111-111111111111" }],
     [
-      { id: "11111111-1111-1111-1111-111111111111", dohToken: null }, // open auth
-      { id: "22222222-2222-2222-2222-222222222222", dohToken: "s3cret" }, // token auth
+      { id: "11111111-1111-1111-1111-111111111111", dohToken: null, logQueries: true, upstream: null }, // open auth
+      { id: "22222222-2222-2222-2222-222222222222", dohToken: "s3cret", logQueries: true, upstream: null }, // token auth
     ],
   );
   return store;
@@ -103,6 +103,19 @@ describe("DoH endpoint", () => {
     expect(mock.calls).not.toContain("evil.com");
   });
 
+  test("policy match is canonical: uppercase + FQDN root dot still blocked", async () => {
+    const mock = mockUpstream({});
+    const res = await app({ upstream: mock.upstream }).request(`/v1/${PROFILE}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("EVIL.COM."),
+    });
+
+    const packet = decode(Buffer.from(await (res as Response).arrayBuffer()));
+    expect((packet as any).answers?.[0]?.data).toBe("0.0.0.0");
+    expect(mock.calls).not.toContain("EVIL.COM.");
+  });
+
   test("unknown profile silently 404s (no body)", async () => {
     mockUpstream({});
     const res = await app().request(`/v1/99999999-9999-9999-9999-999999999999`, {
@@ -157,5 +170,82 @@ describe("DoH endpoint", () => {
     expect((await req()).status).toBe(200);
     expect((await req()).status).toBe(200);
     expect(mock.calls.filter((c) => c === "cacheable.test")).toHaveLength(1);
+  });
+});
+
+describe("zone overrides", () => {
+  const ZP = "33333333-3333-3333-3333-333333333333";
+  const profiles = [
+    { id: PROFILE, dohToken: null, logQueries: true, upstream: null },
+    { id: ZP, dohToken: null, logQueries: true, upstream: "google" },
+  ];
+
+  function zoneApp(client: { resolveWire(w: Uint8Array, u?: string): Promise<{ wire: Uint8Array; rttMs: number }> }) {
+    const store = new RuleStore();
+    store.replaceAll(
+      [{ profileId: ZP, domain: "danger.com", action: "block" }], // blocklist hit co-testing
+      [],
+      profiles,
+      [
+        { profileId: ZP, domain: "nas.lan", recordType: "A", values: ["192.168.1.24", "192.168.1.25"], ttl: 120 },
+        { profileId: ZP, domain: "printer.home.example.com", recordType: "A", values: ["10.0.0.5"], ttl: 300 },
+      ],
+    );
+    return createDohApp({ store, dnsCache: new DnsCache(), upstream: client, logQuery: () => {} });
+  }
+
+  test("zone HIT answers locally (both values, AA flag, no upstream call)", async () => {
+    const mock = mockUpstream({});
+    const res = await zoneApp(mock.upstream).request(`/v1/${ZP}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("nas.lan"),
+    });
+
+    const packet = decode(Buffer.from(await (res as Response).arrayBuffer()));
+    const answers = (packet as any).answers;
+    expect(answers.map((a: { data: string }) => a.data).sort()).toEqual(["192.168.1.24", "192.168.1.25"]);
+    expect(answers[0]?.ttl).toBe(120);
+    expect(mock.calls.filter((c) => c === "nas.lan")).toHaveLength(0); // never hit upstream
+  });
+
+  test("zone override WINS over a blocklist rule on the same domain", async () => {
+    const store = new RuleStore();
+    store.replaceAll(
+      [{ profileId: ZP, domain: "override-test.com", action: "block" }],
+      [],
+      profiles,
+      [{ profileId: ZP, domain: "override-test.com", recordType: "A", values: ["10.9.9.1"], ttl: 60 }],
+    );
+    const mock = mockUpstream({});
+    const api = createDohApp({ store, dnsCache: new DnsCache(), upstream: mock.upstream, logQuery: () => {} });
+
+    const res = await api.request(`/v1/${ZP}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("override-test.com"),
+    });
+    const packet = decode(Buffer.from(await (res as Response).arrayBuffer()));
+    expect((packet as any).answers?.[0]?.data).toBe("10.9.9.1"); // 0.0.0.0, user wins
+  });
+
+  test("zone SET works with per-profile upstream selection (profile upstream passes through)", async () => {
+    let requestedUrl: string | undefined;
+    const upstream: Upstream = {
+      async resolveWire(wire, upstreamUrl) {
+        requestedUrl = upstreamUrl;
+        return mockUpstream({}).upstream.resolveWire(wire);
+      },
+    };
+    const store = new RuleStore();
+    store.replaceAll([], [], profiles);
+    const api = createDohApp({ store, dnsCache: new DnsCache(), upstream, logQuery: () => {} });
+
+    await api.request(`/v1/${ZP}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("some-other.com"),
+    });
+    expect(requestedUrl).toBe("google"); // profile-level override propagates
   });
 });
