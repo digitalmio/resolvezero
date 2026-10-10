@@ -23,6 +23,8 @@ export function cpuPercent(
 export interface Recorder {
   recordQuery(action: "block" | "forward"): void;
   recordRtt(ms: number): void;
+  /** Dropped packets (unauthorized source, malformed) — never counted as queries. */
+  recordDrop(reason: string): void;
 }
 
 /**
@@ -66,6 +68,12 @@ export function createHealthApp(deps: {
     buckets: [5, 10, 25, 50, 100, 250, 500, 1000],
     registers: [registry],
   });
+  const dropped = new Counter({
+    name: "rz_dropped_total",
+    help: "Packets dropped before policy evaluation",
+    labelNames: ["reason"] as const,
+    registers: [registry],
+  });
 
   if (deps.store) {
     new Gauge({
@@ -88,6 +96,7 @@ export function createHealthApp(deps: {
     recordQuery: (action) =>
       queries.inc({ action: action === "block" ? "block" : "forward" }),
     recordRtt: (ms) => rtt.observe(ms),
+    recordDrop: (reason) => dropped.inc({ reason }),
   };
 
   app.get("healthz", (c) => c.body(null, 204));

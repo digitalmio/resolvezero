@@ -170,4 +170,23 @@ describe("zone overrides", () => {
     expect(store.profileUpstream(ZP)).toBe("google");
     expect(store.profileUpstream("unknown")).toBeNull();
   });
+
+  test("applyDeviceSeen: first sighting true, repeats false (per profile)", () => {
+    const store = new RuleStore();
+    expect(store.applyDeviceSeen("p1", "phone")).toBe(true);
+    expect(store.applyDeviceSeen("p1", "phone")).toBe(false);
+    expect(store.applyDeviceSeen("p1", "tablet")).toBe(true);
+    expect(store.applyDeviceSeen("p2", "phone")).toBe(true); // other profile isolated
+  });
+
+  test("hasToken: token-bearing vs token-free vs unknown", () => {
+    const store = new RuleStore();
+    store.replaceAll([], [], [
+      { id: "11111111-1111-1111-1111-111111111111", dohToken: "s3cret", logQueries: true, upstream: null },
+      { id: "22222222-2222-2222-2222-222222222222", dohToken: null, logQueries: true, upstream: null },
+    ]);
+    expect(store.hasToken("11111111-1111-1111-1111-111111111111")).toBe(true);
+    expect(store.hasToken("22222222-2222-2222-2222-222222222222")).toBe(false);
+    expect(store.hasToken("unknown-profile")).toBe(false);
+  });
 });

@@ -59,14 +59,28 @@ When a rule changes, a Postgres trigger fires a `NOTIFY profile_updates` event w
 
 ## 4. Authentication (Profiles)
 
-Every query must be authenticated before processing. Without DoH TLS, packets are cheap to spoof — **unauthenticated/unknown UDP packets are dropped silently** (`return;`, no response).
+Every query must be authenticated before processing. Unauthenticated/unknown UDP packets are answered **REFUSED (RCODE 5)** by default (`UDP_UNKNOWN_SOURCE=refused`; set `=silent` to restore full-silence) — standard "not serving you" semantics, debuggable via any `dig`, counted in `rz_dropped_total{reason="unauthorized_source"}`. Query-log events are never emitted for unauthorized sources.
 
 1. **DoH Token Auth (primary):**
-    * *Path:* `https://dns.resolvezero.com/v1/{profile_id}/{optional_profile_token}`
-    * For self-hosted single-user the profile id is enough; hosted profiles can require a token. Never log the raw token/path (hash comparison).
+    * *Path shapes:* `https://dns.resolvezero.com/v1/{profile_id}/{profile_token}` — or device-tagged variants:
+        * `https://dns.resolvezero.com/v1/{profile_id}/{device}` (token-free profile)
+        * `https://dns.resolvezero.com/v1/{profile_id}/{device}/{profile_token}` (tokened profile)
+    * Device slugs: NextDNS-style `[a-zA-Z0-9_-]{1,32}`; round-trip into raw logs (`device` field), `profile_devices` rows (lazy first-seen insert) and `stats_hourly.top_devices` (top 50).
+    * Never log the raw token/path (hash comparison).
 2. **Source IP Whitelisting (UDP ingress, for routers/legacy devices):**
-    * Optional per profile; checked against `senderAddress` (Fly preserves the real client IP). Since UDP source IPs are spoofable, apply a per-source rate limit / penalty box in front of policy checks.
+    * Optional per profile; checked against `senderAddress` (Fly preserves the real client IP). Unknown source → REFUSED (above). Since UDP source IPs are spoofable, apply a per-source rate limit / penalty box in front of policy checks.
 3. **What's deliberately NOT here:** per-tenant dedicated Anycast IPs. (Fly rewrites all of an app's UDP destinations to `fly-global-services`, so destination-based identity is impossible; per-tenant infra would mean one app per profile — pointless for a personal product.)
+
+### 4a. Accounts (planned — dashboard slice 0)
+
+* **Better Auth, GitHub OAuth first (no email flows)** — Better Auth owns `user`/`session`/`account`/`verification` tables (CLI-generated); we add `profiles.owner_user_id uuid FK -> user.id` (nullable now, NOT NULL at hosted launch) and auto-generate `doh_token` at profile creation (token-free mode disappears).
+* Mutations (rules/zones/blocklists/profile CRUD) move to the control-plane API (dashboard app); the edge stays a token-authed data plane consuming NOTIFYs only.
+* Linked-IP (parity with NextDNS): dashboard button + `?ip=` update URL (both live); later: DDNS hostname re-resolution; multi-profile-per-IP later via **per-profile anycast IP pools** (NextDNS pattern — not dedicated per-user IPs). Tailscale hardcodes DoH for NextDNS/ControlD only (ts#15724) — not supported by design; OS-native DoH profiles are our path.
+* Deferred: teams/sharing, billing/quotas, per-profile rate limits.
+
+### 4b. DNS-over-TLS (planned)
+
+TLS listener on port 853 (`Bun.listen` TLS) with profile identity in SNI: `{device-tag}.dns.resolvezero.com`. Enables Android Private DNS (system, no app), iOS/macOS DoT profiles, and exit-node survival (plaintext UDP gets hijacked by Mullvad-style exit nodes; TLS does not). Requires: fly.toml service, cert reuse, RuleStore SNI lookup — ~150 LOC + tests.
 
 ## 5. Database Schema (drizzle sources: `packages/db/src/schema.ts`)
 

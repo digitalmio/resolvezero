@@ -21,6 +21,8 @@ export interface QueryLogEntry {
   action: RuleAction | "forward" | "override"; // 'override' = served from local zone
   rttMs: number | null;
   clientIp: string | null;
+  /** Device tag from device-tagged DoH path (/v1/:p/:device) — null when absent. */
+  device: string | null;
 }
 
 export interface Upstream {
@@ -32,20 +34,52 @@ export interface DohAppDeps {
   dnsCache: DnsCache;
   upstream: Upstream;
   logQuery(entry: QueryLogEntry): void;
+  /** Lazily record a first-seen device slug (DB write-behind; edge keeps Map). */
+  onNewDevice?(profileId: string, device: string): void;
   /** Optional Prometheus recorder (wired by index.ts when metrics are on). */
   recorder?: Recorder;
 }
 
+/** Device tag charset: NextDNS-style url-safe short names. */
+const DEVICE_RE = /^[a-zA-Z0-9_-]{1,32}$/;
+
 export function createDohApp(deps: DohAppDeps) {
   const app = new Hono().basePath("/v1");
 
-  app.on(["GET", "POST"], ":profileId/:token?", async (c) => {
+  app.on(["GET", "POST"], ":profileId/:seg2?/:token?", async (c) => {
     // ---- Profile auth (RFC-style silent failures) ----
+    // Path shapes (NextDNS-parity: device between profile and token):
+    //   /v1/:id                  bare profile (token-free mode)
+    //   /v1/:id/:token           bare profile + token
+    //   /v1/:id/:device          token-free profile, device-tagged
+    //   /v1/:id/:device/:token   tokened profile, device-tagged
     const profileId = c.req.param("profileId");
     const token = c.req.param("token") as string | undefined;
+    const seg2 = c.req.param("seg2") as string | undefined;
 
-    if (!deps.store.hasProfile(profileId, token)) {
+    let device: string | null = null;
+    let effectiveToken: string | undefined = token;
+    if (seg2 !== undefined) {
+      if (token !== undefined) {
+        // 3 segments: seg2 = device, token = third
+        if (!DEVICE_RE.test(seg2)) return c.body(null, 404);
+        device = seg2;
+      } else if (deps.store.hasToken(profileId)) {
+        effectiveToken = seg2; // tokened profile, bare path
+      } else if (DEVICE_RE.test(seg2)) {
+        device = seg2; // token-free profile, device-tagged
+      } else {
+        return c.body(null, 404);
+      }
+    }
+
+    if (!deps.store.hasProfile(profileId, effectiveToken)) {
       return c.body(null, 404); // silent — never authenticate the attacker
+    }
+
+    if (device !== null) {
+      const isNew = deps.store.applyDeviceSeen(profileId, device);
+      if (isNew) deps.onNewDevice?.(profileId, device);
     }
     // ---- Extract wire-format query (RFC 8484) ----
     let queryWire: Uint8Array | undefined;
@@ -87,6 +121,7 @@ export function createDohApp(deps: DohAppDeps) {
         action: "override",
         rttMs: null,
         clientIp: clientAddr,
+        device,
       });
       deps.recorder?.recordQuery("forward");
       return c.body(zoneAnswer(question, zone), 200, {
@@ -103,6 +138,7 @@ export function createDohApp(deps: DohAppDeps) {
         action: "block",
         rttMs: null,
         clientIp: clientAddr,
+        device,
       });
       deps.recorder?.recordQuery("block");
       return c.body(sinkholeResponse(question), 200, {
@@ -119,6 +155,7 @@ export function createDohApp(deps: DohAppDeps) {
         action: "block",
         rttMs: null,
         clientIp: clientAddr,
+        device,
       });
       deps.recorder?.recordQuery("block");
       return c.body(sinkholeResponse(question), 200, {
@@ -152,6 +189,7 @@ export function createDohApp(deps: DohAppDeps) {
         action: "forward",
         rttMs: null,
         clientIp: clientAddr,
+        device,
       });
       deps.recorder?.recordQuery("forward");
       return c.body(servfailResponse(question), 200, {
@@ -166,6 +204,7 @@ export function createDohApp(deps: DohAppDeps) {
       action: "forward",
       rttMs,
       clientIp: clientAddr,
+      device,
     });
     deps.recorder?.recordQuery("forward");
     deps.recorder?.recordRtt(rttMs);

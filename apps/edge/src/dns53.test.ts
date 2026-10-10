@@ -106,15 +106,36 @@ describe("dns53 over real sockets", () => {
     await svc!.stop();
   });
 
-  test("unauthorized source dropped SILENTLY (no reply, no log)", async () => {
+  test("unauthorized source gets REFUSED by default (debuggable, never logged)", async () => {
     const deps = fakeDeps(null); // no whitelisted source
     const svc = await createDns53Service({ ...deps, host: "127.0.0.1", port: PORT2, tcp: false });
     const c = await client(PORT2);
     const reply = await c.ask(wireQuery("example.com"));
-    expect(reply).toBeUndefined(); // timeout = silence
-    expect(deps.logs).toHaveLength(0); // nothing processed
+    expect(reply).toBeDefined();
+    const p = decode(Buffer.from(reply!)) as { id: number; flags: number };
+    expect(p.id).toBe(2); // wireQuery id
+    expect(p.flags & 0x000f).toBe(5); // RCODE = REFUSED
+    expect(deps.logs).toHaveLength(0); // nothing processed, nothing logged
     await c.close();
     await svc!.stop();
+  });
+
+  test("unauthorized source dropped silently in silent mode", async () => {
+    const deps = fakeDeps(null);
+    const prev = process.env.UDP_UNKNOWN_SOURCE;
+    process.env.UDP_UNKNOWN_SOURCE = "silent";
+    try {
+      const svc = await createDns53Service({ ...deps, host: "127.0.0.1", port: PORT2, tcp: false });
+      const c = await client(PORT2);
+      const reply = await c.ask(wireQuery("example.com"));
+      expect(reply).toBeUndefined(); // timeout = silence
+      expect(deps.logs).toHaveLength(0);
+      await c.close();
+      await svc!.stop();
+    } finally {
+      if (prev === undefined) delete process.env.UDP_UNKNOWN_SOURCE;
+      else process.env.UDP_UNKNOWN_SOURCE = prev;
+    }
   });
 
   test("block + zone override flow over UDP", async () => {

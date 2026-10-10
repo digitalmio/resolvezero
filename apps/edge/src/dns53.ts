@@ -9,6 +9,7 @@ import {
   normalizeIp,
   sinkholeResponse,
   servfailResponse,
+  refusedResponse,
   truncatedResponse,
   zoneAnswer,
 } from "./wire";
@@ -142,9 +143,20 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
 
   /** Core decision pipeline shared by UDP+TCP. Pure enough for tests. */
   async function handlePacket(wire: Uint8Array, sourceIp: string): Promise<Uint8Array | null> {
-    // 1. Source-IP auth — unknown source: DROP SILENTLY (readme §4)
+    // 1. Source-IP auth — unknown source: REFUSED (default) or silent drop.
+    //    QueryLog events are NEVER emitted for unauthorized sources (privacy).
     const profileId = deps.store.authorizeSourceIp(sourceIp);
-    if (!profileId) return null;
+    if (!profileId) {
+      deps.recorder?.recordDrop("unauthorized_source");
+      if ((process.env.UDP_UNKNOWN_SOURCE ?? "refused") === "refused") {
+        try {
+          return refusedResponse(decodeQuestion(wire));
+        } catch {
+          return null; // unparseable packet stays silent even in refused mode
+        }
+      }
+      return null;
+    }
 
     // 2. Parse question — broken packet also gets silence
     let question;
@@ -157,14 +169,14 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     // 3. Zone override (split-horizon; user config wins, AAA/CNAME/etc.)
     const zone = deps.store.resolveZone(profileId, question.name, question.type as never);
     if (zone) {
-      deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp });
+      deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
       return zoneAnswer(question, zone);
     }
 
     // 4. Blocklist
     if (deps.store.resolve(profileId, question.name) === "block") {
-      deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp });
+      deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("block");
       return sinkholeResponse(question);
     }
@@ -183,13 +195,13 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
         deps.store.profileUpstream(profileId) ?? undefined,
       );
       deps.dnsCache.set(responseWire);
-      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs, clientIp: sourceIp });
+      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
       deps.recorder?.recordRtt(rttMs);
       return responseWire;
     } catch (err) {
       log.warn({ err, domain: question.name }, "upstream failed over UDP client");
-      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs: null, clientIp: sourceIp });
+      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
       return servfailResponse(question);
     }

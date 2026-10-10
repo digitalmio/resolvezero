@@ -71,6 +71,16 @@ export function servfailResponse(question: QuestionInfo): Uint8Array {
   });
 }
 
+/** REFUSED (RCODE 5): unauthorized source — standard "not serving you"; debuggable. */
+export function refusedResponse(question: QuestionInfo): Uint8Array {
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    flags: RESPONSE | RECURSION_DESIRED | RECURSION_AVAILABLE | 0x0005,
+    questions: [{ name: question.name, type: question.type }],
+  });
+}
+
 /** Truncated-cue response (UDP > ~1232 bytes): TC set, client retries via TCP. */
 export function truncatedResponse(question: QuestionInfo): Uint8Array {
   return wireEncode({

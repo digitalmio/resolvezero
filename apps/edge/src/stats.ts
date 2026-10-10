@@ -45,18 +45,20 @@ export function sumTotals(rows: { totalQueries: number; blocked: number; rttSumM
   };
 }
 
-export function mergeTop(lists: StatsTopEntry[][], keyName: "domain" | "clientIp", cap: number): StatsTopEntry[] {
+export function mergeTop(lists: StatsTopEntry[][], keyName: "domain" | "clientIp" | "device", cap: number): StatsTopEntry[] {
   const counts = new Map<string, number>();
   for (const list of lists) {
     for (const e of list ?? []) {
-      const k = keyName === "domain" ? e.domain : e.clientIp;
+      const k = keyName === "domain" ? e.domain : (e as { device?: string }).device;
       if (typeof k === "string") counts.set(k, (counts.get(k) ?? 0) + (e.count || 0));
     }
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, cap)
-    .map(([k, count]) => (keyName === "domain" ? { domain: k, count } : { clientIp: k, count }));
+    .map(([k, count]) =>
+      keyName === "domain" ? { domain: k, count } : keyName === "device" ? { device: k, count } : { clientIp: k, count },
+    );
 }
 
 /** Buckets raw points into a zero-filled grid of exactly-width buckets ending now. Pure — unit-tested. */
@@ -119,6 +121,7 @@ export function createStatsApp(deps: StatsDeps) {
       topDomains: StatsTopEntry[];
       topBlocked: StatsTopEntry[];
       topClients: StatsTopEntry[];
+      topDevices?: StatsTopEntry[];
     }[];
 
     try {
@@ -172,6 +175,7 @@ export function createStatsApp(deps: StatsDeps) {
       topBlocked: mergeTop(hourlyForTops.map((r) => r.topBlocked ?? []), "domain", limit),
       series,
       queriesPerClient: mergeTop(hourlyForTops.map((r) => r.topClients ?? []), "clientIp", limit),
+      queriesPerDevice: mergeTop(hourlyForTops.map((r) => r.topDevices ?? []), "device", limit),
     });
   });
 

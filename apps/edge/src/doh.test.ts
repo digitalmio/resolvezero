@@ -173,6 +173,114 @@ describe("DoH endpoint", () => {
   });
 });
 
+describe("device-tagged paths", () => {
+  test("token-free profile: /v1/:id/:device works and tags the log", async () => {
+    const logs: QueryLogEntry[] = [];
+    const newDevices: string[] = [];
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mockUpstream({}).upstream,
+      logQuery: (e) => logs.push(e),
+      onNewDevice: (p, d) => newDevices.push(`${p}/${d}`),
+    });
+    const res = await api.request(`/v1/${PROFILE}/maciejs-iphone-14`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("example.com"),
+    });
+    expect(res.status).toBe(200);
+    expect(logs[0]!.device).toBe("maciejs-iphone-14");
+    expect(newDevices).toEqual([`${PROFILE}/maciejs-iphone-14`]);
+  });
+
+  test("tokened profile: /v1/:id/:device/:token ; wrong token 404s", async () => {
+    const logs: QueryLogEntry[] = [];
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mockUpstream({}).upstream,
+      logQuery: (e) => logs.push(e),
+    });
+    const good = await api.request(`/v1/${TOKEN_PROFILE}/johns-laptop/s3cret`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("example.com"),
+    });
+    expect(good.status).toBe(200);
+    expect(logs[0]!.device).toBe("johns-laptop");
+
+    const bad = await api.request(`/v1/${TOKEN_PROFILE}/johns-laptop/wrong`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("example.com"),
+    });
+    expect(bad.status).toBe(404);
+  });
+
+  test("tokened profile: 2-segment path still means token (not device)", async () => {
+    const logs: QueryLogEntry[] = [];
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mockUpstream({}).upstream,
+      logQuery: (e) => logs.push(e),
+    });
+    // seg2 looks like a device name, but the profile is tokened → treated as token
+    const res = await api.request(`/v1/${TOKEN_PROFILE}/abc`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("example.com"),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  test("invalid device slug → 404 (never logged)", async () => {
+    const logs: QueryLogEntry[] = [];
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mockUpstream({}).upstream,
+      logQuery: (e) => logs.push(e),
+    });
+    const res = await api.request(`/v1/${PROFILE}/bad%20device/`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("example.com"),
+    });
+    // space encoded is fine — test truly invalid: >32 chars
+    const tooLong = "a".repeat(33);
+    const res2 = await api.request(`/v1/${PROFILE}/${tooLong}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("example.com"),
+    });
+    expect(res2.status).toBe(404);
+    expect(logs).toHaveLength(0);
+  });
+
+  test("applyDeviceSeen dedupes: second query not flagged as new", async () => {
+    const logs: QueryLogEntry[] = [];
+    const newDevices: string[] = [];
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mockUpstream({}).upstream,
+      logQuery: (e) => logs.push(e),
+      onNewDevice: (_p, d) => newDevices.push(d),
+    });
+    const req = () =>
+      api.request(`/v1/${PROFILE}/phone`, {
+        method: "POST",
+        headers: { "content-type": "application/dns-message" },
+        body: wireQuery("example.com"),
+      });
+    await req();
+    await req();
+    expect(newDevices).toEqual(["phone"]); // only once despite 2 queries
+  });
+});
+
 describe("zone overrides", () => {
   const ZP = "33333333-3333-3333-3333-333333333333";
   const profiles = [

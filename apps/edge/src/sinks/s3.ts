@@ -197,6 +197,8 @@ export function lineFor(row: QueryLogRow): Record<string, unknown> {
     action: row.action,
     rttMs: row.rttMs,
     clientIp: row.clientIp,
+    // omit device:null — keep the raw-log schema minimal for tokenless queries
+    ...(row.device ? { device: row.device } : {}),
     region: process.env.FLY_REGION ?? "local", // which PoP served this query
   };
 }

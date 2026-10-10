@@ -46,6 +46,18 @@ describe("metrics endpoints", () => {
     expect(body).toContain("rz_cpu_percent");
     expect(body).toContain("rz_queries_total");
     expect(body).toContain("rz_query_rtt_ms");
+    expect(body).toContain("rz_dropped_total");
+  });
+
+  test("recordDrop increments rz_dropped_total with reason label", async () => {
+    const reg = new Registry();
+    const { recorder } = createHealthApp({ registry: reg });
+    recorder.recordDrop("unauthorized_source");
+    recorder.recordDrop("unauthorized_source");
+    recorder.recordDrop("malformed");
+    const body = await reg.metrics();
+    expect(body).toContain('rz_dropped_total{reason="unauthorized_source"} 2');
+    expect(body).toContain('rz_dropped_total{reason="malformed"} 1');
   });
 
   test("default registry path also collects default process metrics", async () => {

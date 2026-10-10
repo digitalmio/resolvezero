@@ -16,6 +16,7 @@ const row = (over: Partial<QueryLogRow> = {}): QueryLogRow => ({
   action: "forward",
   rttMs: 33,
   clientIp: "10.0.0.5",
+  device: null,
   loggedAt: new Date("2026-10-08T08:10:30Z"),
   ...over,
 });

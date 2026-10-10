@@ -7,6 +7,7 @@ const entry = (over: Partial<QueryLogEntry> = {}): QueryLogEntry => ({
   action: "forward",
   rttMs: 42,
   clientIp: "10.0.0.9",
+  device: null,
   ...over,
 });
 

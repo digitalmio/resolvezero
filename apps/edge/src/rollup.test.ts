@@ -14,10 +14,31 @@ const row = (over: Partial<QueryLogRow> & { loggedAt: Date }): QueryLogRow => ({
   action: "forward",
   rttMs: 20,
   clientIp: "10.0.0.9",
+  device: null,
   ...over,
 });
 
 const H8 = hourFloor(new Date("2026-10-08T08:37:12Z")); // 08:00:00
+
+describe("device rollup (pure)", () => {
+  test("aggregate buckets device counts", () => {
+    const agg = aggregate([
+      row({ loggedAt: H8, device: "phone", domain: "a.com" }),
+      row({ loggedAt: H8, device: "phone", domain: "b.com" }),
+      row({ loggedAt: H8, device: null, domain: "c.com" }),
+    ]);
+    const bucket = [...agg.values()][0]!;
+    expect(bucket.devices.get("phone")).toBe(2);
+    expect(bucket.devices.has("c.com")).toBe(false);
+  });
+
+  test("toTopEntries supports device key", () => {
+    const m = new Map<string, number>([["phone", 5], ["laptop", 2]]);
+    const out = toTopEntries(m, 10, "device");
+    expect(out[0]).toEqual({ device: "phone", count: 5 });
+  });
+});
+
 
 describe("rollup pure helpers", () => {
   test("hourFloor truncates to the hour (UTC)", () => {

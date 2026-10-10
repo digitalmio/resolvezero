@@ -7,6 +7,7 @@ export interface QueryLogEntry {
   action: "block" | "allow" | "forward" | "override";
   rttMs: number | null;
   clientIp: string | null;
+  device: string | null;
 }
 
 export interface QueryLogRow extends QueryLogEntry {

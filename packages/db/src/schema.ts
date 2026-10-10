@@ -69,6 +69,28 @@ export const profileZones = pgTable(
   (t) => [primaryKey({ columns: [t.profileId, t.domain, t.recordType] })],
 );
 
+/**
+ * Devices seen per profile (lazy-created on first device-tagged DoH query).
+ * The edge inserts on first sight; the dashboard later reads/renames.
+ * slug stays the raw client-provided tag (≤64 chars, url-safe charset).
+ */
+export const profileDevices = pgTable(
+  "profile_devices",
+  {
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id),
+    slug: varchar("slug", { length: 64 }).notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.profileId, t.slug] })],
+);
+
 // Optional UDP ingress whitelist per profile (routers / legacy devices)
 export const profileSourceIps = pgTable("profile_source_ips", {
   ipAddress: inet("ip_address").primaryKey(),
@@ -81,6 +103,7 @@ export const profileSourceIps = pgTable("profile_source_ips", {
 export interface StatsTopEntry {
   domain?: string;
   clientIp?: string;
+  device?: string;
   count: number;
 }
 
@@ -111,6 +134,8 @@ export const statsHourly = pgTable(
     topBlocked: jsonb("top_blocked").$type<StatsTopEntry[]>().notNull().default(sql`'[]'::jsonb`),
     /** Capped at 50 */
     topClients: jsonb("top_clients").$type<StatsTopEntry[]>().notNull().default(sql`'[]'::jsonb`),
+    /** Capped at 50 — device slugs from device-tagged DoH paths */
+    topDevices: jsonb("top_devices").$type<StatsTopEntry[]>().notNull().default(sql`'[]'::jsonb`),
   },
   (t) => [
     // one row per profile per hour — the rollup writer upserts on this

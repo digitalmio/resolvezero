@@ -68,6 +68,8 @@ export class RuleStore {
   private remoteBlocks = new Map<string, Set<string>>();
   /** profile_id -> remote allowlist domains (blocklist `@@` exceptions; win first). */
   private remoteAllows = new Map<string, Set<string>>();
+  /** profile_id -> set of device slugs seen (dedupe for lazy DB write-behind). */
+  private seenDevices = new Map<string, Set<string>>();
 
   /**
    * Atomically replace the parsed remote blocklists for a profile and
@@ -274,6 +276,25 @@ export class RuleStore {
       return;
     }
     this.authorizedSourceIps.set(event.ip_address, event.profile_id);
+  }
+
+  /** Does a profile carry a DoH token? (path-shape disambiguation helper) */
+  hasToken(profileId: string): boolean {
+    const stored = this.profileTokens.get(profileId);
+    return stored !== undefined && stored !== null;
+  }
+
+  /** Device-seen registry: dedupes lazy device row inserts.
+   *  Unbounded by design (device slugs, per user call); revisit with quotas. */
+  applyDeviceSeen(profileId: string, device: string): boolean {
+    let set = this.seenDevices.get(profileId);
+    if (!set) {
+      set = new Set();
+      this.seenDevices.set(profileId, set);
+    }
+    if (set.has(device)) return false;
+    set.add(device);
+    return true;
   }
 
   get stats() {

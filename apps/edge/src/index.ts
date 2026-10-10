@@ -1,5 +1,6 @@
 import { Hono } from "hono";
-import { ensureRuleNotifyTrigger } from "@resolvezero/db/client";
+import { ensureRuleNotifyTrigger, db } from "@resolvezero/db/client";
+import { profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
 import { QueryLogBatcher } from "./batcher";
 import { createDohApp, type QueryLogEntry } from "./doh";
@@ -109,7 +110,26 @@ const app = new Hono()
   .route("/", createAdminApp({ store, blocklists }))
   .route("/", createStatsApp({ store }))
   .route("/", createLogsApp({ store, client: s3Client, prefix: LOG_PREFIX }))
-  .route("/", createDohApp({ store, dnsCache, upstream: { resolveWire }, logQuery, recorder }));
+  .route("/", createDohApp(
+    {
+      store,
+      dnsCache,
+      upstream: { resolveWire },
+      logQuery,
+      recorder,
+      onNewDevice(profileId, slug) {
+        // lazy device registration — one insert per new (profile, device)
+        void db
+          .insert(profileDevices)
+          .values({ profileId, slug })
+          .onConflictDoUpdate({
+            target: [profileDevices.profileId, profileDevices.slug],
+            set: { lastSeenAt: new Date() },
+          })
+          .catch((err) => log.warn({ err, profileId, slug }, "device insert failed"));
+      },
+    }),
+  );
 
 // Port-53 ingress (Deco/router path) — UDP on fly-global-services. Skipped
 // locally when the bind fails (no root); decided by DNS53_ENABLED=0.

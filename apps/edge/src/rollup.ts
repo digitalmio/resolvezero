@@ -5,6 +5,7 @@ import type { QueryLogRow } from "./batcher";
 
 export const MAX_TOP_DOMAINS = 200;
 export const MAX_TOP_CLIENTS = 50;
+export const MAX_TOP_DEVICES = 50;
 export const MAX_TOP_BLOCKED = 100;
 
 /** Rows older than this in stats_minute are pruned by the daily job. */
@@ -19,6 +20,7 @@ interface BucketAgg {
   rttCount: number;
   domains: Map<string, number>;
   clients: Map<string, number>;
+  devices: Map<string, number>;
   blockedDomains: Map<string, number>;
 }
 
@@ -107,6 +109,7 @@ export function aggregate(rows: QueryLogRow[]): Map<string, BucketAgg> {
         rttCount: 0,
         domains: new Map(),
         clients: new Map(),
+        devices: new Map(),
         blockedDomains: new Map(),
       };
       buckets.set(key, agg);
@@ -121,6 +124,7 @@ export function aggregate(rows: QueryLogRow[]): Map<string, BucketAgg> {
       agg.rttCount++;
     }
     if (row.clientIp) incr(agg.clients, row.clientIp);
+    if (row.device) incr(agg.devices, row.device);
     incr(agg.domains, row.domain);
   }
   return buckets;
@@ -137,18 +141,20 @@ type TopEntry = StatsTopEntry;
 export function toTopEntries(
   map: Map<string, number>,
   cap: number,
-  keyName: "domain" | "clientIp",
+  keyName: "domain" | "clientIp" | "device",
 ): TopEntry[] {
   return [...map.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, cap)
-    .map(([k, count]) => (keyName === "domain" ? { domain: k, count } : { clientIp: k, count }));
+    .map(([k, count]) =>
+      keyName === "domain" ? { domain: k, count } : keyName === "clientIp" ? { clientIp: k, count } : { device: k, count },
+    );
 }
 
 /** Adds counts from `entries` into map `a`. Pure — unit-tested. */
-export function mergeTopEntries(a: Map<string, number>, entries: StatsTopEntry[], keyName: "domain" | "clientIp"): void {
+export function mergeTopEntries(a: Map<string, number>, entries: StatsTopEntry[], keyName: "domain" | "clientIp" | "device"): void {
   for (const e of entries ?? []) {
-    const k = keyName === "domain" ? e.domain : e.clientIp;
+    const k = keyName === "domain" ? e.domain : keyName === "device" ? e.device : e.clientIp;
     if (typeof k === "string") incr(a, k, e.count);
   }
 }
@@ -168,16 +174,20 @@ const prev = existing[0] ?? {
   topDomains: [] as StatsTopEntry[],
   topBlocked: [] as StatsTopEntry[],
   topClients: [] as StatsTopEntry[],
+  topDevices: [] as StatsTopEntry[],
 };
 
   const domains = new Map<string, number>();
   const clients = new Map<string, number>();
+  const devices = new Map<string, number>();
   const blockedDomains = new Map<string, number>();
   mergeTopEntries(domains, prev.topDomains, "domain");
   mergeTopEntries(clients, prev.topClients, "clientIp");
+  mergeTopEntries(devices, prev.topDevices ?? [], "device");
   mergeTopEntries(blockedDomains, prev.topBlocked, "domain");
   for (const [k, v] of agg.domains) incr(domains, k, v);
   for (const [k, v] of agg.clients) incr(clients, k, v);
+  for (const [k, v] of agg.devices) incr(devices, k, v);
   for (const [k, v] of agg.blockedDomains) incr(blockedDomains, k, v);
 
   const values = {
@@ -190,6 +200,7 @@ const prev = existing[0] ?? {
     topDomains: toTopEntries(domains, MAX_TOP_DOMAINS, "domain"),
     topBlocked: toTopEntries(blockedDomains, MAX_TOP_BLOCKED, "domain"),
     topClients: toTopEntries(clients, MAX_TOP_CLIENTS, "clientIp"),
+    topDevices: toTopEntries(devices, MAX_TOP_DEVICES, "device"),
   };
 
   await db
@@ -205,6 +216,7 @@ const prev = existing[0] ?? {
         topDomains: values.topDomains,
         topBlocked: values.topBlocked,
         topClients: values.topClients,
+        topDevices: values.topDevices,
       },
     });
 }
