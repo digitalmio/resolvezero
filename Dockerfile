@@ -2,6 +2,9 @@ FROM oven/bun:1-slim
 
 # App entrypoint override (fly.toml build-args; defaults to the edge)
 ARG ENTRY=apps/edge/src/index.ts
+# ARG values are build-time only; ENV makes the entrypoint resolvable at RUN
+# (CMD shell form expands $ENTRY at container start).
+ENV APP_ENTRY=$ENTRY
 
 WORKDIR /app
 
@@ -22,4 +25,4 @@ COPY apps/control apps/control
 ENV NODE_ENV=production
 EXPOSE 8080 53 53/udp
 
-CMD bun run $ENTRY
+CMD bun run $APP_ENTRY

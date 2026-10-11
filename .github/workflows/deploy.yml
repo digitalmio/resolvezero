@@ -64,6 +64,15 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_REGIONS: fra lhr
           FLY_SCALE: 1
+      - name: smoke — post-deploy healthz gate
+        run: |
+          sleep 20
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 https://resolvezero-edge.fly.dev/healthz)
+          echo "healthz: $code"
+          if [ "$code" != "204" ]; then
+            echo "::error::edge failed post-deploy health check (Code $code) — see fly logs / machine state"
+            exit 1
+          fi
 
   deploy-control:
     name: deploy-control
@@ -79,4 +88,13 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_REGIONS: fra
           FLY_SCALE: 1
-          FLY_CONFIG: configs-are-root/*.toml
+          FLY_CONFIG: fly.control.toml
+      - name: smoke — control /api/healthz gate
+        run: |
+          sleep 20
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 https://resolvezero-control.fly.dev/api/healthz)
+          echo "healthz: $code"
+          if [ "$code" != "204" ]; then
+            echo "::error::control failed post-deploy health check (Code $code)"
+            exit 1
+          fi
