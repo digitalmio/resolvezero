@@ -26,7 +26,10 @@ export interface QueryLogEntry {
 }
 
 export interface Upstream {
-  resolveWire(wire: Uint8Array, upstreamUrl?: string): Promise<{ wire: Uint8Array; rttMs: number }>;
+  resolveWire(
+    wire: Uint8Array,
+    upstreamUrl?: string,
+  ): Promise<{ wire: Uint8Array<ArrayBuffer>; rttMs: number }>;
 }
 
 export interface DohAppDeps {
@@ -173,7 +176,7 @@ export function createDohApp(deps: DohAppDeps) {
 
     // ---- Forward upstream over DoH (per-profile upstream choice) ----
     let rttMs: number;
-    let responseWire: Uint8Array;
+    let responseWire: Uint8Array<ArrayBuffer>;
     try {
       const result = await deps.upstream.resolveWire(
         queryWire,

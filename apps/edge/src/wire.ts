@@ -31,7 +31,7 @@ export function decodeQuestion(wire: Uint8Array): QuestionInfo {
 }
 
 /** Sinkhole (blocked): A → 0.0.0.0, AAAA → ::, other qtypes → empty NOERROR. */
-export function sinkholeResponse(question: QuestionInfo): Uint8Array {
+export function sinkholeResponse(question: QuestionInfo): WireBytes {
   const answers =
     question.type === "A"
       ? [{ name: question.name, type: "A" as const, class: "IN" as const, ttl: SINKHOLE_TTL, data: "0.0.0.0" }]
@@ -56,12 +56,19 @@ export interface WirePacket {
   answers: unknown;
 }
 
-export function wireEncode(packet: object): Uint8Array {
-  return new Uint8Array(encode(packet as never));
+/** Wire-format byte width we hand to/in from helpers — TS>=5.7 generics need
+ *  an explicit ArrayBuffer backing to satisfy BodyInit-style overloads. */
+export type WireBytes = Uint8Array<ArrayBuffer>;
+
+export function wireEncode(packet: object): WireBytes {
+  const raw = encode(packet as never);
+  const out = new ArrayBuffer(raw.length);
+  new Uint8Array(out).set(raw);
+  return new Uint8Array(out);
 }
 
 /** SERVFAIL: upstream unavailable — the client stub resolver will retry. */
-export function servfailResponse(question: QuestionInfo): Uint8Array {
+export function servfailResponse(question: QuestionInfo): WireBytes {
   return wireEncode({
     id: question.id,
     type: "response",
@@ -72,7 +79,7 @@ export function servfailResponse(question: QuestionInfo): Uint8Array {
 }
 
 /** REFUSED (RCODE 5): unauthorized source — standard "not serving you"; debuggable. */
-export function refusedResponse(question: QuestionInfo): Uint8Array {
+export function refusedResponse(question: QuestionInfo): WireBytes {
   return wireEncode({
     id: question.id,
     type: "response",
@@ -82,7 +89,7 @@ export function refusedResponse(question: QuestionInfo): Uint8Array {
 }
 
 /** Truncated-cue response (UDP > ~1232 bytes): TC set, client retries via TCP. */
-export function truncatedResponse(question: QuestionInfo): Uint8Array {
+export function truncatedResponse(question: QuestionInfo): WireBytes {
   return wireEncode({
     id: question.id,
     type: "response",
@@ -95,7 +102,7 @@ export function truncatedResponse(question: QuestionInfo): Uint8Array {
 export function zoneAnswer(
   question: QuestionInfo,
   zone: ZoneAnswer,
-): Uint8Array {
+): WireBytes {
   const answers = zone.values.map((value) => {
     const base = { name: question.name, class: "IN" as const, ttl: zone.ttl };
     switch (zone.recordType) {

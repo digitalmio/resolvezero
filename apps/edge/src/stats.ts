@@ -12,14 +12,16 @@ import { moduleLogger } from "./logger";
  *   30d → daily   (stats_hourly)      90d → daily  (stats_hourly)
  * Minute rows live ≤ 6h (pruned), so short ranges never touch the other table.
  */
-export const RANGE_CONFIG = {
+export type RangeConfigEntry = { ms: number; bucketMs: number; source: "minute" | "hour" };
+export type RangeConfigMap = Record<string, RangeConfigEntry>;
+export const RANGE_CONFIG: RangeConfigMap = {
   "30m": { ms: 30 * 60_000, bucketMs: 60_000, source: "minute" },
   "6h": { ms: 6 * 3_600_000, bucketMs: 15 * 60_000, source: "minute" },
   "24h": { ms: 24 * 3_600_000, bucketMs: 3_600_000, source: "hour" },
   "7d": { ms: 7 * 86_400_000, bucketMs: 6 * 3_600_000, source: "hour" },
   "30d": { ms: 30 * 86_400_000, bucketMs: 86_400_000, source: "hour" },
   "90d": { ms: 90 * 86_400_000, bucketMs: 86_400_000, source: "hour" },
-} as const;
+};
 
 export type RangeKey = keyof typeof RANGE_CONFIG;
 

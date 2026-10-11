@@ -11,7 +11,7 @@ import { decode, type Packet } from "dns-packet";
  * (includes negative/SOA TTLs for NXDOMAIN), capped at 24h.
  */
 export class DnsCache {
-  private cache = new LRUCache<string, Uint8Array>({
+  private cache = new LRUCache<string, Uint8Array<ArrayBuffer>>({
     max: 100_000,
     maxSize: 50 * 1024 * 1024,
     sizeCalculation(v) {
@@ -19,7 +19,7 @@ export class DnsCache {
     },
   });
 
-  get(wire: Uint8Array): Uint8Array | undefined {
+  get(wire: Uint8Array): Uint8Array<ArrayBuffer> | undefined {
     const key = questionKey(wire);
     if (!key) return undefined;
     const cached = this.cache.get(key);
@@ -27,7 +27,7 @@ export class DnsCache {
     return cached ? withTransactionId(cached, wire) : undefined;
   }
 
-  set(wire: Uint8Array): void {
+  set(wire: Uint8Array<ArrayBuffer>): void {
     const key = questionKey(wire);
     const packet = safeDecode(wire);
     if (!key || !packet) return;
@@ -81,9 +81,13 @@ function minTtl(packet: Packet): number {
   return min * 1000;
 }
 
-function withTransactionId(source: Uint8Array, query: Uint8Array): Uint8Array {
-  const copy = new Uint8Array(source);
-  copy[0] = query[0];
-  copy[1] = query[1];
+function withTransactionId(
+  source: Uint8Array<ArrayBuffer>,
+  query: Uint8Array,
+): Uint8Array<ArrayBuffer> {
+  const copy = new Uint8Array(source.length);
+  copy.set(source);
+  copy[0] = query[0]!;
+  copy[1] = query[1]!;
   return copy;
 }

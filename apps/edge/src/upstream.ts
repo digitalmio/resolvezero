@@ -26,7 +26,8 @@ export function defaultUpstreamUrl(): string {
 }
 
 export interface UpstreamResult {
-  wire: Uint8Array;
+  /** Backed by a dedicated ArrayBuffer (TS5.7 generics; BodyInit-safe). */
+  wire: Uint8Array<ArrayBuffer>;
   rttMs: number;
 }
 
@@ -61,5 +62,5 @@ export async function resolveWire(
   if (!response._data) {
     throw new Error("empty upstream response");
   }
-  return { wire: new Uint8Array(response._data as ArrayBuffer), rttMs };
+  return { wire: new Uint8Array(response._data as ArrayBuffer) as Uint8Array<ArrayBuffer>, rttMs };
 }

@@ -10,5 +10,8 @@
     "db:migrate": "bun run --filter '@resolvezero/db' db:migrate",
     "db:push": "bun run --filter '@resolvezero/db' db:push",
     "db:studio": "bun run --filter '@resolvezero/db' db:studio"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
   }
 }

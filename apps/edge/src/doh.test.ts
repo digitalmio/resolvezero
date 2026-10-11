@@ -5,15 +5,16 @@ import { DnsCache } from "./dnsCache";
 import { RuleStore } from "./ruleStore";
 
 // Build a wire-format question: queryId(payload bytes) for "example.com A"
-function wireQuery(name: string, type = "A"): Uint8Array {
-  return new Uint8Array(
-    encode({
-      id: 0x1234,
-      type: "query",
-      flags: 0x0100, // RD
-      questions: [{ name, type }],
-    } as never),
-  );
+function wireQuery(name: string, type = "A"): Uint8Array<ArrayBuffer> {
+  const wire = encode({
+    id: 0x1234,
+    type: "query",
+    flags: 0x0100, // RD
+    questions: [{ name, type }],
+  } as never);
+  const out = new ArrayBuffer(wire.length);
+  new Uint8Array(out).set(wire);
+  return new Uint8Array(out);
 }
 
 const STORE_FIXTURE = () => {
@@ -38,20 +39,23 @@ function mockUpstream(responses: Record<string, string[]>): { upstream: Upstream
       const name = String(packet.questions?.[0]?.name ?? "?");
       calls.push(name);
       const ips = responses[name] ?? ["93.184.216.34"]; // default fake A
+      const encoded = encode({
+        id: wire[0]! << 8 | wire[1]!,
+        type: "response",
+        flags: 0x8180,
+        questions: packet.questions,
+        answers: ips.map((ip) => ({
+          name,
+          type: "A" as const,
+          class: "IN" as const,
+          ttl: 300,
+          data: ip,
+        })),
+      } as never);
+      const ab = new ArrayBuffer(encoded.length);
+      new Uint8Array(ab).set(encoded);
       return {
-        wire: new Uint8Array(encode({
-          id: wire[0]! << 8 | wire[1]!,
-          type: "response",
-          flags: 0x8180,
-          questions: packet.questions,
-          answers: ips.map((ip) => ({
-            name,
-            type: "A" as const,
-            class: "IN" as const,
-            ttl: 300,
-            data: ip,
-          })),
-        } as never)),
+        wire: new Uint8Array(ab) as Uint8Array<ArrayBuffer>,
         rttMs: 1,
       };
     },
@@ -288,7 +292,9 @@ describe("zone overrides", () => {
     { id: ZP, dohToken: null, logQueries: true, upstream: "google" },
   ];
 
-  function zoneApp(client: { resolveWire(w: Uint8Array, u?: string): Promise<{ wire: Uint8Array; rttMs: number }> }) {
+  function zoneApp(client: {
+    resolveWire(w: Uint8Array, u?: string): Promise<{ wire: Uint8Array<ArrayBuffer>; rttMs: number }>;
+  }) {
     const store = new RuleStore();
     store.replaceAll(
       [{ profileId: ZP, domain: "danger.com", action: "block" }], // blocklist hit co-testing
