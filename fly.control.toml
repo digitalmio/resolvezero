@@ -7,7 +7,9 @@ primary_region = "fra"
 
 [build]
   dockerfile = "Dockerfile"
-  [build.build_args]
+  # NOTE: section is `args` (NOT build_args) — flyctl ignores unknown keys
+  # silently, which made the image default to the edge entrypoint (#1 crash).
+  [build.args]
     ENTRY = "apps/control/src/index.ts"
 
 [env]
