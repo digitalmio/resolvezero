@@ -1,0 +1,64 @@
+# resolvezero CI/CD — push to main builds, tests, migrates, deploys.
+# Docs: readme.md §7 (Pipeline). MR-only enforcement flips on at
+# productionalization (same checklist as hosted launch).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: install
+        run: bun install --frozen-lockfile
+      - name: typecheck (edge)
+        run: bunx tsc -p apps/edge
+      - name: typecheck (db)
+        run: bunx tsc -p packages/db
+      - name: tests
+        run: bun test
+
+  migrate:
+    name: migrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: install
+        run: bun install --frozen-lockfile
+      - name: migrate (drizzle + NOTIFY triggers, idempotent)
+        run: bun apps/edge/scripts/migrate.ts
+        env:
+          DATABASE_URL_ADMIN: ${{ secrets.DB_ADMIN_URL }}
+
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: migrate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: deploy (fra + lhr, warm machines)
+        run: ./scripts/deploy.sh
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_REGIONS: fra lhr
+          FLY_SCALE: 1
