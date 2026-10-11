@@ -19,6 +19,75 @@ const inet = customType<{ data: string; driverData: string }>({
   },
 });
 
+// ---- Better-Auth tables (login-first phase, readme §4a) ----
+// Shapes mirror @better-auth/core 1.7 db contract exactly (drizzle adapter).
+// IDs are strings (better-auth generates uuids) — do NOT "fix" these to uuid
+// FK types, the adapter treats ids as text.
+
+const baText = (name: string) => varchar(name, { length: 255 });
+
+export const user = pgTable("user", {
+  id: baText("id").primaryKey(),
+  name: baText("name").notNull(),
+  email: baText("email").notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: baText("image"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const session = pgTable(
+  "session",
+  {
+    id: baText("id").primaryKey(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    token: baText("token").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    ipAddress: baText("ip_address"),
+    userAgent: baText("user_agent"),
+    userId: baText("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (t) => [index("session_user_idx").on(t.userId)],
+);
+
+export const account = pgTable(
+  "account",
+  {
+    id: baText("id").primaryKey(),
+    accountId: baText("account_id").notNull(),
+    providerId: baText("provider_id").notNull(),
+    userId: baText("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accessToken: baText("access_token"),
+    refreshToken: baText("refresh_token"),
+    idToken: baText("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+    scope: baText("scope"),
+    password: baText("password"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("account_user_idx").on(t.userId)],
+);
+
+export const verification = pgTable(
+  "verification",
+  {
+    id: baText("id").primaryKey(),
+    identifier: baText("identifier").notNull(),
+    value: baText("value").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("verification_identifier_idx").on(t.identifier)],
+);
+
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -29,6 +98,10 @@ export const profiles = pgTable("profiles", {
   upstream: varchar("upstream", { length: 50 }),
   /** Custom upstream DoH URL — wins over `upstream` preset when set (self-hosters). */
   upstreamUrl: varchar("upstream_url", { length: 255 }),
+  /** Owning account (better-auth user id) — nullable until hosted launch flips NOT NULL. */
+  ownerUserId: varchar("owner_user_id", { length: 255 }).references(() => user.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

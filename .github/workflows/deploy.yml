@@ -28,6 +28,8 @@ jobs:
         run: bunx tsc -p apps/edge
       - name: typecheck (db)
         run: bunx tsc -p packages/db
+      - name: typecheck (control)
+        run: bunx tsc -p apps/control
       - name: tests
         run: bun test
 
@@ -62,3 +64,19 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_REGIONS: fra lhr
           FLY_SCALE: 1
+
+  deploy-control:
+    name: deploy-control
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: migrate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: deploy control (fra)
+        run: ./scripts/deploy.sh
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_REGIONS: fra
+          FLY_SCALE: 1
+          FLY_CONFIG: configs-are-root/*.toml
