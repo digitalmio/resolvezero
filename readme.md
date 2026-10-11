@@ -172,6 +172,24 @@ FOR EACH ROW EXECUTE FUNCTION notify_rule_change();
 
 ## 7. Deployment Notes (hosted)
 
+### CI/CD pipeline (GitHub Actions, readme §7)
+
+`.github/workflows/deploy.yml` — one run per push to `main`:
+
+```
+push main → test (tsc edge/db + bun test) → migrate (drizzle+triggers, idempotent) → deploy (fra+lhr via scripts/deploy.sh)
+```
+
+* Secrets: `DATABASE_URL_ADMIN` (migrations only, never runtime) + `FLY_API_TOKEN` (app-scoped). Runtime secrets (`DATABASE_URL`, `S3_*`) stay in Fly.
+* `concurrency: deploy` — no overlapping deploys; migrate runs BEFORE deploy so additive migrations exist before the new edge boots.
+* `scripts/deploy.sh` auto-detects `fly` (local) vs `flyctl` (CI binary name).
+* Prod sweep from the first green run: healthz 204; DoH forward/sinkhole/zone answers green; `top_devices` rollups writing; check-lists 41k remote entries ok.
+* **Productionalization checklist (pipe-related):**
+    * [ ] Flip to MR-only: require PRs + `enforce_admins` in branch protection (GitHub Pro needed for required-checks on a private repo — free tier rejected our `PUT /branches/main/protection`; unlock by GitHub Pro or making the repo public).
+    * [ ] Add `apps/control` + dashboard deploy jobs to the same workflow.
+    * [ ] Smoke test job (post-deploy DoH probe) auto-rollback on failure (currently manual re-run only).
+    * [ ] Release notes/bot on tags if/when releasing versions.
+
 * One Fly app = one edge binary; deploy per region (anycast handles routing). `scripts/deploy.sh` pushes to every region in `FLY_REGIONS` and sizes machines via `FLY_SCALE`.
 * `fly.toml`: three dedicated anycast IPv4s (`66.51.122.23` era replaced by the 37.16.x trio), HTTP/TLS handled by Fly for DoH, port 53 TCP+UDP services enabled for router ingress.
 * **Published addresses (Miral IP set):**
