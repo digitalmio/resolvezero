@@ -71,11 +71,13 @@ Every query must be authenticated before processing. Unauthenticated/unknown UDP
     * Optional per profile; checked against `senderAddress` (Fly preserves the real client IP). Unknown source → REFUSED (above). Since UDP source IPs are spoofable, apply a per-source rate limit / penalty box in front of policy checks.
 3. **What's deliberately NOT here:** per-tenant dedicated Anycast IPs. (Fly rewrites all of an app's UDP destinations to `fly-global-services`, so destination-based identity is impossible; per-tenant infra would mean one app per profile — pointless for a personal product.)
 
-### 4a. Accounts (planned — dashboard slice 0)
+### 4a. Accounts (login-first SHIPPED — `apps/control`)
 
-* **Better Auth, GitHub OAuth first (no email flows)** — Better Auth owns `user`/`session`/`account`/`verification` tables (CLI-generated); we add `profiles.owner_user_id uuid FK -> user.id` (nullable now, NOT NULL at hosted launch) and auto-generate `doh_token` at profile creation (token-free mode disappears).
+* **Status:** `apps/control` deploys `resolvezero-control` (fra). Better Auth 1.7 (GitHub OAuth only, no email flows) owns `user`/`session`/`account`/`verification` tables (migration 0003, shapes mirror @better-auth/core exactly — text ids, cascade FKs). `GET /api/me` is the post-login smoke route; profile CRUD + auto-profiles are PARKED until the app-design session.
+* **Auth flow**: `/api/auth/sign-in/github` → consent → callback → session cookie (server crypto via `BETTER_AUTH_SECRET`). `TRUSTED_ORIGINS` env gates redirect targets; CORS is dev-open (`CORS_ORIGINS=*` default) until the UI lands, tightened at productionalization.
 * Mutations (rules/zones/blocklists/profile CRUD) move to the control-plane API (dashboard app); the edge stays a token-authed data plane consuming NOTIFYs only.
 * Linked-IP (parity with NextDNS): dashboard button + `?ip=` update URL (both live); later: DDNS hostname re-resolution; multi-profile-per-IP later via **per-profile anycast IP pools** (NextDNS pattern — not dedicated per-user IPs). Tailscale hardcodes DoH for NextDNS/ControlD only (ts#15724) — not supported by design; OS-native DoH profiles are our path.
+* Deployed via the shared pipeline: `deploy-control` job (FLY_CONFIG=fly.control.toml), same migrate-first ordering as the edge.
 * Deferred: teams/sharing, billing/quotas, per-profile rate limits.
 
 ### 4b. DNS-over-TLS (planned)
