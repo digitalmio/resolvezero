@@ -1,22 +1,11 @@
-# Sentinel: catches Fly-host zombies + image drift the way the LHR incident
-# did (host unreachable → machine wedged → silently evades deploys).
-# Every 10 min:
-#   1. healthz must be 204 (any region serves via anycast)
-#   2. every machine must be healthy (checks non-empty) on the LATEST image
-#      — a wedged machine (unreachable host shows empty+old image) is
-#      force-destroyed and recreated via `fly scale count`, matching the
-#      documented runbook (readme §7).
-# On failure: opens/updates a GitHub issue so nothing heals silently.
+# Sentinel — every 10 min: probe the edge; if a Fly-host zombie is detected,
+# recreate that region per the runbook (readme §7). Failure notifications are
+# GitHub's built-in (email on failed scheduled run) — no custom alerting.
 name: sentinel
 
 on:
   schedule:
     - cron: "*/10 * * * *"
-  workflow_dispatch:
-
-concurrency:
-  group: sentinel
-  cancel-in-progress: false
 
 jobs:
   watch:
@@ -25,73 +14,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: probe + reconcile
-        id: probe
+      - name: probe + self-heal
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          set -uo pipefail
           FLYBIN=flyctl
           command -v flyctl >/dev/null 2>&1 || FLYBIN=fly
-          fail=""
+
           healthz=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://resolvezero-edge.fly.dev/healthz || echo 000)
           echo "healthz=$healthz"
-          if [ "$healthz" != "204" ]; then
-            fail="service_down (healthz=$healthz)"
-          fi
 
-          json=$($FLYBIN machines list -a resolvezero-edge --json 2>/dev/null || echo "[]")
-          # schema (verified via real output): id, region, state, host_status,
-          # checks[{name,status}], image_ref.tag
-          bad_machines=$(echo "$json" | jq -r '
+          json=$($FLYBIN machines list -a resolvezero-edge --json)
+          echo "$json" | jq -r '.[] | [.id, .region, .image_ref.tag, (.checks[0].status // "none"), .host_status] | @tsv'
+
+          bad=$($FLYBIN machines list -a resolvezero-edge --json | jq -r '
             .[]
             | select(
-                (.host_status // "ok") != "ok"               # host wedged/down
-                or ((.checks // []) | length == 0)           # no checks at all (zombie)
+                (.host_status // "ok") != "ok"
+                or ((.checks // []) | length == 0)
                 or ((.checks // []) | any(.status == "error"))
               )
-            | "\(.id)@\(.region)"' 2>/dev/null | paste -sd"," -)
+            | "\(.id)|\(.region)"')
+          for row in $bad; do
+            id="${row%%|*}"
+            region="${row##*|}"
+            echo "unhealthy machine: $id ($region) — recreating via scale count"
+            $FLYBIN machine destroy "$id" -a resolvezero-edge --force || true
+            $FLYBIN scale count 1 --region "$region" -a resolvezero-edge --yes || true
+          done
 
-          if [ -n "$bad_machines" ]; then
-            echo "unhealthy machines: $bad_machines" 
-            for m in ${bad_machines//,/ }; do
-              id="${m%%@*}"
-              region="${m##*@}"
-              echo "recreating $id in $region via scale count (runbook: readme §7)"
-              $FLYBIN machine destroy "$id" -a resolvezero-edge --force || true
-              $FLYBIN scale count 1 --region "$region" -a resolvezero-edge --yes || true
-            done
-            fail="${fail:+$fail; }machines_recreated: $bad_machines"
-          fi
-
-          # settle + re-probe after any recreation
-          if [ -n "$fail" ]; then
-            sleep 45
+          if [ -n "$bad" ] || [ "$healthz" != "204" ]; then
+            sleep 60
             healthz2=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://resolvezero-edge.fly.dev/healthz || echo 000)
             echo "post-op healthz=$healthz2"
-            if [ "$healthz2" = "204" ]; then
-              echo "recovered=1"
-              fail=""
+            if [ "$healthz2" != "204" ]; then
+              echo "::error::edge incident — healthz=$healthz2, unchecked auto-recovery"
+              exit 1  # GitHub will notify (email) on workflow failure
             fi
           fi
-
-          echo "fail=$fail" >> "$GITHUB_OUTPUT"
-      - name: alert on failure
-        if: steps.probe.outputs.fail != '' && github.event_name == 'schedule' || steps.probe.outputs.fail != '' && github.event_name == 'workflow_dispatch'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const f = `${{ steps.probe.outputs.fail }}`;
-            const title = "🚨 sentinel: edge incident — " + f;
-            const body = "sentinel detected an incident at " + new Date().toISOString() + ":\n\n```
-" + f + "\n```
-Attempted automatic recovery (scale-recreate). Check fly logs if this persists.";
-            const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner: context.repo.owner, repo: context.repo.repo,
-              state: "open", labels: "sentinel",
-            });
-            if (issues.length > 0) {
-              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issues[0].number, body });
-            } else {
-              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ["sentinel", "incident"] });
-            }
+          echo "all healthy"
