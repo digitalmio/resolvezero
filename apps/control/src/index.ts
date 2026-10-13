@@ -1,13 +1,15 @@
 /**
- * ResolveZero control plane — login-first phase (readme §4a).
- * Better Auth (GitHub OAuth) + /api/me smoke route. Profile CRUD etc.
- * deliberately parked until the app design session.
+ * ResolveZero control plane — login + server-rendered dashboard (readme §4a).
+ * /api/*  : better-auth (GitHub OAuth) + healthz + me (JSON contract)
+ * /*      : SSR dashboard pages (dash.ts) — login, Setup, Rules, Analytics,
+ *           Logs, Settings.
  */
 import { Hono } from "hono";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@resolvezero/db/client";
 import { user, session, account, verification } from "@resolvezero/db/schema";
+import { createDashApp } from "./dash";
 
 const PORT = Number(process.env.PORT ?? 8080);
 
@@ -21,6 +23,7 @@ if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
   throw new Error("GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET are not set");
 }
 
+export type TAuth = ReturnType<typeof betterAuth>;
 
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
@@ -38,12 +41,12 @@ export const auth = betterAuth({
   },
 });
 
-const app = new Hono().basePath("/api");
+const api = new Hono();
 
 // CORS: dev-open during login-first phase; allowlist (dash/api origins) at
 // productionalization (readme §4a checklist). Must run BEFORE routes so the
 // headers wrap every response.
-app.use("*", async (c, next) => {
+api.use("*", async (c, next) => {
   await next();
   const origin = process.env.CORS_ORIGINS ?? "*";
   c.res.headers.set("access-control-allow-origin", origin);
@@ -53,10 +56,10 @@ app.use("*", async (c, next) => {
   );
 });
 
-app
-  .get("healthz", (c) => c.body(null, 204))
-  .on(["GET", "POST"], ["auth/*"], (c) => auth.handler(c.req.raw))
-  .get("me", async (c) => {
+api
+  .get("/api/healthz", (c) => c.body(null, 204))
+  .on(["GET", "POST"], ["/api/auth/*"], (c) => auth.handler(c.req.raw))
+  .get("/api/me", async (c) => {
     const sessionData = await auth.api.getSession({ headers: c.req.raw.headers });
     if (!sessionData?.user) {
       return c.json({ error: "unauthorized" }, 401);
@@ -69,7 +72,11 @@ app
     });
   });
 
-const server = Bun.serve({ port: PORT, fetch: app.fetch });
+const site = new Hono();
+site.route("/", api);
+site.route("/", createDashApp(auth));
+
+const server = Bun.serve({ port: PORT, fetch: site.fetch });
 console.info(JSON.stringify({ module: "control", port: server.port, msg: "resolvezero control listening" }));
 
-export { app };
+export { site };
