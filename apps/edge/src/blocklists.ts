@@ -66,43 +66,46 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
         enabledByProfile.get(row.profileId)!.push(row);
       }
 
-      // 1) catalog refresh — each URL fetched + parsed once
+      // 1) catalog refresh — each URL fetched + parsed once.
+      // SEQUENTIAL on purpose: parse+build peak-allocates tens of MB per
+      // big list (raw text + string sets + fp arrays); running them in
+      // parallel OOM'd the 256MB VMs at boot (multiplied transients).
       let cacheFlushed = false;
-      await Promise.all(
-        [...uniqueUrls.values()].map(async ({ url, format }) => {
-          try {
-            const parsed = await fetchListText(url).then((t) => parseList(t, format));
-            const builder = new SuffixFingerprintBuilder();
-            for (const d of parsed.blocks) builder.add(d, "block");
-            for (const d of parsed.allows) builder.add(d, "allow");
-            const table = builder.seal();
-            const changed = deps.store.upsertList(url, table);
-            if (changed && !cacheFlushed) cacheFlushed = true; // flush flag handled below
-            log.info({ url, entries: table.entryCount, changed }, "list parsed");
-            // statuses per row that reference this URL
-            for (const profileRowGroups of enabledByProfile.values()) {
-              for (const row of profileRowGroups) {
-                if (row.url === url) {
-                  await writeStatus(row.id, "ok", table.entryCount).catch(() => {});
-                }
+      for (const { url, format } of [...uniqueUrls.values()]) {
+        try {
+          const text = await fetchListText(url);
+          const parsed = parseList(text, format);
+          const builder = new SuffixFingerprintBuilder();
+          for (const d of parsed.blocks) builder.add(d, "block");
+          for (const d of parsed.allows) builder.add(d, "allow");
+          const entryCount = parsed.blocks.size + parsed.allows.size;
+          const table = builder.seal(entryCount);
+          const changed = deps.store.upsertList(url, table);
+          if (changed) cacheFlushed = true; // flush flag handled below
+          log.info({ url, entries: table.entryCount, changed }, "list parsed");
+          // statuses per row that reference this URL
+          for (const profileRowGroups of enabledByProfile.values()) {
+            for (const row of profileRowGroups) {
+              if (row.url === url) {
+                await writeStatus(row.id, "ok", table.entryCount).catch(() => {});
               }
             }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            log.warn({ url, err: msg }, "list fetch failed — keeping previous table");
-            for (const profileRowGroups of enabledByProfile.values()) {
-              for (const row of profileRowGroups) {
-                if (row.url === url) {
-                  await writeStatus(row.id, `error: ${msg.slice(0, 42)}`, 0).catch(() => {});
-                }
-              }
-            }
-            // the subscription wiring below drops URLs with no table only
-            // when the catalog ALSO lacks one (crash-reboot case) — a
-            // previously-good table remains in force until de-listed.
           }
-        }),
-      );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          log.warn({ url, err: msg }, "list fetch failed — keeping previous table");
+          for (const profileRowGroups of enabledByProfile.values()) {
+            for (const row of profileRowGroups) {
+              if (row.url === url) {
+                await writeStatus(row.id, `error: ${msg.slice(0, 42)}`, 0).catch(() => {});
+              }
+            }
+          }
+          // the subscription wiring below drops URLs with no table only
+          // when the catalog ALSO lacks one (crash-reboot case) — a
+          // previously-good table remains in force until de-listed.
+        }
+      }
       const fetchedAnyChanged = cacheFlushed;
 
       // 2) wiring — subscriptions for every profile (urls whose table exists)

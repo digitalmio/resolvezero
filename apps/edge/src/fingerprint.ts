@@ -29,52 +29,77 @@ export type FingerprintAction = "allow" | "block";
 const hash64 = (s: string): bigint => Bun.hash(s) as bigint;
 
 export class SuffixFingerprintBuilder {
-  private allowFps: bigint[] = [];
-  private blockFps: bigint[] = [];
-  private allowSet = new Set<string>();
-  private blockSet = new Set<string>();
+  // Growable BigUint64Array stages — NEVER boxed bigint[] JS arrays
+  // (bigint pages heap-allocate ~20-40B per entry; a 5M-rule list would
+  // spike hundreds of MB transiently and OOM small VMs during boot sync).
+  private allowFps!: BigUint64Array;
+  private allowN = 0;
+  private blockFps!: BigUint64Array;
+  private blockN = 0;
+  private static INITIAL = 4096;
+
+  constructor() {
+    this.allowFps = new BigUint64Array(SuffixFingerprintBuilder.INITIAL);
+    this.blockFps = new BigUint64Array(SuffixFingerprintBuilder.INITIAL);
+  }
 
   add(domain: string, action: FingerprintAction): void {
     // canonicalize: lowercase, strip trailing dots
     const d = domain.toLowerCase().replace(/\.+$/, "");
     if (!d.includes(".")) return;          // TLD-only rules never make sense
     if (d.startsWith(".") || d.startsWith("*")) return; // "*." wildcard entries unsupported (exact)+suffix semantics only
-    // dedupe within a list (same rule seen twice) — set semantics preserved
-    const seen = action === "allow" ? this.allowSet : this.blockSet;
-    if (seen.has(d)) return;
-    seen.add(d);
-    const target = action === "allow" ? this.allowFps : this.blockFps;
-    // BLOCK rules expand to every suffix (block exact domain + everything
-    // beneath it). ALLOW rules store ONLY the exact rule fingerprint —
-    // expanding an allow ("@@||mail.host^") into suffixes would wrongly
-    // whitelist "host" entirely (suffix "host" is higher level).
-    for (const suffix of action === "allow" ? [d] : suffixesOf(d)) {
-      target.push(hash64(suffix));
+    // Store ONLY the exact RULE fingerprint. Semantics: a rule blocks/
+    // allows itself AND everything beneath it — realized on the QUERY side
+    // (probes hash every suffix of the query, so a stored rule matches its
+    // subtree). Expanding a RULE into ITS suffixes would be backwards: it
+    // would match PARENT/less-specific labels (e.g. rule collector.github.com
+    // matching github.com) — a real production semantics bug this module
+    // originally shipped with, caught by the memory-sim probe on live data.
+    const fps = [hash64(d)];
+    const store = action === "allow" ? "a" : "b";
+    const buf = store === "a" ? this.allowFps : this.blockFps;
+    const n = store === "a" ? this.allowN : this.blockN;
+    if (n + fps.length > buf.length) {
+      // amortized growth to fit (double until it fits)
+      let cap = buf.length;
+      while (n + fps.length > cap) cap *= 2;
+      const grown = new BigUint64Array(cap);
+      grown.set(buf);
+      if (store === "a") this.allowFps = grown;
+      else this.blockFps = grown;
+      const target = store === "a" ? this.allowFps : this.blockFps;
+      for (let i = 0; i < fps.length; i++) target[n + i] = fps[i]!;
+      if (store === "a") this.allowN = n + fps.length;
+      else this.blockN = n + fps.length;
+      return;
     }
+    for (let i = 0; i < fps.length; i++) buf[n + i] = fps[i]!;
+    if (store === "a") this.allowN = n + fps.length;
+    else this.blockN = n + fps.length;
   }
 
-  get entryCount(): number {
-    return this.allowSet.size + this.blockSet.size;
-  }
-
-  /**
-   * Seals the table: builds the sorted BigUint64Arrays + a shared
-   * fingerprint summary for change-detection across re-syncs
-   * (cheap orphaning of "did the list actually change").
-   */
-  seal(): SuffixFingerprintTable {
-    const allow = new BigUint64Array(this.allowFps);
+  /** Seals the table: trims to used sizes, sorts, and takes an EXPLICIT
+   *  entry count (the caller = parseList already has the deduped string
+   *  counts; the builder intentionally does not retain strings). */
+  seal(entryCountOverride?: number): SuffixFingerprintTable {
+    const allow = this.allowFps.subarray(0, this.allowN);
     allow.sort();
-    const block = new BigUint64Array(this.blockFps);
+    const block = this.blockFps.subarray(0, this.blockN);
     block.sort();
-    const count = new Set([...this.allowSet, ...this.blockSet]).size;
-    this.allowSet.clear();
-    this.blockSet.clear();
-    this.allowFps = [];
-    this.blockFps = [];
-    return new SuffixFingerprintTable(allow, block, count);
+    const out = new SuffixFingerprintTable(
+      new BigUint64Array(allow), // copy — subarray shares the oversized buffer
+      new BigUint64Array(block),
+      entryCountOverride ?? this.allowN + this.blockN,
+    );
+    this.allowFps = new BigUint64Array(SuffixFingerprintBuilder.INITIAL);
+    this.blockFps = new BigUint64Array(SuffixFingerprintBuilder.INITIAL);
+    this.allowN = 0;
+    this.blockN = 0;
+    return out;
   }
 }
+
+
 
 export class SuffixFingerprintTable {
   constructor(

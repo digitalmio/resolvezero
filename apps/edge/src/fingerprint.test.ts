@@ -39,6 +39,22 @@ describe("SuffixFingerprintTable semantics (parity with Set + suffix matching)",
     // block fingerprints: domain + its suffix "net"? no: no bare TLD insert
   });
 
+  test("REGRESSION: rule subdomain must NOT block its parent (collector.github.com)", () => {
+    // AdGuard filter ships ||collector.github.com^ — the expansion bug stored
+    // suffix "github.com" and blocked the whole apex. Rule-first fingerprints
+    // keep the instruction scoped: only collector.github.com and below.
+    const b = new SuffixFingerprintBuilder();
+    b.add("collector.github.com", "block");
+    b.add("collector-cdn.github.com", "block");
+    const t = b.seal();
+    expect(t.resolve("ads.collector.github.com")).toBe("block");
+    expect(t.resolve("github.com")).toBeUndefined();
+    expect(t.resolve("collector-cdn.github.com")).toBe("block");
+    expect(t.resolve("git.elsewhere.com")).toBeUndefined();
+    // note: github.io comparisons stay clean of collision noise thanks to the
+    // probe-first exact-match shortcut on the query domain.
+  });
+
   test("fingerprint identity changes with content, not with order", () => {
     const b1 = new SuffixFingerprintBuilder();
     ["a.com", "b.com", "c.com"].forEach((d) => b1.add(d, "block"));
