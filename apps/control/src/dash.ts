@@ -100,10 +100,38 @@ function loginPage(session: SessionView): string {
   <div class="card login">
     <h1>ResolveZero</h1>
     <p class="muted">API-first DNS filtering, EU-resident. Sign in to your resolver fleet.</p>
-    <a class="btn primary big" href="/api/auth/sign-in/github">Sign in with GitHub</a>
+    <button class="btn primary big" id="gh-signin" type="button">Sign in with GitHub</button>
+    <p class="muted small" id="gh-err" hidden></p>
   </div>
-</div>`);
+</div>
+${SOCIAL_SIGNIN_SCRIPT}`);
 }
+
+/** better-auth's social sign-in is POST + JSON; the button does the round-trip. */
+const SOCIAL_SIGNIN_SCRIPT = `<script>
+document.getElementById("gh-signin")?.addEventListener("click", async () => {
+  const btn = document.getElementById("gh-signin");
+  const err = document.getElementById("gh-err");
+  try {
+    btn.disabled = true;
+    const res = await fetch("/api/auth/sign-in/social", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider: "github", callbackURL: "/" }),
+    });
+    if (!res.ok) throw new Error("sign-in failed (" + res.status + ")");
+    const data = await res.json();
+    if (data?.url) {
+      location.href = data.url;
+      return;
+    }
+    location.href = "/";
+  } catch (e) {
+    if (err) { err.textContent = "GitHub sign-in unavailable: " + (e instanceof Error ? e.message : e); err.hidden = false; }
+    btn.disabled = false;
+  }
+});
+</script>`;
 
 function kpiTiles(stats: StatsSummary): string {
   return `<div class="kpis">
