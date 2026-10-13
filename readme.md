@@ -190,6 +190,7 @@ push main → test (tsc edge/db + bun test) → migrate (drizzle+triggers, idemp
     * [ ] Flip to MR-only: require PRs + `enforce_admins` in branch protection (GitHub Pro needed for required-checks on a private repo — free tier rejected our `PUT /branches/main/protection`; unlock by GitHub Pro or making the repo public).
     * [ ] Add `apps/control` + dashboard deploy jobs to the same workflow.
     * [ ] Smoke test job (post-deploy DoH probe) auto-rollback on failure (currently manual re-run only).
+    * [ ] Post-deploy machine-image parity check: `fly machines list` must show ALL machines on the same deployment tag + `app` process group. Drift happened when manual `fly machine start/restart` ops ran during an OOM incident (Fly advisory "running multiple images"; lhr machine was even detached from the app group). Rule: after manual machine surgery, ALWAYS recreate the affected region via `fly scale count N --region X` (never resurrect a drifted machine).
     * [ ] Release notes/bot on tags if/when releasing versions.
 
 * One Fly app = one edge binary; deploy per region (anycast handles routing). `scripts/deploy.sh` pushes to every region in `FLY_REGIONS` and sizes machines via `FLY_SCALE`.
