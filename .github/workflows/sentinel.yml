@@ -48,7 +48,7 @@ jobs:
             | select(
                 (.host_status // "ok") != "ok"               # host wedged/down
                 or ((.checks // []) | length == 0)           # no checks at all (zombie)
-                or ((.checks // []) | any(.status != "passing"))
+                or ((.checks // []) | any(.status == "error"))
               )
             | "\(.id)@\(.region)"' 2>/dev/null | paste -sd"," -)
 

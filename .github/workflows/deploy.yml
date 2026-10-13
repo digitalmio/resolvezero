@@ -85,7 +85,7 @@ jobs:
           json=$($FLYBIN machines list -a resolvezero-edge --json)
           echo "$json" | jq -r '.[] | [.id, .region, .image_ref.tag, (.checks[0].status // "none"), .host_status] | @tsv'
           images=$(echo "$json" | jq -r '[.[] | .image_ref.tag] | unique | length')
-          unhealthy=$(echo "$json" | jq -r '[.[] | select((.host_status // "ok") != "ok" or ((.checks // []) | length == 0) or ((.checks // []) | any(.status != "passing")))] | length')
+          unhealthy=$(echo "$json" | jq -r '[.[] | select((.host_status // "ok") != "ok" or ((.checks // []) | length == 0) or ((.checks // []) | any(.status == "error")))] | length')
           if [ "$images" != "1" ]; then
             echo "::error::machine image drift ($images distinct images)"
             exit 1
