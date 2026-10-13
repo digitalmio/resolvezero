@@ -1,0 +1,93 @@
+# Sentinel: catches Fly-host zombies + image drift the way the LHR incident
+# did (host unreachable → machine wedged → silently evades deploys).
+# Every 10 min:
+#   1. healthz must be 204 (any region serves via anycast)
+#   2. every machine must be healthy (checks non-empty) on the LATEST image
+#      — a wedged machine (unreachable host shows empty+old image) is
+#      force-destroyed and recreated via `fly scale count`, matching the
+#      documented runbook (readme §7).
+# On failure: opens/updates a GitHub issue so nothing heals silently.
+name: sentinel
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sentinel
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: probe + reconcile
+        id: probe
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          fail=""
+          healthz=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://resolvezero-edge.fly.dev/healthz || echo 000)
+          echo "healthz=$healthz"
+          if [ "$healthz" != "204" ]; then
+            fail="service_down (healthz=$healthz)"
+          fi
+
+          json=$(fly machines list -a resolvezero-edge --json 2>/dev/null || echo "[]")
+          # schema (verified via real output): id, region, state, host_status,
+          # checks[{name,status}], image_ref.tag
+          bad_machines=$(echo "$json" | jq -r '
+            .[]
+            | select(
+                (.host_status // "ok") != "ok"               # host wedged/down
+                or ((.checks // []) | length == 0)           # no checks at all (zombie)
+                or ((.checks // []) | any(.status != "passing"))
+              )
+            | "\(.id)@\(.region)"' 2>/dev/null | paste -sd"," -)
+
+          if [ -n "$bad_machines" ]; then
+            echo "unhealthy machines: $bad_machines" 
+            for m in ${bad_machines//,/ }; do
+              id="${m%%@*}"
+              region="${m##*@}"
+              echo "recreating $id in $region via scale count (runbook: readme §7)"
+              fly machine destroy "$id" -a resolvezero-edge --force || true
+              fly scale count 1 --region "$region" -a resolvezero-edge --yes || true
+            done
+            fail="${fail:+$fail; }machines_recreated: $bad_machines"
+          fi
+
+          # settle + re-probe after any recreation
+          if [ -n "$fail" ]; then
+            sleep 45
+            healthz2=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://resolvezero-edge.fly.dev/healthz || echo 000)
+            echo "post-op healthz=$healthz2"
+            if [ "$healthz2" = "204" ]; then
+              echo "recovered=1"
+              fail=""
+            fi
+          fi
+
+          echo "fail=$fail" >> "$GITHUB_OUTPUT"
+      - name: alert on failure
+        needs: watch
+        if: steps.probe.outputs.fail != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "🚨 sentinel: edge incident — " + "${{ steps.probe.outputs.fail }}";
+            const body = `sentinel detected an incident at ${new Date().toISOString()}:\n\n\`\`\`\n${{ steps.probe.outputs.fail }}\n\`\`\`\nAttempted automatic recovery (scale-recreate). Check fly logs if this persists.`;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "sentinel",
+            });
+            if (issues.length > 0) {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: issues[0].number, body });
+            } else {
+              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ["sentinel", "incident"] });
+            }

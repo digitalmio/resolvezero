@@ -73,6 +73,23 @@ jobs:
             echo "::error::edge failed post-deploy health check (Code $code) — see fly logs / machine state"
             exit 1
           fi
+      - name: parity — all machines healthy on one image
+        run: |
+          # Guards against the "running multiple images" drift (readme §7):
+          # machines wedged on a dead host bypass deploys silently.
+          # Schema verified live: .image_ref.tag, .checks[].status, .host_status
+          json=$(fly machines list -a resolvezero-edge --json)
+          echo "$json" | jq -r '.[] | [.id, .region, .image_ref.tag, (.checks[0].status // "none"), .host_status] | @tsv'
+          images=$(echo "$json" | jq -r '[.[] | .image_ref.tag] | unique | length')
+          unhealthy=$(echo "$json" | jq -r '[.[] | select((.host_status // "ok") != "ok" or ((.checks // []) | length == 0) or ((.checks // []) | any(.status != "passing")))] | length')
+          if [ "$images" != "1" ]; then
+            echo "::error::machine image drift ($images distinct images)"
+            exit 1
+          fi
+          if [ "$unhealthy" != "0" ]; then
+            echo "::error::$unhealthy unhealthy machine(s) after deploy"
+            exit 1
+          fi
 
   deploy-control:
     name: deploy-control
