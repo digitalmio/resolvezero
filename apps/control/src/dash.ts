@@ -150,6 +150,10 @@ function topList(title: string, entries: StatsTopEntry[] | undefined, key: "doma
   return `<div class="card"><h3>${esc(title)}</h3><ul class="toplist">${rows || '<li class="muted">nothing yet</li>'}</ul></div>`;
 }
 
+function logUrl(profileId: string, token: string | null | undefined, format: string, date: string): string {
+  return `${EDGE_URL}/v1/${encodeURIComponent(profileId)}/logs?format=${format}&date=${encodeURIComponent(date)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+}
+
 interface StatsSummary {
   range: string;
   totalQueries: number;
@@ -185,12 +189,13 @@ function chart(series: { bucket: string; total: number; blocked: number }[]): st
 
 // ---- data helpers ----
 
-async function fetchStats(profileId: string, range: string): Promise<StatsSummary | null> {
+async function fetchStats(profileId: string, range: string, token: string | null): Promise<StatsSummary | null> {
   const q = encodeURIComponent(profileId);
   try {
-    const res = await fetch(`${EDGE_URL}/v1/${q}/stats?range=${encodeURIComponent(range)}`, {
-      headers: { accept: "application/json" },
-    });
+    const res = await fetch(
+      `${EDGE_URL}/v1/${q}/stats?range=${encodeURIComponent(range)}${token ? `&token=${encodeURIComponent(token)}` : ""}`,
+      { headers: { accept: "application/json" } },
+    );
     if (!res.ok) return null;
     return (await res.json()) as StatsSummary;
   } catch {
@@ -241,7 +246,7 @@ export function createDashApp(auth: AuthLike): Hono<AppEnv> { const app = new Ho
     if (!session?.user) return c.html(loginPage(session));
     const owned = await listProfiles(session.user.id);
     const current = owned.find((p) => p.id === c.req.query("p")) ?? owned[0];
-    const stats = current ? await fetchStats(current.id, "24h") : null;
+    const stats = current ? await fetchStats(current.id, "24h", current.dohToken) : null;
     const body = current && stats
       ? `
 <div class="headbox"><h1>${esc(current.name)}</h1><span class="muted">last 24h · <a class="muted" href="/analytics?p=${esc(current.id)}">all ranges →</a></span></div>
@@ -532,7 +537,7 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
     const current = owned.find((p) => p.id === c.req.query("p")) ?? owned[0];
     if (!current) return c.html(layout({ session, title: "Analytics", profiles: [] }, onboarding()));
     const range = (c.req.query("range") ?? "24h").match(/^(30m|6h|24h|7d|30d|90d)$/)?.[0] ?? "24h";
-    const stats = (await fetchStats(current.id, range)) ?? EMPTY_STATS;
+    const stats = (await fetchStats(current.id, range, current.dohToken)) ?? EMPTY_STATS;
     const body = `
 <div class="headbox"><h1>Analytics · ${esc(current.name)}</h1>
 <span class="muted">range</span>
@@ -546,7 +551,7 @@ ${chart(stats.series ?? [])}
   ${topList("Blocked domains", stats.topBlocked, "domain")}
   ${topList("Devices", stats.queriesPerDevice, "device")}
 </div>
-<p class="muted small">Raw events: <a class="mono" href="${EDGE_URL}/v1/${esc(current.id)}/logs?format=jsonl">download JSONL</a> · <a class="mono" href="${EDGE_URL}/v1/${esc(current.id)}/logs?format=csv">CSV</a></p>`;
+<p class="muted small">Raw events: <a class="mono" href="${logUrl(current.id, current.dohToken, "jsonl", new Date().toISOString().slice(0, 10))}">download JSONL</a> · <a class="mono" href="${logUrl(current.id, current.dohToken, "csv", new Date().toISOString().slice(0, 10))}">CSV</a></p>`;
     return c.html(layout({ session, title: "Analytics", profiles: owned, current, active: "analytics" }, body));
   });
 
@@ -560,7 +565,7 @@ ${chart(stats.series ?? [])}
     let rows: { time: string; domain: string; action: string; clientIp: string; rttMs: number | null; device?: string }[] = [];
     let err = "";
     try {
-      const res = await fetch(`${EDGE_URL}/v1/${current.id}/logs?format=jsonl&date=${date}`);
+      const res = await fetch(`${EDGE_URL}/v1/${current.id}/logs?format=jsonl&date=${encodeURIComponent(date)}${current.dohToken ? `&token=${encodeURIComponent(current.dohToken)}` : ""}`);
       if (res.ok) {
         const text = await res.text();
         rows = text
