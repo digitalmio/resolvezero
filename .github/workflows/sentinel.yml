@@ -31,6 +31,8 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -uo pipefail
+          FLYBIN=flyctl
+          command -v flyctl >/dev/null 2>&1 || FLYBIN=fly
           fail=""
           healthz=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://resolvezero-edge.fly.dev/healthz || echo 000)
           echo "healthz=$healthz"
@@ -38,7 +40,7 @@ jobs:
             fail="service_down (healthz=$healthz)"
           fi
 
-          json=$(fly machines list -a resolvezero-edge --json 2>/dev/null || echo "[]")
+          json=$($FLYBIN machines list -a resolvezero-edge --json 2>/dev/null || echo "[]")
           # schema (verified via real output): id, region, state, host_status,
           # checks[{name,status}], image_ref.tag
           bad_machines=$(echo "$json" | jq -r '
@@ -56,8 +58,8 @@ jobs:
               id="${m%%@*}"
               region="${m##*@}"
               echo "recreating $id in $region via scale count (runbook: readme §7)"
-              fly machine destroy "$id" -a resolvezero-edge --force || true
-              fly scale count 1 --region "$region" -a resolvezero-edge --yes || true
+              $FLYBIN machine destroy "$id" -a resolvezero-edge --force || true
+              $FLYBIN scale count 1 --region "$region" -a resolvezero-edge --yes || true
             done
             fail="${fail:+$fail; }machines_recreated: $bad_machines"
           fi
