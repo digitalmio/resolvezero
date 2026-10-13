@@ -91,6 +91,21 @@ export function createHealthApp(deps: {
       collect() { this.set(deps.dnsCache!.stats.entries); },
     });
   }
+  if (deps.store) {
+    // remote blocklist catalog state (GRAFANA: rz_remote_list_*)
+    new Gauge({
+      name: "rz_remote_list_tables",
+      help: "Shared remote blocklist tables registered in this machine's catalog",
+      registers: [registry],
+      collect() { this.set(deps.store!.stats.remoteListTables); },
+    });
+    new Gauge({
+      name: "rz_remote_list_rules",
+      help: "Remote blocklist rules across the catalog (all lists hosted locally)",
+      registers: [registry],
+      collect() { this.set(deps.store!.remoteBlocklistEntryCount); },
+    });
+  }
 
   const recorder: Recorder = {
     recordQuery: (action) =>
