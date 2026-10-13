@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import { profileBlocklists } from "@resolvezero/db/schema";
 import { moduleLogger } from "./logger";
+import { SuffixFingerprintBuilder } from "./fingerprint";
 import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 
@@ -55,40 +56,67 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
         .from(profileBlocklists)
         .where(eq(profileBlocklists.enabled, true))) as BlocklistRow[];
 
-      // Group by profile — one swap per profile (atomic setRemoteBlocklists).
-      const perProfile = new Map<string, { rows: BlocklistRow[] }>();
+      // Shared-catalog model: parse each unique URL ONCE per cycle, register
+      // it in the store's catalog, then wire per-profile subscriptions.
+      const uniqueUrls = new Map<string, { url: string; format: string }>();
+      const enabledByProfile = new Map<string, BlocklistRow[]>();
       for (const row of rows) {
-        perProfile.set(row.profileId, perProfile.get(row.profileId) ?? { rows: [] });
-        perProfile.get(row.profileId)!.rows.push(row);
+        uniqueUrls.set(row.url, { url: row.url, format: row.format });
+        enabledByProfile.set(row.profileId, enabledByProfile.get(row.profileId) ?? []);
+        enabledByProfile.get(row.profileId)!.push(row);
       }
 
+      // 1) catalog refresh — each URL fetched + parsed once
       let cacheFlushed = false;
-      for (const [profileId, group] of perProfile) {
-        const merged: ParsedList = { blocks: new Set(), allows: new Set() };
-        await Promise.all(
-          group.rows.map(async (row) => {
-            try {
-              const parsed = await fetchListText(row.url).then((t) => parseList(t, row.format));
-              for (const d of parsed.blocks) merged.blocks.add(d);
-              for (const d of parsed.allows) merged.allows.add(d);
-              await writeStatus(row.id, "ok", parsed.blocks.size + parsed.allows.size).catch(() => {});
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              log.warn({ url: row.url, err: msg }, "list fetch failed — keeping previous");
-              await writeStatus(row.id, `error: ${msg.slice(0, 42)}`, 0).catch(() => {});
-              // keep previous behavior: don't add anything; merged stays valid
+      await Promise.all(
+        [...uniqueUrls.values()].map(async ({ url, format }) => {
+          try {
+            const parsed = await fetchListText(url).then((t) => parseList(t, format));
+            const builder = new SuffixFingerprintBuilder();
+            for (const d of parsed.blocks) builder.add(d, "block");
+            for (const d of parsed.allows) builder.add(d, "allow");
+            const table = builder.seal();
+            const changed = deps.store.upsertList(url, table);
+            if (changed && !cacheFlushed) cacheFlushed = true; // flush flag handled below
+            log.info({ url, entries: table.entryCount, changed }, "list parsed");
+            // statuses per row that reference this URL
+            for (const profileRowGroups of enabledByProfile.values()) {
+              for (const row of profileRowGroups) {
+                if (row.url === url) {
+                  await writeStatus(row.id, "ok", table.entryCount).catch(() => {});
+                }
+              }
             }
-          }),
-        );
-        const changed = deps.store.setRemoteBlocklists(profileId, merged.blocks, merged.allows);
-        if (!cacheFlushed && changed) {
-          deps.dnsCache.clear();
-          cacheFlushed = true;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log.warn({ url, err: msg }, "list fetch failed — keeping previous table");
+            for (const profileRowGroups of enabledByProfile.values()) {
+              for (const row of profileRowGroups) {
+                if (row.url === url) {
+                  await writeStatus(row.id, `error: ${msg.slice(0, 42)}`, 0).catch(() => {});
+                }
+              }
+            }
+            // the subscription wiring below drops URLs with no table only
+            // when the catalog ALSO lacks one (crash-reboot case) — a
+            // previously-good table remains in force until de-listed.
+          }
+        }),
+      );
+      const fetchedAnyChanged = cacheFlushed;
+
+      // 2) wiring — subscriptions for every profile (urls whose table exists)
+      for (const [profileId, rowsForProfile] of enabledByProfile) {
+        const urls: string[] = [];
+        for (const row of rowsForProfile) {
+          if (deps.store.hasList(row.url)) urls.push(row.url);
         }
-        log.info(
-          { profileId, entries: merged.blocks.size + merged.allows.size, changed },
-          "blocklists synced",
-        );
+        const changed = deps.store.setSubscriptions(profileId, urls);
+        if (changed && !fetchedAnyChanged) log.info({ profileId, urls: urls.length }, "subscriptions rewired");
+      }
+      if (deps.store.consumeChanged()) {
+        deps.dnsCache.clear();
+        log.info("blocklist state changed — dns cache flushed");
       }
     } catch (err) {
       log.error({ err }, "blocklist sync cycle failed");

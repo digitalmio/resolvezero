@@ -67,11 +67,12 @@ export class SuffixFingerprintBuilder {
     allow.sort();
     const block = new BigUint64Array(this.blockFps);
     block.sort();
+    const count = new Set([...this.allowSet, ...this.blockSet]).size;
     this.allowSet.clear();
     this.blockSet.clear();
     this.allowFps = [];
     this.blockFps = [];
-    return new SuffixFingerprintTable(allow, block);
+    return new SuffixFingerprintTable(allow, block, count);
   }
 }
 
@@ -79,6 +80,8 @@ export class SuffixFingerprintTable {
   constructor(
     private allow: BigUint64Array,
     private block: BigUint64Array,
+    /** distinct parsed rules (allow + block) at seal time. */
+    readonly entryCount = 0,
   ) {}
 
   /**
@@ -86,26 +89,31 @@ export class SuffixFingerprintTable {
    * Probes every label-boundary suffix of the query + the query itself.
    */
   resolve(domain: string): FingerprintAction | undefined {
-    const d = domain.toLowerCase().replace(/\.+$/, "");
-    // allow list wins (checked first; caller relies on that)
-    for (const fps of [this.allow, this.block] as const) {
-      if (!fps.length) continue;
-      let hit = false;
-      // probe the full domain first (most common query shape), then suffixes
-      if (ContainsBinary(fps, hash64(d))) {
-        hit = true;
-      } else {
-        for (const suffix of suffixesAfterFirst(d)) {
-          if (ContainsBinary(fps, hash64(suffix))) {
-            hit = true;
-            break;
-          }
-        }
-      }
-      if (hit && fps === this.allow) return "allow";
-      if (hit && fps === this.block) return "block";
+    const d = canonical(domain);
+    const allowHit = this.checkAllow(d);
+    if (allowHit) return "allow";
+    return this.checkBlock(d) ? "block" : undefined;
+  }
+
+  /** Allow-table probe — used by the shared per-URL registry to give
+   *  allow-lists cross-list precedence (ABP `@@` semantics). */
+  checkAllow(domain: string): boolean {
+    return this.probeAny(this.allow, domain);
+  }
+
+  /** Block-table probe. */
+  checkBlock(domain: string): boolean {
+    return this.probeAny(this.block, domain);
+  }
+
+  private probeAny(fps: BigUint64Array, domain: string): boolean {
+    if (fps.length === 0) return false;
+    const d = canonical(domain);
+    if (ContainsBinary(fps, hash64(d))) return true;
+    for (const suffix of suffixesAfterFirst(d)) {
+      if (ContainsBinary(fps, hash64(suffix))) return true;
     }
-    return undefined;
+    return false;
   }
 
   get isEmpty(): boolean {
@@ -127,6 +135,16 @@ export class SuffixFingerprintTable {
     };
     return `allow(${fold(this.allow)})|block(${fold(this.block)})`;
   }
+}
+
+/** lowercase + strip FQDN trailing dot — shared by builder and probes. */
+function canonical(domain: string): string {
+  return domain.toLowerCase().replace(/\.\+$/, "");
+}
+
+/** Number of distinct parsed RULES inside the sealed table (not suffix fps). */
+function ruleCount(entries: Set<string>): number {
+  return entries.size;
 }
 
 function ContainsBinary(sorted: BigUint64Array, target: bigint): boolean {

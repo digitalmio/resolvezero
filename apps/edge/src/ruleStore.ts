@@ -1,4 +1,5 @@
 import type { IpUpdateEvent, RuleUpdateEvent, ZoneRecordType, ZoneUpdateEvent } from "@resolvezero/shared";
+import { SuffixFingerprintTable, type FingerprintAction } from "./fingerprint";
 
 export type RuleAction = "block" | "allow";
 
@@ -64,32 +65,75 @@ export class RuleStore {
   private zones = new Map<string, Map<string, ZoneEntry>>();
   /** profile_id -> `${suffix}|${type}` -> entry (from '*.' wildcard zones) */
   private wildcardZones = new Map<string, Map<string, ZoneEntry>>();
-  /** profile_id -> remote blocklist domain sets (parsed from subscribed URLs). */
-  private remoteBlocks = new Map<string, Set<string>>();
-  /** profile_id -> remote allowlist domains (blocklist `@@` exceptions; win first). */
-  private remoteAllows = new Map<string, Set<string>>();
-  /** profile_id -> set of device slugs seen (dedupe for lazy DB write-behind). */
-  private seenDevices = new Map<string, Set<string>>();
+  /**
+   * Remote blocklist storage — SHARED CATALOG (memory follows the list,
+   * not the user): one `SuffixFingerprintTable` per subscribed URL per
+   * machine, whatever the profile count. `setRemoteBlocklists` was replaced
+   * by `upsertList` + `setSubscriptions` (see blocklists.ts, readme §4a).
+   */
+  private listCatalog = new Map<string, { table: SuffixFingerprintTable; entryCount: number; fingerprint: string }>();
+  /** profile_id -> enabled subscription URLs (order: allow-precedence pass). */
+  private subscriptions = new Map<string, string[]>();
 
   /**
-   * Atomically replace the parsed remote blocklists for a profile and
-   * report whether anything changed (callers flush the DNS cache only
-   * on real changes).
+   * Registers a parsed table under its source URL (single copy per machine).
+   * Returns whether the remote state is EFFECTIVELY changed (new table or
+   * new/changed subscription wiring) — callers flush the DNS caches only on
+   * real changes.
    */
-  setRemoteBlocklists(profileId: string, blocks: Set<string>, allows: Set<string>): boolean {
-    const fingerprint = (s: Set<string>) => {
-      let h = s.size;
-      for (const d of s) {
-        for (let i = 0; i < d.length; i++) h = (h * 31 + d.charCodeAt(i)) | 0;
-      }
-      return h;
-    };
-    const prev = `${fingerprint(this.remoteBlocks.get(profileId) ?? new Set())}/${fingerprint(this.remoteAllows.get(profileId) ?? new Set())}`;
-    const next = `${fingerprint(blocks)}/${fingerprint(allows)}`;
-    this.remoteBlocks.set(profileId, blocks);
-    this.remoteAllows.set(profileId, allows);
-    return prev !== next;
+  upsertList(url: string, table: SuffixFingerprintTable): boolean {
+    const prev = this.listCatalog.get(url);
+    const changed = prev?.fingerprint !== table.fingerprint;
+    this.listCatalog.set(url, { table, entryCount: table.entryCount, fingerprint: table.fingerprint });
+    this.markChanged(changed);
+    return changed;
   }
+
+  /** Is a parsed table present for this URL in the local catalog? */
+  hasList(url: string): boolean {
+    return this.listCatalog.has(url);
+  }
+
+  /**
+   * Consume the "effectively changed" flag raised by upsertList/
+   * setSubscriptions since the last consume — the blocklist loop uses it to
+   * decide on a DNS cache flush (avoids flushing when sync found nothing new).
+   */
+  private changedSinceConsume = false;
+  consumeChanged(): boolean {
+    const v = this.changedSinceConsume;
+    this.changedSinceConsume = false;
+    return v;
+  }
+
+  private markChanged(value: boolean): void {
+    this.changedSinceConsume ||= value;
+  }
+
+  /** Sets a profile's enabled subscription URLs (tables already upserted). */
+  setSubscriptions(profileId: string, urls: string[]): boolean {
+    const prev = this.subscriptions.get(profileId)?.join("|") ?? "";
+    const next = urls.join("|");
+    this.subscriptions.set(profileId, urls);
+    this.pruneCatalog();
+    const changed = prev !== next;
+    this.markChanged(changed);
+    return changed;
+  }
+
+  /** Drop catalog entries no subscriber references (memory hygiene). */
+  private pruneCatalog(): void {
+    if (this.listCatalog.size === 0) return;
+    const referenced = new Set<string>();
+    for (const urls of this.subscriptions.values()) {
+      for (const u of urls) referenced.add(u);
+    }
+    for (const url of this.listCatalog.keys()) {
+      if (!referenced.has(url)) this.listCatalog.delete(url);
+    }
+  }
+  /** profile_id -> set of device slugs seen (dedupe for lazy DB write-behind). */
+  private seenDevices = new Map<string, Set<string>>();
 
   /** Atomically replace all state with a DB snapshot. */
   replaceAll(
@@ -121,6 +165,19 @@ export class RuleStore {
     for (const row of zoneRows) {
       this.applyZone(row.profileId, row.domain, row.recordType, row.values, row.ttl);
     }
+
+    // Remote subscriptions are owned by the blocklist sync loop (NOT the db
+    // snapshot), but stale subscriptions of DELETED profiles must go — the
+    // catalog itself is ref-counted by setSubscriptions/pruneCatalog.
+    const alive = new Set(profileRows.map((p) => p.id));
+    let pruned = false;
+    for (const profileId of this.subscriptions.keys()) {
+      if (!alive.has(profileId)) {
+        this.subscriptions.delete(profileId);
+        pruned = true;
+      }
+    }
+    if (pruned) this.pruneCatalog();
   }
 
   /**
@@ -171,33 +228,47 @@ export class RuleStore {
   }
 
   /**
-   * Remote blocklist check (label-boundary suffix match). `@@` exceptions
-   * from ABP sources win over their own list's blocks — but explicit
-   * profile_rules are resolved separately in doh.ts (user config > remote).
-   * Returns the effective action or undefined.
-   */
-  resolveRemote(profileId: string, domain: string): RuleAction | undefined {
-    const allows = this.remoteAllows.get(profileId);
-    if (allows && matchesSuffixSet(allows, domain)) return "allow";
-    const blocks = this.remoteBlocks.get(profileId);
-    if (blocks && matchesSuffixSet(blocks, domain)) return "block";
-    return undefined;
-  }
-
-  get remoteBlocklistEntryCount(): number {
-    return (
-      [...this.remoteBlocks.values()].reduce((n, s) => n + s.size, 0) +
-      [...this.remoteAllows.values()].reduce((n, s) => n + s.size, 0)
-    );
-  }
-
-  /**
    * Where should this profile's queries be recorded? Default true
    * ("log the lot" is the default, like NextDNS — readme §3 C);
    * false only when the profile explicitly opted out.
    */
   shouldLog(profileId: string): boolean {
     return this.logQueries.get(profileId) ?? true;
+  }
+
+  /**
+   * Remote blocklist check across the profile's subscribed tables.
+   * Allow-tables of ALL lists win first (cross-list ABP `@@` semantics),
+   * then block-tables — observable parity with previous merged sets.
+   */
+  resolveRemote(profileId: string, domain: string): RuleAction | undefined {
+    const urls = this.subscriptions.get(profileId);
+    if (!urls?.length) return undefined;
+    for (const url of urls) {
+      const entry = this.listCatalog.get(url);
+      if (entry?.table.checkAllow(domain)) return "allow";
+    }
+    for (const url of urls) {
+      const entry = this.listCatalog.get(url);
+      if (entry?.table.checkBlock(domain)) return "block";
+    }
+    return undefined;
+  }
+
+  get remoteBlocklistEntryCount(): number {
+    return [...this.listCatalog.values()].reduce((n, e) => n + e.entryCount, 0);
+  }
+
+  get stats() {
+    return {
+      profiles: this.rules.size,
+      rules: [...this.rules.values()].reduce((n, m) => n + m.size, 0),
+      authorizedSourceIps: this.authorizedSourceIps.size,
+      zones: [...this.zones.values()].reduce((n, m) => n + m.size, 0),
+      wildcardZones: [...this.wildcardZones.values()].reduce((n, m) => n + m.size, 0),
+      remoteListTables: this.listCatalog.size,
+      remoteListSubscriptions: this.subscriptions.size,
+    };
   }
 
   /** Upstream URL/selector override for this profile, or null for edge default. */
@@ -296,16 +367,6 @@ export class RuleStore {
     set.add(device);
     return true;
   }
-
-  get stats() {
-    return {
-      profiles: this.rules.size,
-      rules: [...this.rules.values()].reduce((n, m) => n + m.size, 0),
-      authorizedSourceIps: this.authorizedSourceIps.size,
-      zones: [...this.zones.values()].reduce((n, m) => n + m.size, 0),
-      wildcardZones: [...this.wildcardZones.values()].reduce((n, m) => n + m.size, 0),
-    };
-  }
 }
 
 function constantTimeEquals(a: string, b: string): boolean {
@@ -317,12 +378,3 @@ function constantTimeEquals(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Exact match or any-suffix (label-boundary safe) for remote list domains. */
-function matchesSuffixSet(set: Set<string>, domain: string): boolean {
-  if (set.has(domain)) return true;
-  const labels = domain.split(".");
-  for (let i = 1; i < labels.length; i++) {
-    if (set.has(labels.slice(i).join("."))) return true;
-  }
-  return false;
-}
