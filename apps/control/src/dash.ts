@@ -297,7 +297,7 @@ ${chart(stats.series ?? [])}
   <div class="row"><span class="k">Profile</span><span class="mono" id="doh-bare">${esc(dohUrl)}</span><button class="btn ghost small" data-copy="doh-bare">Copy</button></div>
   <div class="row"><span class="k">Per-device</span><span class="mono">${esc(dohDeviceUrl)}</span></div>
   <div class="row"><span class="k">DoT (Android)</span><span class="mono">coming soon (see readme §4b)</span></div>
-  <p class="muted small">IPs (UDP legacy / Deco): <span class="mono">37.16.24.24</span> · <span class="mono">37.16.1.8</span></p>
+  <p class="muted small">IPs (UDP legacy / Deco): <span class="mono">37.16.24.24</span> · <span class="mono">37.16.24.46</span></p>
 </div>
 <div class="grid2">
   <div class="card"><h3>Devices</h3>${deviceTags}</div>
@@ -726,7 +726,7 @@ ${err ? `<p class="muted">${esc(err)}</p>` : ""}
 </div>
 <div class="card"><h3>Android (DoT, later)</h3><p class="muted small">DoT listener is on the roadmap (§4b). For now use DoH-based apps or the UDP IPs + linked IP.</p></div>
 <div class="card"><h3>Deco / router (UDP legacy)</h3>
-  <p>DNS server IPs: <span class="mono">37.16.24.24</span>, <span class="mono">37.16.1.8</span> then click Link IP above (or from the live network: <span class="mono">curl "https://resolvezero-edge.fly.dev/v1/${esc(current.id)}/update-ip"</span>).</p></div>
+  <p>DNS server IPs: <span class="mono">37.16.24.24</span>, <span class="mono">37.16.24.46</span> then click Link IP above (or from the live network: <span class="mono">curl "https://resolvezero-edge.fly.dev/v1/${esc(current.id)}/update-ip"</span>).</p></div>
 ${copyScript}`;
     return c.html(layout({ session, title: "Device setup", profiles: owned, current, active: "setup" }, body));
   });
