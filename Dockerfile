@@ -26,3 +26,10 @@ ENV NODE_ENV=production
 EXPOSE 8080 53 53/udp
 
 CMD ["sh", "-c", "exec bun run $APP_ENTRY"]
+
+# Drop privileges (numeric so it works regardless of base-image user names).
+USER 1000:1000
+
+# Same path for edge and control (control aliases /healthz alongside /api/healthz).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["bun", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

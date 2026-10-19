@@ -131,9 +131,17 @@ export function createDohApp(deps: DohAppDeps) {
         device,
       });
       deps.recorder?.recordQuery("forward");
-      return c.body(zoneAnswer(question, zone), 200, {
-        "content-type": "application/dns-message",
-      });
+      try {
+        return c.body(zoneAnswer(question, zone), 200, {
+          "content-type": "application/dns-message",
+        });
+      } catch {
+        // Malformed zone values (e.g. an invalid A literal) must not 500 the
+        // resolver — answer SERVFAIL and leave the query path alive.
+        return c.body(servfailResponse(question), 200, {
+          "content-type": "application/dns-message",
+        });
+      }
     }
 
     // ---- Rule check (explicit user rules beat remote lists) ----
@@ -175,6 +183,16 @@ export function createDohApp(deps: DohAppDeps) {
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
     const cached = deps.dnsCache.get(queryWire, upstreamUrl);
     if (cached) {
+      // Cache hits are still queries the user asked for — log them so the
+      // dashboard/rollups match the readme's "all queries are logged".
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "forward",
+        rttMs: null,
+        clientIp: clientAddr,
+        device,
+      });
       deps.recorder?.recordQuery("forward");
       return c.body(cached, 200, { "content-type": "application/dns-message" });
     }
@@ -205,7 +223,7 @@ export function createDohApp(deps: DohAppDeps) {
       });
     }
 
-    deps.dnsCache.set(responseWire, upstreamUrl);
+    deps.dnsCache.set(queryWire, responseWire, upstreamUrl);
     deps.logQuery({
       profileId,
       domain: question.name,

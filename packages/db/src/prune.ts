@@ -20,7 +20,7 @@ export async function pruneExpiredStats(): Promise<number> {
       DELETE FROM stats_hourly s
       USING profiles p
       WHERE s.profile_id = p.id
-        AND s.hour < now() - (p.log_retention_days * interval '1 day')
+        AND s.hour < now() - (GREATEST(p.log_retention_days, 1) * interval '1 day')
       RETURNING 1
     )
     SELECT

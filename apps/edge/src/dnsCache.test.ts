@@ -1,0 +1,111 @@
+import { describe, expect, test } from "bun:test";
+import { decode, encode } from "dns-packet";
+import { DnsCache } from "./dnsCache";
+
+function query(name: string, id = 1, opts: { opt?: boolean; doBit?: boolean; cls?: string } = {}): Uint8Array {
+  return new Uint8Array(
+    encode({
+      id,
+      type: "query",
+      flags: 0x0100,
+      questions: [{ name, type: "A", class: opts.cls ?? "IN" }],
+      ...(opts.opt
+        ? {
+            additionals: [
+              {
+                name: ".",
+                type: "OPT",
+                udpPayloadSize: 4096,
+                extendedRcode: 0,
+                ednsVersion: 0,
+                flags: opts.doBit ? 0x8000 : 0,
+                options: [],
+              },
+            ],
+          }
+        : {}),
+    } as never),
+  );
+}
+
+function response(
+  name: string,
+  id = 1,
+  opts: { ttl?: number; opt?: boolean } = {},
+): Uint8Array {
+  return new Uint8Array(
+    encode({
+      id,
+      type: "response",
+      flags: 0x8180,
+      questions: [{ name, type: "A", class: "IN" }],
+      answers: [{ name, type: "A", class: "IN", ttl: opts.ttl ?? 300, data: "1.2.3.4" }],
+      ...(opts.opt
+        ? {
+            additionals: [
+              {
+                name: ".",
+                type: "OPT",
+                udpPayloadSize: 4096,
+                extendedRcode: 0,
+                ednsVersion: 0,
+                flags: 0,
+                options: [],
+              },
+            ],
+          }
+        : {}),
+    } as never),
+  );
+}
+
+describe("DnsCache", () => {
+  test("round-trips an answer and patches the transaction id", () => {
+    const cache = new DnsCache();
+    cache.set(query("example.com", 1), response("example.com", 1));
+    const got = cache.get(query("example.com", 0x4242));
+    expect(got).toBeDefined();
+    const packet = decode(Buffer.from(got!));
+    expect(packet.id).toBe(0x4242);
+    expect((packet.answers?.[0] as { data?: string } | undefined)?.data).toBe("1.2.3.4");
+  });
+
+  test("never shares entries across upstreams", () => {
+    const cache = new DnsCache();
+    cache.set(query("example.com"), response("example.com"), "https://a/dns-query");
+    expect(cache.get(query("example.com"), "https://a/dns-query")).toBeDefined();
+    expect(cache.get(query("example.com"), "https://b/dns-query")).toBeUndefined();
+  });
+
+  test("never shares entries across query classes or DO bits", () => {
+    const cache = new DnsCache();
+    cache.set(query("example.com", 1, { opt: true, doBit: true }), response("example.com"));
+    expect(cache.get(query("example.com", 1, { opt: true, doBit: true }))).toBeDefined();
+    expect(cache.get(query("example.com", 1, { opt: true, doBit: false }))).toBeUndefined();
+    expect(cache.get(query("example.com", 1, { cls: "CH" }))).toBeUndefined();
+  });
+
+  test("strips OPT from the cached response", () => {
+    const cache = new DnsCache();
+    cache.set(query("example.com", 1, { opt: true }), response("example.com", 1, { opt: true }));
+    const got = cache.get(query("example.com", 2, { opt: true }));
+    expect(got).toBeDefined();
+    const packet = decode(Buffer.from(got!));
+    expect((packet.additionals ?? []).some((r) => r.type === "OPT")).toBe(false);
+  });
+
+  test("rewrites the question name to the requesting 0x20 case", () => {
+    const cache = new DnsCache();
+    cache.set(query("Example.COM.", 1), response("Example.COM.", 1));
+    const got = cache.get(query("eXaMpLe.cOm.", 2));
+    expect(got).toBeDefined();
+    const packet = decode(Buffer.from(got!));
+    expect(packet.questions?.[0]?.name).toBe("eXaMpLe.cOm");
+  });
+
+  test("caches TTL-0 answers for at least 1s (no hot loop)", () => {
+    const cache = new DnsCache();
+    cache.set(query("zero.test"), response("zero.test", 1, { ttl: 0 }));
+    expect(cache.get(query("zero.test", 2))).toBeDefined();
+  });
+});

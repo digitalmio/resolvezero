@@ -117,6 +117,14 @@ export function createHealthApp(deps: {
   app.get("healthz", (c) => c.body(null, 204));
 
   app.get("metrics", async (c) => {
+    // Optional bearer gate: hosted deployments should set METRICS_TOKEN so
+    // the public edge hostname doesn't expose profile/action cardinality.
+    const metricsToken = process.env.METRICS_TOKEN;
+    if (metricsToken) {
+      const header = c.req.header("authorization");
+      const supplied = c.req.query("token") ?? (header?.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : undefined);
+      if (supplied !== metricsToken) return c.body(null, 401);
+    }
     try {
       const cpuNow = process.cpuUsage();
       const wallNow = Bun.nanoseconds();

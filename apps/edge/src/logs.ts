@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { moduleLogger } from "./logger";
 import type { RuleStore } from "./ruleStore";
-import { listAllKeys, profilePrefix, type S3ClientLike } from "./sinks/s3";
+import { deleteKeys, listAllKeys, profilePrefix, type S3ClientLike } from "./sinks/s3";
 
 const log = moduleLogger("logs");
 
@@ -69,7 +69,12 @@ export function createLogsApp(deps: LogsDeps) {
       ? `${profilePrefix(prefix, profileId)}${date}/`
       : profilePrefix(prefix, profileId);
 
+    const rawLimit = Number(c.req.query("limit") ?? 0);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 10_000) : 0;
+    const newestFirst = c.req.query("order") === "desc";
+
     const { keys, truncated } = await listAllKeys(deps.client, objectPrefix);
+    const orderedKeys = newestFirst ? [...keys].reverse() : keys;
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
@@ -80,8 +85,9 @@ export function createLogsApp(deps: LogsDeps) {
           );
         }
         if (format === "csv") controller.enqueue(encoder.encode(CSV_HEADER));
+        let emitted = 0;
         try {
-          for (const key of keys) {
+          outer: for (const key of orderedKeys) {
             const compressed = new Uint8Array(await deps.client!.file(key).arrayBuffer());
             if (compressed.length > MAX_INFLATED_BYTES) {
               log.warn({ key }, "log object too large, skipped");
@@ -89,19 +95,21 @@ export function createLogsApp(deps: LogsDeps) {
             }
             let raw: string;
             try {
-              raw = new TextDecoder().decode(Bun.gunzipSync(compressed.slice(0, MAX_INFLATED_BYTES + 1)));
+              // Bounded streaming inflate: a gzip bomb aborts at the cap
+              // instead of allocating its full expansion.
+              const inflated = await gunzipBounded(compressed, MAX_INFLATED_BYTES);
+              raw = new TextDecoder().decode(inflated);
             } catch (err) {
-              log.error({ err, key }, "log object corrupt, skipped");
+              log.error({ err, key }, "log object corrupt/too large, skipped");
               continue;
             }
-            if (raw.length > MAX_INFLATED_BYTES) {
-              log.warn({ key }, "log object inflated too large, skipped");
-              continue;
-            }
-            for (const line of raw.split("\n")) {
-              if (!line) continue;
+            const lines = raw.split("\n").filter(Boolean);
+            if (newestFirst) lines.reverse();
+            for (const line of lines) {
+              if (limit && emitted >= limit) break outer;
               if (format === "jsonl") {
                 controller.enqueue(encoder.encode(line + "\n"));
+                emitted++;
                 continue;
               }
               const e = JSON.parse(line) as Record<string, unknown>;
@@ -113,6 +121,7 @@ export function createLogsApp(deps: LogsDeps) {
                 csvField(e.rttMs ?? ""),
               ].join(",");
               controller.enqueue(encoder.encode(row + "\n"));
+              emitted++;
             }
           }
         } catch (err) {
@@ -134,6 +143,7 @@ export function createLogsApp(deps: LogsDeps) {
         "content-type": format === "csv" ? "text/csv" : "application/x-ndjson",
         "content-disposition": `attachment; filename="rz-logs-${profileId}${date ? "-" + date : ""}.${format}"`,
         ...(truncated ? { "x-rz-truncated": "true" } : {}),
+        ...(limit ? { "x-rz-limited": String(limit) } : {}),
       },
     });
   });
@@ -148,11 +158,42 @@ export function createLogsApp(deps: LogsDeps) {
     }
 
     const { keys, truncated } = await listAllKeys(deps.client, profilePrefix(prefix, profileId));
-    await Promise.all(keys.map((k) => deps.client!.delete(k)));
+    await deleteKeys(deps.client, keys);
     log.info({ profileId, removed: keys.length, truncated }, "raw logs cleared");
     // Never claim completeness when the listing was truncated.
     return c.json({ removed: keys.length, truncated });
   });
 
   return app;
+}
+
+/** Streaming gzip inflate with a hard output cap (defeats zip bombs). */
+async function gunzipBounded(data: Uint8Array, maxBytes: number): Promise<Uint8Array> {
+  const decompressed = new Blob([data.slice().buffer as ArrayBuffer])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"));
+  const reader = decompressed.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(`inflated log object exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 }

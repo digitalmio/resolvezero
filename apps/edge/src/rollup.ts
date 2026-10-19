@@ -28,13 +28,9 @@ interface BucketAgg {
  * Updates the stats_hourly rollups for a batch of flushed query-log rows.
  * Called on every batcher flush → /stats stays near-real-time.
  *
- * Concurrency note: read-modify-write per (profile, hour) bucket assumes a
- * single edge writer per DB — acceptable for MVP (one machine per region,
- * one region writes to a given... actually: machines of DIFFERENT regions
- * share the DB. A race between two regions flushes the same bucket could
- * drop counter increments. MVP trade-off: counters drift slightly, maps
- * converge on next flush; revisit with SELECT ... FOR UPDATE or SQL-side
- * merge when hosted scale demands it.
+ * Concurrency: each (profile, hour) bucket is read-merge-written inside a
+ * transaction holding `pg_advisory_xact_lock`, so two edge regions flushing
+ * the same bucket serialize instead of losing increments.
  */
 export async function updateStatsHourly(rows: QueryLogRow[]): Promise<void> {
   if (rows.length === 0) return;
@@ -160,65 +156,73 @@ export function mergeTopEntries(a: Map<string, number>, entries: StatsTopEntry[]
 }
 
 async function applyBucket(agg: BucketAgg): Promise<void> {
-  const existing = await db
-    .select()
-    .from(statsHourly)
-    .where(and(eq(statsHourly.profileId, agg.profileId), eq(statsHourly.hour, agg.hour)))
-    .limit(1);
+  // Read-modify-write must be serialized across edge regions. A
+  // transaction-scoped advisory lock per (profile, hour) is cheap and
+  // avoids a schema migration; the lock releases on commit/rollback.
+  const lockKey = `${agg.profileId}:${agg.hour.getTime()}`;
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 
-const prev = existing[0] ?? {
-  totalQueries: 0,
-  blocked: 0,
-  rttSumMs: 0,
-  rttCount: 0,
-  topDomains: [] as StatsTopEntry[],
-  topBlocked: [] as StatsTopEntry[],
-  topClients: [] as StatsTopEntry[],
-  topDevices: [] as StatsTopEntry[],
-};
+    const existing = await tx
+      .select()
+      .from(statsHourly)
+      .where(and(eq(statsHourly.profileId, agg.profileId), eq(statsHourly.hour, agg.hour)))
+      .limit(1);
 
-  const domains = new Map<string, number>();
-  const clients = new Map<string, number>();
-  const devices = new Map<string, number>();
-  const blockedDomains = new Map<string, number>();
-  mergeTopEntries(domains, prev.topDomains, "domain");
-  mergeTopEntries(clients, prev.topClients, "clientIp");
-  mergeTopEntries(devices, prev.topDevices ?? [], "device");
-  mergeTopEntries(blockedDomains, prev.topBlocked, "domain");
-  for (const [k, v] of agg.domains) incr(domains, k, v);
-  for (const [k, v] of agg.clients) incr(clients, k, v);
-  for (const [k, v] of agg.devices) incr(devices, k, v);
-  for (const [k, v] of agg.blockedDomains) incr(blockedDomains, k, v);
+    const prev = existing[0] ?? {
+      totalQueries: 0,
+      blocked: 0,
+      rttSumMs: 0,
+      rttCount: 0,
+      topDomains: [] as StatsTopEntry[],
+      topBlocked: [] as StatsTopEntry[],
+      topClients: [] as StatsTopEntry[],
+      topDevices: [] as StatsTopEntry[],
+    };
 
-  const values = {
-    profileId: agg.profileId,
-    hour: agg.hour,
-    totalQueries: prev.totalQueries + agg.total,
-    blocked: prev.blocked + agg.blocked,
-    rttSumMs: prev.rttSumMs + agg.rttSumMs,
-    rttCount: prev.rttCount + agg.rttCount,
-    topDomains: toTopEntries(domains, MAX_TOP_DOMAINS, "domain"),
-    topBlocked: toTopEntries(blockedDomains, MAX_TOP_BLOCKED, "domain"),
-    topClients: toTopEntries(clients, MAX_TOP_CLIENTS, "clientIp"),
-    topDevices: toTopEntries(devices, MAX_TOP_DEVICES, "device"),
-  };
+    const domains = new Map<string, number>();
+    const clients = new Map<string, number>();
+    const devices = new Map<string, number>();
+    const blockedDomains = new Map<string, number>();
+    mergeTopEntries(domains, prev.topDomains, "domain");
+    mergeTopEntries(clients, prev.topClients, "clientIp");
+    mergeTopEntries(devices, prev.topDevices ?? [], "device");
+    mergeTopEntries(blockedDomains, prev.topBlocked, "domain");
+    for (const [k, v] of agg.domains) incr(domains, k, v);
+    for (const [k, v] of agg.clients) incr(clients, k, v);
+    for (const [k, v] of agg.devices) incr(devices, k, v);
+    for (const [k, v] of agg.blockedDomains) incr(blockedDomains, k, v);
 
-  await db
-    .insert(statsHourly)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [statsHourly.profileId, statsHourly.hour],
-      set: {
-        totalQueries: values.totalQueries,
-        blocked: values.blocked,
-        rttSumMs: values.rttSumMs,
-        rttCount: values.rttCount,
-        topDomains: values.topDomains,
-        topBlocked: values.topBlocked,
-        topClients: values.topClients,
-        topDevices: values.topDevices,
-      },
-    });
+    const values = {
+      profileId: agg.profileId,
+      hour: agg.hour,
+      totalQueries: prev.totalQueries + agg.total,
+      blocked: prev.blocked + agg.blocked,
+      rttSumMs: prev.rttSumMs + agg.rttSumMs,
+      rttCount: prev.rttCount + agg.rttCount,
+      topDomains: toTopEntries(domains, MAX_TOP_DOMAINS, "domain"),
+      topBlocked: toTopEntries(blockedDomains, MAX_TOP_BLOCKED, "domain"),
+      topClients: toTopEntries(clients, MAX_TOP_CLIENTS, "clientIp"),
+      topDevices: toTopEntries(devices, MAX_TOP_DEVICES, "device"),
+    };
+
+    await tx
+      .insert(statsHourly)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [statsHourly.profileId, statsHourly.hour],
+        set: {
+          totalQueries: values.totalQueries,
+          blocked: values.blocked,
+          rttSumMs: values.rttSumMs,
+          rttCount: values.rttCount,
+          topDomains: values.topDomains,
+          topBlocked: values.topBlocked,
+          topClients: values.topClients,
+          topDevices: values.topDevices,
+        },
+      });
+  });
 }
 
 function incr(map: Map<string, number>, key: string, by = 1): void {

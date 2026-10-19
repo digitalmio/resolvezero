@@ -6,6 +6,7 @@
  * propagate to the edge via the existing NOTIFY triggers.
  */
 import { Hono } from "hono";
+import { isIP } from "node:net";
 import { and, asc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
@@ -25,6 +26,13 @@ type AuthLike = {
 
 const EDGE_URL = process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev";
 const APP_HOST = process.env.DASH_HOST ?? "https://resolvezero-control.fly.dev";
+
+/** Control → edge call with Bearer auth (never put the token in a URL). */
+function edgeFetch(path: string, token: string | null | undefined, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  return fetch(`${EDGE_URL}${path}`, { ...init, headers });
+}
 
 type SessionView = { user: SessionUser; session: unknown } | null;
 
@@ -66,8 +74,29 @@ function isSafeListUrl(url: string): boolean {
     /^10\./.test(host) ||
     /^192\.168\./.test(host) ||
     /^169\.254\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
+    /^\[?(fc|fd|fe[89ab])[0-9a-f]{2}:/i.test(host)
   );
+}
+
+/** Custom upstream: syntax only — the edge performs the authoritative
+ *  redirect-aware SSRF check (and allows private targets for self-hosters). */
+function isValidUpstreamUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  return (u.protocol === "http:" || u.protocol === "https:") && !u.username && !u.password && !!u.hostname;
+}
+
+function isValidZoneValue(recordType: string, value: string): boolean {
+  if (recordType === "A") return isIP(value) === 4;
+  if (recordType === "AAAA") return isIP(value) === 6;
+  if (recordType === "CNAME") return value.length <= 253 && /^[a-z0-9._-]+$/i.test(value);
+  return true; // TXT
 }
 
 const esc = (s: unknown): string =>
@@ -176,8 +205,9 @@ function topList(title: string, entries: StatsTopEntry[] | undefined, key: "doma
   return `<div class="card"><h3>${esc(title)}</h3><ul class="toplist">${rows || '<li class="muted">nothing yet</li>'}</ul></div>`;
 }
 
-function logUrl(profileId: string, token: string | null | undefined, format: string, date: string): string {
-  return `${EDGE_URL}/v1/${encodeURIComponent(profileId)}/logs?format=${format}&date=${encodeURIComponent(date)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+function logUrl(profileId: string, format: string, date: string): string {
+  const q = new URLSearchParams({ p: profileId, format, date });
+  return `/dash/logs/download?${q}`;
 }
 
 interface StatsSummary {
@@ -219,8 +249,9 @@ function chart(series: { bucket: string; total: number; blocked: number }[]): st
 async function fetchStats(profileId: string, range: string, token: string | null): Promise<StatsSummary | null> {
   const q = encodeURIComponent(profileId);
   try {
-    const res = await fetch(
-      `${EDGE_URL}/v1/${q}/stats?range=${encodeURIComponent(range)}${token ? `&token=${encodeURIComponent(token)}` : ""}`,
+    const res = await edgeFetch(
+      `/v1/${q}/stats?range=${encodeURIComponent(range)}`,
+      token,
       { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) },
     );
     if (!res.ok) return null;
@@ -391,10 +422,9 @@ ${copyScript}
       c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
       "";
     const params = new URLSearchParams();
-    if (current.dohToken) params.set("token", current.dohToken);
     if (callerIp) params.set("ip", callerIp);
     try {
-      const res = await fetch(`${EDGE_URL}/v1/${current.id}/update-ip?${params}`, {
+      const res = await edgeFetch(`/v1/${current.id}/update-ip?${params}`, current.dohToken, {
         method: "POST",
         signal: AbortSignal.timeout(8000),
       });
@@ -549,10 +579,10 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
       .where(eq(profileBlocklists.profileId, current.id));
     if (count.length >= 20) return c.json({ error: "subscription limit (20) reached" }, 400);
     await db.insert(profileBlocklists).values({ profileId: current.id, url, format, enabled: true });
-    void fetch(
-      `${EDGE_URL}/v1/${current.id}/blocklists/sync${current.dohToken ? `?token=${encodeURIComponent(current.dohToken)}` : ""}`,
-      { method: "POST", signal: AbortSignal.timeout(8000) },
-    ).catch(() => {});
+    void edgeFetch(`/v1/${current.id}/blocklists/sync`, current.dohToken, {
+      method: "POST",
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => {});
     return c.redirect(`/rules?p=${current.id}`);
   });
 
@@ -569,10 +599,10 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
       .update(profileBlocklists)
       .set({ enabled })
       .where(and(eq(profileBlocklists.profileId, current.id), eq(profileBlocklists.id, id)));
-    void fetch(
-      `${EDGE_URL}/v1/${current.id}/blocklists/sync${current.dohToken ? `?token=${encodeURIComponent(current.dohToken)}` : ""}`,
-      { method: "POST", signal: AbortSignal.timeout(8000) },
-    ).catch(() => {});
+    void edgeFetch(`/v1/${current.id}/blocklists/sync`, current.dohToken, {
+      method: "POST",
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => {});
     return c.redirect(`/rules?p=${current.id}`);
   });
 
@@ -583,10 +613,10 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
     const current = owned.find((p) => p.id === c.req.query("p"));
     if (!current) return c.body(null, 403);
     try {
-      await fetch(
-        `${EDGE_URL}/v1/${current.id}/blocklists/sync${current.dohToken ? `?token=${encodeURIComponent(current.dohToken)}` : ""}`,
-        { method: "POST", signal: AbortSignal.timeout(8000) },
-      );
+      await edgeFetch(`/v1/${current.id}/blocklists/sync`, current.dohToken, {
+        method: "POST",
+        signal: AbortSignal.timeout(8000),
+      });
     } catch {
       // edge unreachable — redirect anyway, status visible on next load
     }
@@ -607,6 +637,7 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
     if (!VALID_DOMAIN.test(domain.replace(/^\*\./, ""))) return c.body(null, 400);
     if (!["A", "AAAA", "CNAME", "TXT"].includes(recordType)) return c.body(null, 400);
     if (values.length === 0 || values.length > 8 || values.some((v) => v.length > 255)) return c.body(null, 400);
+    if (!values.every((v) => isValidZoneValue(recordType, v))) return c.body(null, 400);
     await db
       .insert(profileZones)
       .values({ profileId: current.id, domain, recordType, values, ttl })
@@ -657,8 +688,42 @@ ${chart(stats.series ?? [])}
   ${topList("Blocked domains", stats.topBlocked, "domain")}
   ${topList("Devices", stats.queriesPerDevice, "device")}
 </div>
-<p class="muted small">Raw events: <a class="mono" href="${logUrl(current.id, current.dohToken, "jsonl", new Date().toISOString().slice(0, 10))}">download JSONL</a> · <a class="mono" href="${logUrl(current.id, current.dohToken, "csv", new Date().toISOString().slice(0, 10))}">CSV</a></p>`;
+<p class="muted small">Raw events: <a class="mono" href="${logUrl(current.id, "jsonl", new Date().toISOString().slice(0, 10))}">download JSONL</a> · <a class="mono" href="${logUrl(current.id, "csv", new Date().toISOString().slice(0, 10))}">CSV</a></p>`;
     return c.html(layout({ session, title: "Analytics", profiles: owned, current, active: "analytics" }, body));
+  });
+
+  // Server-side log download: the browser never receives a DoH token in a
+  // URL. Control authenticates the session/ownership, then streams from the
+  // edge with a Bearer header.
+  app.get("/dash/logs/download", async (c) => {
+    const session = c.get("session");
+    if (!session?.user) return c.body(null, 401);
+    const owned = await listProfiles(session.user.id);
+    const current = owned.find((p) => p.id === c.req.query("p"));
+    if (!current) return c.body(null, 403);
+
+    const format = c.req.query("format") === "csv" ? "csv" : "jsonl";
+    const date = c.req.query("date") ?? "";
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.body(null, 400);
+
+    const params = new URLSearchParams({ format });
+    if (date) params.set("date", date);
+    let res: Response;
+    try {
+      res = await edgeFetch(`/v1/${current.id}/logs?${params}`, current.dohToken);
+    } catch {
+      return c.text("edge unreachable", 502);
+    }
+    if (!res.ok || !res.body) return c.text(`edge returned ${res.status}`, 502);
+
+    return new Response(res.body, {
+      status: 200,
+      headers: {
+        "content-type": format === "csv" ? "text/csv" : "application/x-ndjson",
+        "content-disposition": `attachment; filename="rz-logs-${current.id}${date ? "-" + date : ""}.${format}"`,
+        "cache-control": "no-store",
+      },
+    });
   });
 
   app.get("/logs", async (c) => {
@@ -671,14 +736,16 @@ ${chart(stats.series ?? [])}
     let rows: { time: string; domain: string; action: string; clientIp: string; rttMs: number | null; device?: string }[] = [];
     let err = "";
     try {
-      const res = await fetch(`${EDGE_URL}/v1/${current.id}/logs?format=jsonl&date=${encodeURIComponent(date)}${current.dohToken ? `&token=${encodeURIComponent(current.dohToken)}` : ""}`);
+      const res = await edgeFetch(
+        `/v1/${current.id}/logs?format=jsonl&date=${encodeURIComponent(date)}&limit=400&order=desc`,
+        current.dohToken,
+        { signal: AbortSignal.timeout(10_000) },
+      );
       if (res.ok) {
         const text = await res.text();
         rows = text
           .split("\n")
           .filter(Boolean)
-          .slice(-400)
-          .reverse()
           .map((l): Record<string, unknown> | null => {
             try {
               return JSON.parse(l) as Record<string, unknown>;
@@ -686,7 +753,7 @@ ${chart(stats.series ?? [])}
               return null;
             }
           })
-          .filter((e): e is Record<string, unknown> => e !== null)
+          .filter((e): e is Record<string, unknown> => e !== null && typeof e["time"] === "string")
           .map((e) => ({
             time: String(e["time"]),
             domain: String(e.domain),
@@ -761,7 +828,7 @@ ${err ? `<p class="muted">${esc(err)}</p>` : ""}
     const upstream = form.upstream && String(form.upstream) ? String(form.upstream) : null;
     const rawUpstreamUrl = String(form.upstreamUrl ?? "").trim();
     const upstreamUrl = rawUpstreamUrl ? rawUpstreamUrl.slice(0, 255) : null;
-    if (upstreamUrl && !/^https?:\/\/.+\..+/.test(upstreamUrl)) {
+    if (upstreamUrl && !isValidUpstreamUrl(upstreamUrl)) {
       return c.json({ error: "upstream URL must be http(s)" }, 400);
     }
     await db

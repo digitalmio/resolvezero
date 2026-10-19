@@ -150,7 +150,9 @@ export async function startRuleSync(
         log.warn("pre-snapshot buffer overflow, dropped oldest events");
       }
     };
-    try {
+    let attempt = 0;
+    for (;;) {
+      try {
       const [profileRows, ruleRows, sourceIpRows, zoneRows] = await Promise.all([
         db
           .select({
@@ -222,15 +224,18 @@ export async function startRuleSync(
 
       snapshotLoaded = true;
       log.info({ stats: store.stats }, "snapshot loaded");
-    } catch (err) {
-      log.error({ err }, "reconcile failed, retrying in 2s");
-      await Bun.sleep(2000);
-      if (!snapshotLoaded) {
-        clamp(bufferedRules as unknown[]);
-        clamp(bufferedZones as unknown[]);
-        clamp(bufferedIps as unknown[]);
+      return;
+      } catch (err) {
+        attempt += 1;
+        const delayMs = Math.min(2_000 * 2 ** Math.min(attempt - 1, 4), 30_000);
+        log.error({ err, attempt, retryInMs: delayMs }, "reconcile failed, retrying");
+        await Bun.sleep(delayMs);
+        if (!snapshotLoaded) {
+          clamp(bufferedRules as unknown[]);
+          clamp(bufferedZones as unknown[]);
+          clamp(bufferedIps as unknown[]);
+        }
       }
-      await reconcile();
     }
   }
 

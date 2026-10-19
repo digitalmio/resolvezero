@@ -48,16 +48,27 @@ const api = new Hono();
 // headers wrap every response.
 api.use("*", async (c, next) => {
   await next();
-  const origin = process.env.CORS_ORIGINS ?? "*";
-  c.res.headers.set("access-control-allow-origin", origin);
+  // Production default is same-origin (no CORS headers). Set CORS_ORIGINS
+  // (comma-separated) only when a separate API origin is intentionally used.
+  const allowed = (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (allowed.length === 0) return;
+  const requestOrigin = c.req.header("origin") ?? "";
+  const allow = allowed.includes("*") ? "*" : allowed.includes(requestOrigin) ? requestOrigin : "";
+  if (!allow) return;
+  c.res.headers.set("access-control-allow-origin", allow);
+  c.res.headers.set("vary", "Origin");
   c.res.headers.set(
     "access-control-allow-credentials",
-    origin === "*" ? "false" : "true",
+    allow === "*" ? "false" : "true",
   );
 });
 
 api
   .get("/api/healthz", (c) => c.body(null, 204))
+  .get("/healthz", (c) => c.body(null, 204))
   .on(["GET", "POST"], ["/api/auth/*"], (c) => auth.handler(c.req.raw))
   .get("/api/me", async (c) => {
     const sessionData = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -73,6 +84,19 @@ api
   });
 
 const site = new Hono();
+// Baseline browser hardening for every dashboard/API response.
+site.use("*", async (c, next) => {
+  await next();
+  const h = c.res.headers;
+  h.set("x-content-type-options", "nosniff");
+  h.set("referrer-policy", "no-referrer");
+  h.set("x-frame-options", "DENY");
+  h.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+  h.set(
+    "content-security-policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  );
+});
 site.route("/", api);
 site.route("/", createDashApp(auth));
 

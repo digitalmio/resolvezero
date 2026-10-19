@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { gzipSync, gunzipSync } from "node:zlib";
 import {
   S3ArchiveSink,
+  deleteKeys,
+  listAllKeys,
   logObjectKey,
   profilePrefix,
   lineFor,
@@ -119,3 +121,58 @@ describe("S3ArchiveSink", () => {
   });
 });
 
+
+describe("listAllKeys / deleteKeys", () => {
+  test("walks every page via continuation tokens", async () => {
+    const pages = [
+      { contents: [{ key: "logs/p/2026-10-08/0800.0.jsonl.gz" }], isTruncated: true, nextContinuationToken: "t1" },
+      { contents: [{ key: "logs/p/2026-10-08/0815.0.jsonl.gz" }], isTruncated: true, nextContinuationToken: "t2" },
+      { contents: [{ key: "logs/p/2026-10-08/0830.0.jsonl.gz" }], isTruncated: false },
+    ];
+    const seenTokens: (string | undefined)[] = [];
+    const client = {
+      async list(opts: { prefix: string; continuationToken?: string }) {
+        seenTokens.push(opts.continuationToken);
+        return pages[seenTokens.length - 1]!;
+      },
+    } as unknown as S3ClientLike;
+
+    const { keys, truncated } = await listAllKeys(client, "logs/p/");
+    expect(truncated).toBe(false);
+    expect(keys).toEqual([
+      "logs/p/2026-10-08/0800.0.jsonl.gz",
+      "logs/p/2026-10-08/0815.0.jsonl.gz",
+      "logs/p/2026-10-08/0830.0.jsonl.gz",
+    ]);
+    expect(seenTokens).toEqual([undefined, "t1", "t2"]);
+  });
+
+  test("reports truncation when the client has no continuation token", async () => {
+    const client = {
+      async list() {
+        return { contents: [{ key: "a" }], isTruncated: true };
+      },
+    } as unknown as S3ClientLike;
+    const { truncated } = await listAllKeys(client, "logs/p/");
+    expect(truncated).toBe(true);
+  });
+
+  test("deleteKeys honours bounded concurrency", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const deleted: string[] = [];
+    const client = {
+      async delete(key: string) {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 1));
+        deleted.push(key);
+        inFlight--;
+      },
+    } as unknown as S3ClientLike;
+
+    await deleteKeys(client, ["a", "b", "c", "d", "e"], 2);
+    expect(deleted.sort()).toEqual(["a", "b", "c", "d", "e"]);
+    expect(peak).toBeLessThanOrEqual(2);
+  });
+});

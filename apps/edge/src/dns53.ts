@@ -171,16 +171,22 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     if (zone) {
       deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
-      return zoneAnswer(question, zone);
+      try {
+        return zoneAnswer(question, zone);
+      } catch {
+        return servfailResponse(question);
+      }
     }
 
     // 4. Blocklist (explicit rules first, then remote subscriptions w/ @@ allow precedence)
-    if (deps.store.resolve(profileId, question.name) === "block") {
+    //    Explicit ALLOW must also short-circuit remote blocks — parity with DoH.
+    const explicit = deps.store.resolve(profileId, question.name);
+    if (explicit === "block") {
       deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("block");
       return sinkholeResponse(question);
     }
-    if (deps.store.resolveRemote(profileId, question.name) === "block") {
+    if (!explicit && deps.store.resolveRemote(profileId, question.name) === "block") {
       deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("block");
       return sinkholeResponse(question);
@@ -190,6 +196,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
     const cached = deps.dnsCache.get(wire, upstreamUrl);
     if (cached) {
+      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
       return cached;
     }
@@ -200,7 +207,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
         wire,
         upstreamUrl,
       );
-      deps.dnsCache.set(responseWire, upstreamUrl);
+      deps.dnsCache.set(wire, responseWire, upstreamUrl);
       deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
       deps.recorder?.recordRtt(rttMs);

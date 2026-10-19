@@ -7,24 +7,73 @@ const log = moduleLogger("s3sink");
 export interface S3ClientLike {
   write(key: string, body: Uint8Array): Promise<unknown>;
   file(key: string): { arrayBuffer(): Promise<ArrayBuffer> };
-  /** Bun's list() resolves to a single page ({contents:[{key}]}).
-   *  `isTruncated` signals more keys remain — callers MUST use listAll()
-   *  and never treat one page as complete (DELETE completeness). */
-  list(opts: { prefix: string }): Promise<{ contents: { key: string }[]; isTruncated?: boolean }>;
+  /** Bun's list() returns one page; nextContinuationToken feeds the next call. */
+  list(opts: {
+    prefix: string;
+    continuationToken?: string;
+    maxKeys?: number;
+  }): Promise<{
+    contents: { key: string }[];
+    isTruncated?: boolean;
+    nextContinuationToken?: string;
+  }>;
   delete(key: string): Promise<unknown>;
 }
 
-/** Collects every key under a prefix across pages (caps at 50k for safety). */
-export async function listAllKeys(client: S3ClientLike, prefix: string, cap = 50_000): Promise<{ keys: string[]; truncated: boolean }> {
-  // Bun.S3Client currently returns a single page (≤1000 keys) with no
-  // continuation token. Loop defensively for future paginated clients;
-  // until then, surface `truncated` so download/delete never claim
-  // completeness they don't have.
-  const page = await client.list({ prefix });
-  const contents = page.contents ?? [];
-  const keys = [...new Set(contents.map((o) => o.key))].sort().slice(0, cap);
-  const truncated = page.isTruncated === true || contents.length >= 1000 || keys.length >= cap;
+/** Collects every key under a prefix across all pages (caps at 50k for safety). */
+export async function listAllKeys(
+  client: S3ClientLike,
+  prefix: string,
+  cap = 50_000,
+): Promise<{ keys: string[]; truncated: boolean }> {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  let continuationToken: string | undefined;
+  let truncated = false;
+  let pages = 0;
+
+  for (;;) {
+    if (++pages > 100) {
+      truncated = true;
+      break;
+    }
+    const page = await client.list({ prefix, continuationToken, maxKeys: 1000 });
+    for (const obj of page.contents ?? []) {
+      if (!seen.has(obj.key)) {
+        seen.add(obj.key);
+        keys.push(obj.key);
+      }
+      if (keys.length >= cap) break;
+    }
+    if (keys.length >= cap) {
+      truncated = true;
+      break;
+    }
+    if (!page.isTruncated) break;
+    if (!page.nextContinuationToken || page.nextContinuationToken === continuationToken) {
+      // Client promises more but gives us no usable cursor — do not loop
+      // forever on a client that ignores continuationToken.
+      truncated = true;
+      break;
+    }
+    continuationToken = page.nextContinuationToken;
+  }
+
+  keys.sort();
   return { keys, truncated };
+}
+
+/** Deletes keys with bounded concurrency (avoids 50k simultaneous requests). */
+export async function deleteKeys(client: S3ClientLike, keys: string[], concurrency = 8): Promise<void> {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(concurrency, keys.length) }, async () => {
+    for (;;) {
+      const i = index++;
+      if (i >= keys.length) return;
+      await client.delete(keys[i]!);
+    }
+  });
+  await Promise.all(workers);
 }
 
 export interface S3SinkOptions {

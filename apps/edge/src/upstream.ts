@@ -1,4 +1,4 @@
-import { ofetch as $fetch } from "ofetch";
+import { allowPrivateTargets, fetchWithSafeRedirects } from "./netGuard";
 
 /**
  * Upstream DoH presets (readme §2). Verified against Bun's fetch:
@@ -31,11 +31,15 @@ export interface UpstreamResult {
   rttMs: number;
 }
 
+/** DNS responses are small; anything bigger is a broken/malicious upstream. */
+const MAX_UPSTREAM_BYTES = 65_535;
+const UPSTREAM_TIMEOUT_MS = 2_500;
+
 /**
  * Forwards a DNS wire-format query to a DoH upstream.
  * `upstreamUrl` is chosen per profile (preset name, absolute URL, or the
- * edge default). Self-hosters can point it anywhere — e.g. a local
- * Unbound DoH listener (readme §2, 1-line/env change).
+ * edge default). Custom URLs are SSRF-checked (redirects re-validated,
+ * private targets denied unless ALLOW_PRIVATE_TARGETS=1 for self-hosting).
  *
  * Fail fast (no retries — the client stub resolver owns retransmission);
  * SERVFAIL upstream is NOT cached (only healthy responses enter the LRU).
@@ -48,52 +52,22 @@ export async function resolveWire(
   const finalUrl = Object.hasOwn(UPSTREAM_PRESETS, url)
     ? UPSTREAM_PRESETS[url as UpstreamPreset]
     : url;
-  assertSafeUpstreamUrl(finalUrl);
 
   const startedAt = performance.now();
-  const response = await $fetch.raw(finalUrl, {
-    method: "POST",
-    headers: { "content-type": "application/dns-message" },
-    body: Buffer.from(wire),
-    // doh responses are application/dns-message — ofetch would otherwise
-    // hand us text; force the raw buffer through.
-    responseType: "arrayBuffer" as never,
-    retry: 0,
-    timeout: 2500,
-  });
+  const { response } = await fetchWithSafeRedirects(
+    finalUrl,
+    {
+      method: "POST",
+      headers: { "content-type": "application/dns-message", accept: "application/dns-message" },
+      body: Buffer.from(wire),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    },
+    { label: "upstream", allowPrivate: allowPrivateTargets() },
+  );
+  if (!response.ok) throw new Error(`upstream HTTP ${response.status}`);
+  const body = new Uint8Array(await response.arrayBuffer());
+  if (body.length === 0) throw new Error("empty upstream response");
+  if (body.length > MAX_UPSTREAM_BYTES) throw new Error("upstream response too large");
   const rttMs = Math.round(performance.now() - startedAt);
-  if (!response._data) {
-    throw new Error("empty upstream response");
-  }
-  return { wire: new Uint8Array(response._data as ArrayBuffer) as Uint8Array<ArrayBuffer>, rttMs };
-}
-
-/** Blocks metadata endpoints + credentialed URLs on custom upstreams.
- *  Presets are allowlisted above; self-host private hosts remain allowed
- *  (Unbound use-case) unless STRICT_UPSTREAM_SSRF=1. */
-function assertSafeUpstreamUrl(finalUrl: string): void {
-  let u: URL;
-  try {
-    u = new URL(finalUrl);
-  } catch {
-    throw new Error("invalid upstream URL");
-  }
-  if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("upstream must be http(s)");
-  if (u.username || u.password) throw new Error("upstream URL must not embed credentials");
-  const host = u.hostname.toLowerCase();
-  if (host === "169.254.169.254" || host === "metadata.google.internal") {
-    throw new Error("upstream host blocked");
-  }
-  if (process.env.STRICT_UPSTREAM_SSRF === "1" && isPrivateHost(host)) {
-    throw new Error("private upstream blocked");
-  }
-}
-
-function isPrivateHost(host: string): boolean {
-  if (host === "localhost" || host === "[::1]" || host === "::1") return true;
-  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
-  const m = host.match(/^172\.(\d+)\./);
-  if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
-  if (/^169\.254\./.test(host)) return true;
-  return false;
+  return { wire: body as Uint8Array<ArrayBuffer>, rttMs };
 }

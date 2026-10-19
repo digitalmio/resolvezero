@@ -5,6 +5,7 @@ import { moduleLogger } from "./logger";
 import { SuffixFingerprintBuilder } from "./fingerprint";
 import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
+import { fetchWithSafeRedirects } from "./netGuard";
 
 const log = moduleLogger("blocklists");
 
@@ -37,13 +38,19 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
   const intervalHours = Number(process.env.LIST_SYNC_INTERVAL_HOURS ?? 6);
   let timer: ReturnType<typeof setInterval> | undefined;
   let syncing = false;
+  let needsResync = false;
   let pending: Promise<void> | undefined;
 
   const BOOT_SYNC_DELAY_MS = 5_000;
   const bootKick = setTimeout(() => void syncNow(), BOOT_SYNC_DELAY_MS);
 
   const sync = async () => {
-    if (syncing) return;
+    if (syncing) {
+      // A NOTIFY arrived mid-fetch: run once more after the current cycle
+      // instead of silently dropping it until the 6-hour interval.
+      needsResync = true;
+      return;
+    }
     syncing = true;
     try {
       const rows = (await db
@@ -129,6 +136,10 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
       log.error({ err }, "blocklist sync cycle failed");
     } finally {
       syncing = false;
+      if (needsResync) {
+        needsResync = false;
+        void sync();
+      }
     }
   };
 
@@ -147,7 +158,9 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
   };
 
   if (intervalHours > 0) {
-    timer = setInterval(() => void sync(), intervalHours * 3600_000);
+    // Jitter ±10% so fra/lhr don't hammer the same list hosts in lockstep.
+    const jitterMs = intervalHours * 3600_000 * (0.9 + Math.random() * 0.2);
+    timer = setInterval(() => void sync(), jitterMs);
     timer.unref?.();
   }
 
@@ -170,15 +183,18 @@ async function writeStatus(id: string, status: string, count: number): Promise<v
 /**
  * Fetch a raw list file (any text format) with timeout + size cap.
  * Throws with a short human-readable reason (goes into last_status).
- * SSRF guard: https-only + no private/metadata hosts.
+ * SSRF guard: https-only, no private/metadata hosts, and every redirect
+ * hop is re-validated (no https → metadata redirect).
  */
 export async function fetchListText(url: string): Promise<string> {
-  assertSafeListUrl(url);
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: { "user-agent": "resolvezero-edge/0.1" },
-    redirect: "follow",
-  });
+  const { response: res } = await fetchWithSafeRedirects(
+    url,
+    {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: { "user-agent": "resolvezero-edge/0.1" },
+    },
+    { protocols: ["https:"], label: "list URL" },
+  );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const len = Number(res.headers.get("content-length") ?? 0);
   if (len > MAX_LIST_BYTES) throw new Error(`too large: ${len}B`);
@@ -233,33 +249,6 @@ function extractAbpDomain(rule: string): string | undefined {
   const d = m[1].replace(/\*+/g, "");
   if (!d.includes(".") || !DOMAIN_RE.test(d)) return undefined;
   return d;
-}
-
-/** SSRF guard for server-fetched list URLs: https-only, no creds, no private/metadata hosts. */
-export function assertSafeListUrl(url: string): void {
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    throw new Error("invalid URL");
-  }
-  if (u.protocol !== "https:") throw new Error("list URL must be https");
-  if (u.username || u.password) throw new Error("list URL must not embed credentials");
-  const host = u.hostname.toLowerCase().replace(/\.+$/, "");
-  if (
-    host === "localhost" ||
-    host === "metadata.google.internal" ||
-    host === "169.254.169.254" ||
-    host === "[::1]" ||
-    host === "::1" ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^169\.254\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
-  ) {
-    throw new Error("list host blocked (private/metadata)");
-  }
 }
 
 function isIpLiteral(s: string): boolean {

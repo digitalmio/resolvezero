@@ -4,6 +4,7 @@ import { normalizeIp, UDP_MAX_PAYLOAD } from "./wire";
 import { createDns53Service, type Dns53Deps } from "./dns53";
 import { RuleStore } from "./ruleStore";
 import { DnsCache } from "./dnsCache";
+import { SuffixFingerprintBuilder } from "./fingerprint";
 import type { QueryLogEntry } from "./doh";
 
 const wireQuery = (name: string, type = "A") =>
@@ -145,6 +146,32 @@ describe("dns53 over real sockets", () => {
     expect((((decode(Buffer.from((await c.ask(wireQuery("ads.evil.com")))!)).answers?.[0] ?? {}) as { data?: string })).data).toBe("0.0.0.0");
     expect((((decode(Buffer.from((await c.ask(wireQuery("nas.lan")))!)).answers?.[0] ?? {}) as { data?: string })).data).toBe("192.168.1.24");
     expect(deps.calls).not.toContain("nas.lan"); // zone never hits upstream
+    await c.close();
+    await svc!.stop();
+  });
+
+  test("explicit allow overrides a remote blocklist (DoH parity)", async () => {
+    const deps = fakeDeps();
+    deps.store.replaceAll(
+      [{ profileId: P1, domain: "allowed.example", action: "allow" }],
+      [{ ipAddress: "127.0.0.1", profileId: P1 }],
+      [{ id: P1, dohToken: null, logQueries: true, upstream: null }],
+      [],
+    );
+    const builder = new SuffixFingerprintBuilder();
+    builder.add("allowed.example", "block");
+    builder.add("other.example", "block");
+    deps.store.upsertList("https://lists.example/block", builder.seal());
+    deps.store.setSubscriptions(P1, ["https://lists.example/block"]);
+
+    const svc = await createDns53Service({ ...deps, host: "127.0.0.1", port: PORT, tcp: false });
+    const c = await client(PORT);
+
+    const allowed = decode(Buffer.from((await c.ask(wireQuery("allowed.example")))!));
+    expect((allowed.answers?.[0] as { data?: string } | undefined)?.data).toBe("1.2.3.4");
+    const blocked = decode(Buffer.from((await c.ask(wireQuery("other.example")))!));
+    expect((blocked.answers?.[0] as { data?: string } | undefined)?.data).toBe("0.0.0.0");
+
     await c.close();
     await svc!.stop();
   });
