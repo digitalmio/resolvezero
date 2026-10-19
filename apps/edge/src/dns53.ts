@@ -40,8 +40,8 @@ export interface Dns53Handle {
  *  - UDP bound to `fly-global-services` (mandatory on Fly; define [[services]]
  *    udp 53 in fly.toml) + TCP for oversized/TC-fallback queries.
  *  - Auth = profile via source-IP whitelist (profile_source_ips). Unknown or
- *    unauthorized senders are dropped SILENTLY (no reply — open-resolver
- *    defense, readme §4).
+ *    unauthorized senders get REFUSED by default (UDP_UNKNOWN_SOURCE=refused)
+ *    or silence with =silent (open-resolver defense, readme §4).
  * - Same pipeline as DoH: zone override → blocklist → LRU → upstream.
  */
 /** Bun runtime socket surfaces, pinned structurally (types churn between versions). */
@@ -174,15 +174,21 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       return zoneAnswer(question, zone);
     }
 
-    // 4. Blocklist
+    // 4. Blocklist (explicit rules first, then remote subscriptions w/ @@ allow precedence)
     if (deps.store.resolve(profileId, question.name) === "block") {
       deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("block");
       return sinkholeResponse(question);
     }
+    if (deps.store.resolveRemote(profileId, question.name) === "block") {
+      deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp, device: null });
+      deps.recorder?.recordQuery("block");
+      return sinkholeResponse(question);
+    }
 
-    // 5. Cache
-    const cached = deps.dnsCache.get(wire);
+    // 5. Cache (keyed by question + upstream)
+    const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
+    const cached = deps.dnsCache.get(wire, upstreamUrl);
     if (cached) {
       deps.recorder?.recordQuery("forward");
       return cached;
@@ -192,9 +198,9 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     try {
       const { wire: responseWire, rttMs } = await deps.upstream.resolveWire(
         wire,
-        deps.store.profileUpstream(profileId) ?? undefined,
+        upstreamUrl,
       );
-      deps.dnsCache.set(responseWire);
+      deps.dnsCache.set(responseWire, upstreamUrl);
       deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
       deps.recorder?.recordRtt(rttMs);

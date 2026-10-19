@@ -43,7 +43,7 @@ When a rule changes, a Postgres trigger fires a `NOTIFY profile_updates` event w
 1. **Boot Phase (race-free sync):** subscribe (`LISTEN profile_updates`) → buffer events → `SELECT` snapshot into the policy `Map` → replay the buffer (reconcile). Re-snapshot on `pg-listen` reconnect.
 2. **Resolution Phase:** authenticate (`profile id` from DoH path, or `senderAddress`→profile for UDP), then check the domain (`O(1)` exact + longest-suffix wildcard, `O(domain depth)`) against the profile's rules.
     * **Blocked** → sinkhole (`0.0.0.0`) — answerable locally, log, return.
-    * **Allowed** → DNS response LRU cache; on miss, forward upstream **over DoH**, log, cache per upstream TTL (including negative/NXDOMAIN answers).
+    * **Allowed** → DNS response LRU cache; on miss, forward upstream **over DoH**, log, cache with capped TTL (positives ≤5 min, NODATA/NXDOMAIN ≤60s — a transient empty must never hide a record).
 3. **Geo behavior:** upstream is Anycast DoH, so requests from the Tokyo node resolve via Quad9's Tokyo PoP — end-device geo stays natural.
 
 ### C. Query Logging & Analytics (the differentiator)

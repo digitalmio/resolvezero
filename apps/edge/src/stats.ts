@@ -51,7 +51,7 @@ export function mergeTop(lists: StatsTopEntry[][], keyName: "domain" | "clientIp
   const counts = new Map<string, number>();
   for (const list of lists) {
     for (const e of list ?? []) {
-      const k = keyName === "domain" ? e.domain : (e as { device?: string }).device;
+      const k = keyName === "domain" ? e.domain : keyName === "device" ? e.device : e.clientIp;
       if (typeof k === "string") counts.set(k, (counts.get(k) ?? 0) + (e.count || 0));
     }
   }
@@ -97,7 +97,9 @@ export function createStatsApp(deps: StatsDeps) {
 
   app.get(":profileId/stats", async (c) => {
     const profileId = c.req.param("profileId");
-    const token = c.req.query("token");
+    const qToken = c.req.query("token");
+    const h = c.req.header("authorization");
+    const token = qToken ?? (h?.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() || undefined : undefined);
 
     if (!deps.store.hasProfile(profileId, token)) {
       return c.body(null, 404); // silent, same as DoH auth
@@ -108,7 +110,8 @@ export function createStatsApp(deps: StatsDeps) {
     if (!cfg) {
       return c.json({ error: "range must be 30m|6h|24h|7d|30d|90d" }, 400);
     }
-    const limit = Math.min(Number(c.req.query("limit") ?? 10) || 10, 50);
+    const rawLimit = Number(c.req.query("limit") ?? 10);
+    const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? Math.floor(rawLimit) : 10, 1), 50);
 
     const now = Date.now();
     const since = new Date(now - cfg.ms);

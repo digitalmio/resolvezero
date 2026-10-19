@@ -109,11 +109,30 @@ export async function startRuleSync(
   // pg-listen auto-reconnects on connection loss (and re-issues LISTEN for
   // its cached channels); re-reconcile the snapshot afterwards in case we
   // missed events while disconnected.
+  let reconciling = false;
+  let reconcileQueued = false;
   subscriber.events.on("reconnect", () => {
     log.warn("reconnected — re-snapshotting rules");
     snapshotLoaded = false;
-    void reconcile();
+    void reconcileGuarded();
   });
+
+  async function reconcileGuarded(): Promise<void> {
+    if (reconciling) {
+      reconcileQueued = true;
+      return;
+    }
+    reconciling = true;
+    try {
+      await reconcile();
+    } finally {
+      reconciling = false;
+      if (reconcileQueued) {
+        reconcileQueued = false;
+        void reconcileGuarded();
+      }
+    }
+  }
 
   // 2-4. Connect + LISTEN, then snapshot, then replay the buffers.
   await subscriber.connect();
@@ -121,9 +140,16 @@ export async function startRuleSync(
   await subscriber.listenTo("zone_updates");
   await subscriber.listenTo("ip_updates");
   await subscriber.listenTo("blocklist_updates");
-  await reconcile();
+  await reconcileGuarded();
 
   async function reconcile(): Promise<void> {
+    const MAX_BUFFERED = 5000;
+    const clamp = <T>(buf: T[]): void => {
+      if (buf.length > MAX_BUFFERED) {
+        buf.splice(0, buf.length - MAX_BUFFERED);
+        log.warn("pre-snapshot buffer overflow, dropped oldest events");
+      }
+    };
     try {
       const [profileRows, ruleRows, sourceIpRows, zoneRows] = await Promise.all([
         db
@@ -132,6 +158,7 @@ export async function startRuleSync(
             dohToken: profiles.dohToken,
             logQueries: profiles.logQueries,
             upstream: profiles.upstream,
+            upstreamUrl: profiles.upstreamUrl,
           })
           .from(profiles),
         db
@@ -172,6 +199,7 @@ export async function startRuleSync(
             dohToken: p.dohToken,
             logQueries: p.logQueries,
             upstream: p.upstream,
+            upstreamUrl: p.upstreamUrl ?? null,
           }),
         ),
         zoneRows.map(
@@ -197,7 +225,12 @@ export async function startRuleSync(
     } catch (err) {
       log.error({ err }, "reconcile failed, retrying in 2s");
       await Bun.sleep(2000);
-      void reconcile();
+      if (!snapshotLoaded) {
+        clamp(bufferedRules as unknown[]);
+        clamp(bufferedZones as unknown[]);
+        clamp(bufferedIps as unknown[]);
+      }
+      await reconcile();
     }
   }
 

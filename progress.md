@@ -68,6 +68,8 @@ secrets — never pasted here.
 ## Active
 - Fra in-VM UDP/TCP self-probe "no reply" on the long-lived fra machine — documented as a fleet-NAT quirk; cross-verified via external dig + `rz_queries_total` climbing. Closed unless it recurs on a fresh boot.
 - blocklist-debug.ts `cacheKey` TS error stands as known red herring (tests pinned `typescript ^5.5.0` at root to dodge pre-release tsc noise).
+- DNS cache TTL caps: positives ≤5 min, NODATA/NXDOMAIN ≤60s (`dnsCache.ts`). Motivated by the `howmuchpermile.co.uk` apex-A incident — a transient upstream NODATA was cached for the full SOA TTL (1800s) and hid a real record.
+- DNS cache is still a single GLOBAL LRU (100k entries / 50 MB, key `name|type|class|upstream`) shared across all profiles — no per-user isolation. **Deferred by decision (2026-10-15):** per-profile scoping/caps and ingress rate limiting are parked to avoid friction during testing; revisit before hosted launch (a hot profile can currently evict others' entries — fairness, not correctness).
 
 ## Backlog (pick one next)
 - `dash.` / `api.resolvezero.com` Fly certs + extra OAuth callback URL.

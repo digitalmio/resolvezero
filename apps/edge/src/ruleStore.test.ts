@@ -70,9 +70,9 @@ describe("RuleStore", () => {
     expect(store.resolve("p1", "click.net")).toBeUndefined();
     // one-way: block rule never matches the parent domain
     expect(store.resolve("p1", "com")).toBeUndefined();
-    // empty-root and trailing-dot inputs must not blow up or over-match
+    // empty-root must not blow up or over-match; FQDN trailing dot is canonicalized
     expect(store.resolve("p1", "")).toBeUndefined();
-    expect(store.resolve("p1", "doubleclick.net.")).toBeUndefined();
+    expect(store.resolve("p1", "doubleclick.net.")).toBe("block");
   });
 
   test("authorizes source IP to profile", () => {

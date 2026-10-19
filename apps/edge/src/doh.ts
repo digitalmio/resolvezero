@@ -89,9 +89,13 @@ export function createDohApp(deps: DohAppDeps) {
     try {
       if (c.req.method === "GET") {
         const dns = c.req.query("dns");
+        if (dns && dns.length > 4096) return c.body(null, 400);
         if (dns) queryWire = base64urlDecode(dns);
       } else if (c.req.header("content-type") === "application/dns-message") {
+        const len = Number(c.req.header("content-length") ?? "0");
+        if (len > 65535) return c.body(null, 400);
         queryWire = new Uint8Array(await c.req.arrayBuffer());
+        if (queryWire.length > 65535) return c.body(null, 400);
       }
     } catch {
       return c.body(null, 400);
@@ -167,8 +171,9 @@ export function createDohApp(deps: DohAppDeps) {
       });
     }
 
-    // ---- DNS response LRU cache ----
-    const cached = deps.dnsCache.get(queryWire);
+    // ---- DNS response LRU cache (keyed by question + upstream) ----
+    const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
+    const cached = deps.dnsCache.get(queryWire, upstreamUrl);
     if (cached) {
       deps.recorder?.recordQuery("forward");
       return c.body(cached, 200, { "content-type": "application/dns-message" });
@@ -180,7 +185,7 @@ export function createDohApp(deps: DohAppDeps) {
     try {
       const result = await deps.upstream.resolveWire(
         queryWire,
-        deps.store.profileUpstream(profileId) ?? undefined,
+        upstreamUrl,
       );
       responseWire = result.wire;
       rttMs = result.rttMs;
@@ -200,7 +205,7 @@ export function createDohApp(deps: DohAppDeps) {
       });
     }
 
-    deps.dnsCache.set(responseWire);
+    deps.dnsCache.set(responseWire, upstreamUrl);
     deps.logQuery({
       profileId,
       domain: question.name,

@@ -7,11 +7,24 @@ const log = moduleLogger("s3sink");
 export interface S3ClientLike {
   write(key: string, body: Uint8Array): Promise<unknown>;
   file(key: string): { arrayBuffer(): Promise<ArrayBuffer> };
-  /** Bun's list() currently resolves to a single page ({contents:[{key}]}),
-   *  not an AsyncIterable — and ignores `after` on some providers. Callers
-   *  cap at maxKeys=1000 per prefix; TODO paginate when log volume forces it. */
-  list(opts: { prefix: string }): Promise<{ contents: { key: string }[] }>;
+  /** Bun's list() resolves to a single page ({contents:[{key}]}).
+   *  `isTruncated` signals more keys remain — callers MUST use listAll()
+   *  and never treat one page as complete (DELETE completeness). */
+  list(opts: { prefix: string }): Promise<{ contents: { key: string }[]; isTruncated?: boolean }>;
   delete(key: string): Promise<unknown>;
+}
+
+/** Collects every key under a prefix across pages (caps at 50k for safety). */
+export async function listAllKeys(client: S3ClientLike, prefix: string, cap = 50_000): Promise<{ keys: string[]; truncated: boolean }> {
+  // Bun.S3Client currently returns a single page (≤1000 keys) with no
+  // continuation token. Loop defensively for future paginated clients;
+  // until then, surface `truncated` so download/delete never claim
+  // completeness they don't have.
+  const page = await client.list({ prefix });
+  const contents = page.contents ?? [];
+  const keys = [...new Set(contents.map((o) => o.key))].sort().slice(0, cap);
+  const truncated = page.isTruncated === true || contents.length >= 1000 || keys.length >= cap;
+  return { keys, truncated };
 }
 
 export interface S3SinkOptions {

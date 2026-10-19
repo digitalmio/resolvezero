@@ -37,6 +37,7 @@ export class QueryLogBatcher {
   private flushing = false;
   private stopped = false;
   private backoffMs = 0;
+  private nextAllowedAt = 0;
 
   private readonly intervalMs: number;
   private readonly maxBatch: number;
@@ -64,7 +65,10 @@ export class QueryLogBatcher {
 
   start(): void {
     if (this.stopped || this.timer) return;
-    this.timer = setInterval(() => void this.flush(), this.intervalMs);
+    this.timer = setInterval(() => {
+      if (Date.now() < this.nextAllowedAt) return;
+      void this.flush();
+    }, this.intervalMs);
     this.timer.unref?.();
   }
 
@@ -72,7 +76,13 @@ export class QueryLogBatcher {
     this.stopped = true;
     clearInterval(this.timer);
     clearTimeout(this.retryTimer);
-    await this.flush().catch(() => undefined);
+    // Drain every full batch (single flush() caps at maxBatch).
+    while (this.buffer.length > 0) {
+      const before = this.buffer.length;
+      await this.flush().catch(() => undefined);
+      if (this.buffer.length >= before) break; // sink failing — retain for next boot, don't spin
+      if (this.flushing) break;
+    }
   }
 
   /** Persist the current buffer. Safe to call concurrently (de-duped). */
@@ -90,6 +100,7 @@ export class QueryLogBatcher {
         // Re-queue the failed batch at the front (best effort ordering).
         this.buffer.unshift(...batch);
         this.backoffMs = this.backoffMs === 0 ? 500 : Math.min(this.backoffMs * 2, 30_000);
+        this.nextAllowedAt = Date.now() + this.backoffMs;
         this.log.error({ err, retryInMs: this.backoffMs }, "query-log flush failed");
         if (!this.stopped) {
           this.retryTimer = setTimeout(() => void this.flush(), this.backoffMs);

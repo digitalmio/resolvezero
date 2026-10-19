@@ -87,7 +87,9 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
           for (const profileRowGroups of enabledByProfile.values()) {
             for (const row of profileRowGroups) {
               if (row.url === url) {
-                await writeStatus(row.id, "ok", table.entryCount).catch(() => {});
+                await writeStatus(row.id, "ok", table.entryCount).catch((err) =>
+                  log.warn({ err, url }, "blocklist status write failed"),
+                );
               }
             }
           }
@@ -97,7 +99,9 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
           for (const profileRowGroups of enabledByProfile.values()) {
             for (const row of profileRowGroups) {
               if (row.url === url) {
-                await writeStatus(row.id, `error: ${msg.slice(0, 42)}`, 0).catch(() => {});
+                await writeStatus(row.id, `error: ${msg.slice(0, 42)}`, 0).catch((statusErr) =>
+                  log.warn({ err: statusErr, url }, "blocklist status write failed"),
+                );
               }
             }
           }
@@ -166,11 +170,14 @@ async function writeStatus(id: string, status: string, count: number): Promise<v
 /**
  * Fetch a raw list file (any text format) with timeout + size cap.
  * Throws with a short human-readable reason (goes into last_status).
+ * SSRF guard: https-only + no private/metadata hosts.
  */
 export async function fetchListText(url: string): Promise<string> {
+  assertSafeListUrl(url);
   const res = await fetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     headers: { "user-agent": "resolvezero-edge/0.1" },
+    redirect: "follow",
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const len = Number(res.headers.get("content-length") ?? 0);
@@ -204,13 +211,17 @@ export function parseList(text: string, format: string): ParsedList {
     // strip inline comments after the first `#` (hosts + domains formats)
     const noComment = line.split("#")[0].trim();
     const tokens = noComment.split(/\s+/).filter(Boolean);
-    const candidate = tokens[tokens.length - 1] ?? "";
-    const domain = candidate.replace(/\.+$/, "");
-    if (!domain) continue;
-    // hosts files use bare "localhost" alias lines; ignore punct garbage
-    if (domain === "localhost" || PUNCT_HOSTS_RE.test(domain) || domain.length < 3) continue;
-    if (!DOMAIN_RE.test(domain) || !domain.includes(".")) continue;
-    blocks.add(domain);
+    // Hosts lines pack aliases ("0.0.0.0 a.com b.com") — every name token
+    // counts, not just the last. Skip IP literals themselves.
+    for (const candidate of tokens) {
+      const domain = candidate.replace(/\.+$/, "");
+      if (!domain) continue;
+      if (isIpLiteral(domain)) continue;
+      // hosts files use bare "localhost" alias lines; ignore punct garbage
+      if (domain === "localhost" || PUNCT_HOSTS_RE.test(domain) || domain.length < 3) continue;
+      if (!DOMAIN_RE.test(domain) || !domain.includes(".")) continue;
+      blocks.add(domain);
+    }
   }
   return { blocks, allows };
 }
@@ -222,4 +233,37 @@ function extractAbpDomain(rule: string): string | undefined {
   const d = m[1].replace(/\*+/g, "");
   if (!d.includes(".") || !DOMAIN_RE.test(d)) return undefined;
   return d;
+}
+
+/** SSRF guard for server-fetched list URLs: https-only, no creds, no private/metadata hosts. */
+export function assertSafeListUrl(url: string): void {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new Error("invalid URL");
+  }
+  if (u.protocol !== "https:") throw new Error("list URL must be https");
+  if (u.username || u.password) throw new Error("list URL must not embed credentials");
+  const host = u.hostname.toLowerCase().replace(/\.+$/, "");
+  if (
+    host === "localhost" ||
+    host === "metadata.google.internal" ||
+    host === "169.254.169.254" ||
+    host === "[::1]" ||
+    host === "::1" ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  ) {
+    throw new Error("list host blocked (private/metadata)");
+  }
+}
+
+function isIpLiteral(s: string): boolean {
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(s)) return true;
+  if (s.includes(":")) return /^[0-9a-f:]+$/i.test(s);
+  return false;
 }

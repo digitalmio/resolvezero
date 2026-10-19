@@ -52,8 +52,9 @@ function s3ClientFromEnv(): S3ClientLike | null {
 }
 
 const s3Client = s3ClientFromEnv();
+const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 15) || 15;
 const archive = s3Client
-  ? new S3ArchiveSink({ client: s3Client, prefix: LOG_PREFIX })
+  ? new S3ArchiveSink({ client: s3Client, prefix: LOG_PREFIX, flushMinutes: FLUSH_MINUTES })
   : null;
 
 const batcher = new QueryLogBatcher({
@@ -87,9 +88,9 @@ function logQuery(entry: QueryLogEntry): void {
   batcher.add(entry); // rollups always (still respected below opt-out)
 }
 
-await ensureRuleNotifyTrigger().catch(() => {
+await ensureRuleNotifyTrigger().catch((err) => {
   // Non-fatal: trigger may already exist and DB may be briefly unreachable.
-  log.warn("ensureRuleNotifyTrigger failed at boot");
+  log.warn({ err }, "ensureRuleNotifyTrigger failed at boot");
 });
 
 // Remote custom-URL blocklists: boot fetch (delayed until snapshot lands)
@@ -153,14 +154,14 @@ const server = Bun.serve({
   fetch: app.fetch,
 });
 
-// Drain: flush archives + batcher before exit (rollups survive via retry).
+// Drain: stop intake first, then flush archives before exit (rollups survive via retry).
 process.on("SIGTERM", () => {
   log.info("SIGTERM — draining");
   void (async () => {
     try {
+      await batcher.stop();
       await archive?.flushAll();
       archive?.stop();
-      await batcher.stop();
     } finally {
       process.exit(0);
     }

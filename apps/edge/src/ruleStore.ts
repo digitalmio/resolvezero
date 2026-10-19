@@ -20,6 +20,8 @@ export interface ProfileRow {
   logQueries: boolean;
   /** Upstream selector ('cloudflare' | 'google' | 'quad9' | …) or custom URL. */
   upstream: string | null;
+  /** Custom upstream DoH URL — wins over `upstream` preset when set. */
+  upstreamUrl?: string | null;
 }
 
 export interface ZoneEntry {
@@ -61,6 +63,8 @@ export class RuleStore {
   private authorizedSourceIps = new Map<string, string>();
   /** profile_id -> upstream selector/custom URL (null = edge default) */
   private profileUpstreams = new Map<string, string | null>();
+  /** profile_id -> custom upstream DoH URL (wins over preset selector). */
+  private profileUpstreamUrls = new Map<string, string | null>();
   /** profile_id -> `${domain}|${type}` -> entry (EXACT domain zones) */
   private zones = new Map<string, Map<string, ZoneEntry>>();
   /** profile_id -> `${suffix}|${type}` -> entry (from '*.' wildcard zones) */
@@ -144,18 +148,21 @@ export class RuleStore {
   ): void {
     const rules = new Map<string, Map<string, RuleAction>>();
     for (const row of ruleRows) {
+      const domain = normalizeRuleDomain(row.domain);
+      if (!domain) continue;
       let profile = rules.get(row.profileId);
       if (!profile) {
         profile = new Map();
         rules.set(row.profileId, profile);
       }
-      profile.set(row.domain, row.action);
+      profile.set(domain, row.action);
     }
     this.rules = rules;
 
     this.profileTokens = new Map(profileRows.map((p) => [p.id, p.dohToken]));
     this.logQueries = new Map(profileRows.map((p) => [p.id, p.logQueries]));
     this.profileUpstreams = new Map(profileRows.map((p) => [p.id, p.upstream ?? null]));
+    this.profileUpstreamUrls = new Map(profileRows.map((p) => [p.id, p.upstreamUrl ?? null]));
     this.authorizedSourceIps = new Map(
       sourceIpRows.map((r) => [r.ipAddress, r.profileId]),
     );
@@ -198,15 +205,18 @@ export class RuleStore {
   /** Apply a single NOTIFY event from Postgres. Idempotent per event. */
   applyEvent(event: RuleUpdateEvent): void {
     if (event.op === "DELETE" || event.action === null) {
-      this.rules.get(event.profile_id)?.delete(event.domain);
+      const domain = normalizeRuleDomain(event.domain);
+      if (domain) this.rules.get(event.profile_id)?.delete(domain);
       return;
     }
+    const domain = normalizeRuleDomain(event.domain);
+    if (!domain) return;
     let profile = this.rules.get(event.profile_id);
     if (!profile) {
       profile = new Map();
       this.rules.set(event.profile_id, profile);
     }
-    profile.set(event.domain, event.action);
+    profile.set(domain, event.action);
   }
 
   /** Returns the action if the domain matches profile rules, else undefined.
@@ -216,10 +226,12 @@ export class RuleStore {
     const profile = this.rules.get(profileId);
     if (!profile) return undefined;
 
-    const exact = profile.get(domain);
+    const normalized = normalizeRuleDomain(domain);
+    if (!normalized) return undefined;
+    const exact = profile.get(normalized);
     if (exact) return exact;
 
-    const labels = domain.split(".");
+    const labels = normalized.split(".");
     for (let i = 1; i < labels.length; i++) {
       const action = profile.get(labels.slice(i).join("."));
       if (action) return action;
@@ -273,7 +285,8 @@ export class RuleStore {
 
   /** Upstream URL/selector override for this profile, or null for edge default. */
   profileUpstream(profileId: string): string | null {
-    return this.profileUpstreams.get(profileId) ?? null;
+    // Custom URL wins over the preset selector (readme §2).
+    return this.profileUpstreamUrls.get(profileId) ?? this.profileUpstreams.get(profileId) ?? null;
   }
 
   // ---- Zone overrides (split-horizon records) ----
@@ -355,8 +368,7 @@ export class RuleStore {
     return stored !== undefined && stored !== null;
   }
 
-  /** Device-seen registry: dedupes lazy device row inserts.
-   *  Unbounded by design (device slugs, per user call); revisit with quotas. */
+  /** Device-seen registry: dedupes lazy device row inserts (bounded per profile). */
   applyDeviceSeen(profileId: string, device: string): boolean {
     let set = this.seenDevices.get(profileId);
     if (!set) {
@@ -364,9 +376,18 @@ export class RuleStore {
       this.seenDevices.set(profileId, set);
     }
     if (set.has(device)) return false;
+    // Bound attacker-controlled cardinality: evict oldest past the cap.
+    if (set.size >= 200) {
+      const oldest = set.values().next().value;
+      if (oldest !== undefined) set.delete(oldest);
+    }
     set.add(device);
     return true;
   }
+}
+
+function normalizeRuleDomain(domain: string): string {
+  return domain.toLowerCase().replace(/\.+$/, "");
 }
 
 function constantTimeEquals(a: string, b: string): boolean {

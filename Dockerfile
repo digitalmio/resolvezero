@@ -25,4 +25,4 @@ COPY apps/control apps/control
 ENV NODE_ENV=production
 EXPOSE 8080 53 53/udp
 
-CMD bun run $APP_ENTRY
+CMD ["sh", "-c", "exec bun run $APP_ENTRY"]

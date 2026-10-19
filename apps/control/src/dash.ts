@@ -39,10 +39,36 @@ type Profile = {
   logQueries: boolean;
   logRetentionDays: number;
   upstream: string | null;
+  upstreamUrl?: string | null;
   ownerUserId: string | null;
 };
 
 // ---- utilities ----
+
+/** Mirror of the edge SSRF guard (https-only, no private/metadata hosts). */
+function isSafeListUrl(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  if (u.username || u.password) return false;
+  const host = u.hostname.toLowerCase().replace(/\.+$/, "");
+  return !(
+    host === "localhost" ||
+    host === "metadata.google.internal" ||
+    host === "169.254.169.254" ||
+    host === "[::1]" ||
+    host === "::1" ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  );
+}
 
 const esc = (s: unknown): string =>
   String(s).replace(/[&<>"']/g, (c) =>
@@ -142,9 +168,9 @@ function kpiTiles(stats: StatsSummary): string {
 </div>`;
 }
 
-function topList(title: string, entries: StatsTopEntry[] | undefined, key: "domain" | "device"): string {
+function topList(title: string, entries: StatsTopEntry[] | undefined, key: "domain" | "device" | "clientIp"): string {
   const rows = (entries ?? []).slice(0, 10).map((e) => {
-    const label = key === "domain" ? e.domain : e.device;
+    const label = key === "domain" ? e.domain : key === "device" ? e.device : e.clientIp;
     return `<li><span class="mono">${esc(label ?? "-")}</span><span class="count">${fmt(e.count)}</span></li>`;
   }).join("");
   return `<div class="card"><h3>${esc(title)}</h3><ul class="toplist">${rows || '<li class="muted">nothing yet</li>'}</ul></div>`;
@@ -163,6 +189,7 @@ interface StatsSummary {
   topDomains?: StatsTopEntry[];
   topBlocked?: StatsTopEntry[];
   queriesPerDevice?: StatsTopEntry[];
+  queriesPerClient?: StatsTopEntry[];
   series?: { bucket: string; total: number; blocked: number }[];
 }
 
@@ -194,7 +221,7 @@ async function fetchStats(profileId: string, range: string, token: string | null
   try {
     const res = await fetch(
       `${EDGE_URL}/v1/${q}/stats?range=${encodeURIComponent(range)}${token ? `&token=${encodeURIComponent(token)}` : ""}`,
-      { headers: { accept: "application/json" } },
+      { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) },
     );
     if (!res.ok) return null;
     return (await res.json()) as StatsSummary;
@@ -212,6 +239,7 @@ async function listProfiles(ownerUserId: string): Promise<Profile[]> {
       logQueries: profiles.logQueries,
       logRetentionDays: profiles.logRetentionDays,
       upstream: profiles.upstream,
+      upstreamUrl: profiles.upstreamUrl,
       ownerUserId: profiles.ownerUserId,
     })
     .from(profiles)
@@ -231,6 +259,38 @@ export function createDashApp(auth: AuthLike): Hono<AppEnv> { const app = new Ho
   app.use("*", async (c, next) => {
     const s = await auth.api.getSession({ headers: c.req.raw.headers });
     c.set("session", s);
+    await next();
+  });
+
+  // CSRF guard for dashboard mutations: same-origin POSTs only.
+  // Session cookies alone would allow cross-site POSTs; require Origin/Referer
+  // matching the dashboard host (or TRUSTED_ORIGINS).
+  app.use("/dash/*", async (c, next) => {
+    if (c.req.method === "POST") {
+      const origin = c.req.header("origin") ?? c.req.header("referer");
+      if (origin) {
+        let ok = false;
+        try {
+          const oHost = new URL(origin).host.toLowerCase();
+          const reqHost = new URL(c.req.url).host.toLowerCase();
+          const allowed = new Set(
+            (process.env.TRUSTED_ORIGINS ?? "").split(",").map((s) => {
+              try {
+                return new URL(s.trim()).host.toLowerCase();
+              } catch {
+                return s.trim().toLowerCase();
+              }
+            }).filter(Boolean),
+          );
+          allowed.add(reqHost);
+          ok = allowed.has(oHost);
+        } catch {
+          ok = false;
+        }
+        if (!ok) return c.body(null, 403);
+      }
+      // No Origin/Referer (curl, non-browser): allow — session auth still applies.
+    }
     await next();
   });
 
@@ -256,7 +316,7 @@ ${chart(stats.series ?? [])}
   ${topList("Top domains", stats.topDomains, "domain")}
   ${topList("Blocked", stats.topBlocked, "domain")}
   ${topList("Devices", stats.queriesPerDevice, "device")}
-  ${topList("Clients", stats.queriesPerDevice, "device")}
+  ${topList("Clients", stats.queriesPerClient, "clientIp")}
 </div>`
       : onboarding();
     return c.html(layout({ session, title: "Home", profiles: owned, current, active: "home" }, body));
@@ -321,7 +381,27 @@ ${copyScript}
     const owned = await listProfiles(session.user.id);
     const current = owned.find((p) => p.id === c.req.query("p"));
     if (!current) return c.body(null, 403);
-    await fetch(`${EDGE_URL}/v1/${current.id}/update-ip`);
+    const form = await c.req.parseBody().catch(() => ({}));
+    const explicitIp = String((form as Record<string, unknown>).ip ?? "").trim();
+    // Prefer the user's browser IP (they're on the network being linked),
+    // not the control server's egress IP.
+    const callerIp =
+      explicitIp ||
+      c.req.header("fly-client-ip") ||
+      c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+      "";
+    const params = new URLSearchParams();
+    if (current.dohToken) params.set("token", current.dohToken);
+    if (callerIp) params.set("ip", callerIp);
+    try {
+      const res = await fetch(`${EDGE_URL}/v1/${current.id}/update-ip?${params}`, {
+        method: "POST",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return c.html("IP link failed (edge rejected it).", 502);
+    } catch {
+      return c.html("IP link failed (edge unreachable).", 502);
+    }
     return c.redirect(`/setup?p=${current.id}`);
   });
 
@@ -456,9 +536,23 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
     const format = ["hosts", "abp", "domains"].includes(String(form.format))
       ? String(form.format)
       : "hosts";
-    if (!/https?:\/\//.test(url)) return c.body(null, 400);
+    if (!isSafeListUrl(url)) return c.json({ error: "list URL must be https (no private/metadata hosts)" }, 400);
+    const existing = await db
+      .select({ id: profileBlocklists.id })
+      .from(profileBlocklists)
+      .where(and(eq(profileBlocklists.profileId, current.id), eq(profileBlocklists.url, url)))
+      .limit(1);
+    if (existing.length > 0) return c.json({ error: "already subscribed" }, 409);
+    const count = await db
+      .select({ id: profileBlocklists.id })
+      .from(profileBlocklists)
+      .where(eq(profileBlocklists.profileId, current.id));
+    if (count.length >= 20) return c.json({ error: "subscription limit (20) reached" }, 400);
     await db.insert(profileBlocklists).values({ profileId: current.id, url, format, enabled: true });
-    void fetch(`${EDGE_URL}/v1/${current.id}/blocklists/sync`).catch(() => {});
+    void fetch(
+      `${EDGE_URL}/v1/${current.id}/blocklists/sync${current.dohToken ? `?token=${encodeURIComponent(current.dohToken)}` : ""}`,
+      { method: "POST", signal: AbortSignal.timeout(8000) },
+    ).catch(() => {});
     return c.redirect(`/rules?p=${current.id}`);
   });
 
@@ -475,7 +569,10 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
       .update(profileBlocklists)
       .set({ enabled })
       .where(and(eq(profileBlocklists.profileId, current.id), eq(profileBlocklists.id, id)));
-    void fetch(`${EDGE_URL}/v1/${current.id}/blocklists/sync`);
+    void fetch(
+      `${EDGE_URL}/v1/${current.id}/blocklists/sync${current.dohToken ? `?token=${encodeURIComponent(current.dohToken)}` : ""}`,
+      { method: "POST", signal: AbortSignal.timeout(8000) },
+    ).catch(() => {});
     return c.redirect(`/rules?p=${current.id}`);
   });
 
@@ -485,7 +582,14 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
     const owned = await listProfiles(session.user.id);
     const current = owned.find((p) => p.id === c.req.query("p"));
     if (!current) return c.body(null, 403);
-    await fetch(`${EDGE_URL}/v1/${current.id}/blocklists/sync`, { method: "POST" });
+    try {
+      await fetch(
+        `${EDGE_URL}/v1/${current.id}/blocklists/sync${current.dohToken ? `?token=${encodeURIComponent(current.dohToken)}` : ""}`,
+        { method: "POST", signal: AbortSignal.timeout(8000) },
+      );
+    } catch {
+      // edge unreachable — redirect anyway, status visible on next load
+    }
     return c.redirect(`/rules?p=${current.id}`);
   });
 
@@ -499,8 +603,10 @@ ${zoneRows || '<p class="muted">None configured.</p>'}
     const domain = String(form.domain ?? "").trim().toLowerCase();
     const recordType = String(form.recordType || "A").toUpperCase();
     const values = String(form.values ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-    const ttl = Math.max(1, Number(form.ttl ?? 300) || 300);
+    const ttl = Math.min(86400, Math.max(1, Number(form.ttl ?? 300) || 300));
     if (!VALID_DOMAIN.test(domain.replace(/^\*\./, ""))) return c.body(null, 400);
+    if (!["A", "AAAA", "CNAME", "TXT"].includes(recordType)) return c.body(null, 400);
+    if (values.length === 0 || values.length > 8 || values.some((v) => v.length > 255)) return c.body(null, 400);
     await db
       .insert(profileZones)
       .values({ profileId: current.id, domain, recordType, values, ttl })
@@ -629,6 +735,9 @@ ${err ? `<p class="muted">${esc(err)}</p>` : ""}
       ${["", "cloudflare", "google", "quad9"].map((u) => `<option value="${u}" ${current.upstream === u ? "selected" : ""}>${u || "edge default (Cloudflare)"}</option>`).join("")}
     </select>
   </label>
+  <label>Custom upstream DoH URL (wins over preset)
+    <input class="inp" name="upstreamUrl" value="${esc(current.upstreamUrl ?? "")}" placeholder="https://…/dns-query" inputmode="url">
+  </label>
   <button class="btn primary">Save</button>
 </form></div>
 <div class="card danger"><h3>Danger zone</h3>
@@ -650,9 +759,14 @@ ${err ? `<p class="muted">${esc(err)}</p>` : ""}
     const logQueries = form.logQueries === "1";
     const logRetentionDays = Math.min(365, Math.max(1, Number(form.logRetentionDays ?? 30) || 30));
     const upstream = form.upstream && String(form.upstream) ? String(form.upstream) : null;
+    const rawUpstreamUrl = String(form.upstreamUrl ?? "").trim();
+    const upstreamUrl = rawUpstreamUrl ? rawUpstreamUrl.slice(0, 255) : null;
+    if (upstreamUrl && !/^https?:\/\/.+\..+/.test(upstreamUrl)) {
+      return c.json({ error: "upstream URL must be http(s)" }, 400);
+    }
     await db
       .update(profiles)
-      .set({ name, logQueries, logRetentionDays, upstream })
+      .set({ name, logQueries, logRetentionDays, upstream, upstreamUrl })
       .where(and(eq(profiles.id, current.id), eq(profiles.ownerUserId, session.user.id)));
     return c.redirect(`/settings?p=${current.id}`);
   });

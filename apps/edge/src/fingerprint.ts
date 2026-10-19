@@ -164,7 +164,7 @@ export class SuffixFingerprintTable {
 
 /** lowercase + strip FQDN trailing dot — shared by builder and probes. */
 function canonical(domain: string): string {
-  return domain.toLowerCase().replace(/\.\+$/, "");
+  return domain.toLowerCase().replace(/\.+$/, "");
 }
 
 /** Number of distinct parsed RULES inside the sealed table (not suffix fps). */
@@ -204,7 +204,9 @@ function suffixesAfterFirst(d: string): string[] {
   const out: string[] = [];
   let i = -1;
   while ((i = d.indexOf(".", i + 1)) !== -1) {
-    out.push(d.slice(i + 1));
+    const s = d.slice(i + 1);
+    // Skip the bare-TLD slice ("com") — same policy as suffixesOf().
+    if (s.includes(".")) out.push(s);
   }
   return out;
 }

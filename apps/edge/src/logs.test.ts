@@ -67,7 +67,7 @@ describe("logs router", () => {
     const lines = (await res.text()).trim().split("\n");
     expect(lines[0]).toBe("time,domain,action,client_ip,rtt_ms");
     expect(lines).toHaveLength(3);
-    expect(lines[1]).toBe("2026-10-08T08:00:01Z,b.com,block,9.9.9.2,");
+    expect(lines[1]).toBe('"2026-10-08T08:00:01Z","b.com","block","9.9.9.2",""');
   });
 
   test("archive not configured -> 503 with explanation", async () => {
@@ -79,7 +79,7 @@ describe("logs router", () => {
     const client = fixtureClient();
     const res = await app(client).request(`/v1/${P1}/logs`, { method: "DELETE" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ removed: 3 });
+    expect(await res.json()).toEqual({ removed: 3, truncated: false });
     expect([...client.objects.keys()]).toEqual(["logs/22222222-2222-2222-2222-222222222222/2026-10-08/0800.0.jsonl.gz"]);
   });
 });

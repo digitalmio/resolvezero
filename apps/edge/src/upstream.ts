@@ -21,7 +21,7 @@ const ENV_PRESET = process.env.UPSTREAM_PRESET as UpstreamPreset | undefined;
 /** Edge default: preset/env over rid. */
 export function defaultUpstreamUrl(): string {
   if (ENV_URL) return ENV_URL;
-  if (ENV_PRESET && ENV_PRESET in UPSTREAM_PRESETS) return UPSTREAM_PRESETS[ENV_PRESET];
+  if (ENV_PRESET && Object.hasOwn(UPSTREAM_PRESETS, ENV_PRESET)) return UPSTREAM_PRESETS[ENV_PRESET as UpstreamPreset];
   return UPSTREAM_PRESETS.cloudflare;
 }
 
@@ -45,7 +45,10 @@ export async function resolveWire(
   upstreamUrl?: string,
 ): Promise<UpstreamResult> {
   const url = upstreamUrl ?? defaultUpstreamUrl();
-  const finalUrl = url in UPSTREAM_PRESETS ? (UPSTREAM_PRESETS[url as UpstreamPreset]) : url;
+  const finalUrl = Object.hasOwn(UPSTREAM_PRESETS, url)
+    ? UPSTREAM_PRESETS[url as UpstreamPreset]
+    : url;
+  assertSafeUpstreamUrl(finalUrl);
 
   const startedAt = performance.now();
   const response = await $fetch.raw(finalUrl, {
@@ -63,4 +66,34 @@ export async function resolveWire(
     throw new Error("empty upstream response");
   }
   return { wire: new Uint8Array(response._data as ArrayBuffer) as Uint8Array<ArrayBuffer>, rttMs };
+}
+
+/** Blocks metadata endpoints + credentialed URLs on custom upstreams.
+ *  Presets are allowlisted above; self-host private hosts remain allowed
+ *  (Unbound use-case) unless STRICT_UPSTREAM_SSRF=1. */
+function assertSafeUpstreamUrl(finalUrl: string): void {
+  let u: URL;
+  try {
+    u = new URL(finalUrl);
+  } catch {
+    throw new Error("invalid upstream URL");
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("upstream must be http(s)");
+  if (u.username || u.password) throw new Error("upstream URL must not embed credentials");
+  const host = u.hostname.toLowerCase();
+  if (host === "169.254.169.254" || host === "metadata.google.internal") {
+    throw new Error("upstream host blocked");
+  }
+  if (process.env.STRICT_UPSTREAM_SSRF === "1" && isPrivateHost(host)) {
+    throw new Error("private upstream blocked");
+  }
+}
+
+function isPrivateHost(host: string): boolean {
+  if (host === "localhost" || host === "[::1]" || host === "::1") return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
+  const m = host.match(/^172\.(\d+)\./);
+  if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
+  if (/^169\.254\./.test(host)) return true;
+  return false;
 }
