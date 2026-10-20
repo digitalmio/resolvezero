@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { Counter, Gauge, Histogram, collectDefaultMetrics, register, type Registry } from "prom-client";
 import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
@@ -42,8 +42,11 @@ export function createHealthApp(deps: {
   dnsCache?: DnsCache;
   registry?: Registry;
   readiness?: () => { ok: boolean; details?: Record<string, unknown> };
+  /** Keep /metrics on the main (public) app for tests; production sets false. */
+  exposeMetrics?: boolean;
 }) {
   const app = new Hono().basePath("/");
+  const metricsApp = new Hono();
   const registry = deps.registry ?? register;
 
   if (!deps.registry && !defaultMetricsCollected) {
@@ -123,9 +126,9 @@ export function createHealthApp(deps: {
     return c.json({ ok: r.ok, ...r.details }, r.ok ? 200 : 503);
   });
 
-  app.get("metrics", async (c) => {
-    // Optional bearer gate: hosted deployments should set METRICS_TOKEN so
-    // the public edge hostname doesn't expose profile/action cardinality.
+  const metricsHandler = async (c: Context) => {
+    // Optional bearer gate. In production the metrics app runs on a private
+    // port (Fly [metrics]) so no token is needed; keep this for direct use.
     const metricsToken = process.env.METRICS_TOKEN;
     if (metricsToken) {
       const header = c.req.header("authorization");
@@ -144,7 +147,10 @@ export function createHealthApp(deps: {
     return c.body(await registry.metrics(), 200, {
       "content-type": registry.contentType,
     });
-  });
+  };
 
-  return { app, recorder };
+  if (deps.exposeMetrics !== false) app.get("metrics", metricsHandler);
+  metricsApp.get("/metrics", metricsHandler);
+
+  return { app, metricsApp, recorder };
 }

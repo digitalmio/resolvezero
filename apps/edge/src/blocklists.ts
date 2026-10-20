@@ -30,12 +30,20 @@ export interface ParsedList {
   allows: Set<string>;
 }
 
+export interface BlocklistStatus {
+  lastSyncAt: number | null;
+  lastError: string | null;
+  /** URLs that failed in the most recent cycle (served from previous table). */
+  failedUrls: string[];
+}
+
 export interface BlocklistSyncHandle {
   /** Debounced NOTIFY-driven re-sync (3s). */
   syncNow(): Promise<void>;
   /** Boot-time synchronous cycle — callers await this before serving DNS. */
   initialSync(): Promise<void>;
   stop(): void;
+  status(): BlocklistStatus;
 }
 
 /**
@@ -48,6 +56,9 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
   let syncing = false;
   let needsResync = false;
   let pending: Promise<void> | undefined;
+  let lastSyncAt: number | null = null;
+  let lastError: string | null = null;
+  let failedUrls: string[] = [];
 
   const sync = async () => {
     if (syncing) {
@@ -57,6 +68,8 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
       return;
     }
     syncing = true;
+    const cycleFailed: string[] = [];
+    let cycleError: string | null = null;
     try {
       const rows = (await db
         .select({
@@ -107,6 +120,7 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+          cycleFailed.push(url);
           log.warn({ url, err: msg }, "list fetch failed — keeping previous table");
           for (const profileRowGroups of enabledByProfile.values()) {
             for (const row of profileRowGroups) {
@@ -140,8 +154,12 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
         log.info("blocklist state changed — dns cache flushed");
       }
     } catch (err) {
+      cycleError = err instanceof Error ? err.message : String(err);
       log.error({ err }, "blocklist sync cycle failed");
     } finally {
+      failedUrls = cycleFailed;
+      lastError = cycleError ?? (failedUrls.length > 0 ? `${failedUrls.length} list(s) failed` : null);
+      lastSyncAt = Date.now();
       syncing = false;
       if (needsResync) {
         needsResync = false;
@@ -182,6 +200,9 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
     },
     stop() {
       if (timer) clearInterval(timer);
+    },
+    status() {
+      return { lastSyncAt, lastError, failedUrls: [...failedUrls] };
     },
   };
 }

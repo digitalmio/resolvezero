@@ -20,6 +20,7 @@ import { createDns53Service, type Dns53Handle } from "./dns53";
 import { S3ArchiveSink, type S3ClientLike } from "./sinks/s3";
 
 const PORT = Number(process.env.PORT ?? 8080);
+const METRICS_PORT = Number(process.env.METRICS_PORT ?? 9091);
 const LOG_PREFIX = process.env.S3_LOG_PREFIX ?? "logs";
 
 if (!process.env.DATABASE_URL) {
@@ -124,20 +125,33 @@ try {
 }
 readiness.blocklistsLoaded = true;
 
-const { app: healthApp, recorder } = createHealthApp({
+const { app: healthApp, metricsApp, recorder } = createHealthApp({
   store,
   dnsCache,
-  readiness: () => ({
-    ok: readiness.rulesLoaded && readiness.blocklistsLoaded && readiness.dns53Bound,
-    details: {
-      region: process.env.FLY_REGION ?? "local",
-      rulesLoaded: readiness.rulesLoaded,
-      blocklistsLoaded: readiness.blocklistsLoaded,
-      dns53Bound: readiness.dns53Bound,
-      remoteLists: store.remoteBlocklistEntryCount,
-      profiles: store.stats.profiles,
-    },
-  }),
+  // Metrics are served on a separate private port (Fly [metrics] scrapes it);
+  // never expose them on the public 8080 app.
+  exposeMetrics: false,
+  readiness: () => {
+    const rs = ruleSync.status();
+    const bs = blocklists.status();
+    return {
+      ok: readiness.rulesLoaded && readiness.blocklistsLoaded && readiness.dns53Bound,
+      details: {
+        region: process.env.FLY_REGION ?? "local",
+        rulesLoaded: readiness.rulesLoaded,
+        blocklistsLoaded: readiness.blocklistsLoaded,
+        dns53Bound: readiness.dns53Bound,
+        remoteLists: store.remoteBlocklistEntryCount,
+        remoteListTables: store.stats.remoteListTables,
+        profiles: store.stats.profiles,
+        configPollAgeMs: rs.lastPollAt == null ? null : Date.now() - rs.lastPollAt,
+        configPollError: rs.lastPollError,
+        blocklistLastSyncAt: bs.lastSyncAt,
+        blocklistError: bs.lastError,
+        failedBlocklists: bs.failedUrls,
+      },
+    };
+  },
 });
 
 const app = new Hono()
@@ -197,6 +211,15 @@ const server = Bun.serve({
   fetch: app.fetch,
 });
 
+// Metrics on a private port; Fly's [metrics] scraper reaches it over 6PN.
+let metricsServer: ReturnType<typeof Bun.serve> | undefined;
+try {
+  metricsServer = Bun.serve({ port: METRICS_PORT, fetch: metricsApp.fetch });
+  log.info({ port: METRICS_PORT }, "metrics listening (private)");
+} catch (err) {
+  log.error({ err, port: METRICS_PORT }, "metrics server failed to bind");
+}
+
 // Ports are bound (8080 + 53); become unprivileged before serving traffic.
 try {
   const dropped = dropPrivileges({
@@ -217,6 +240,7 @@ process.on("SIGTERM", () => {
     try {
       // Stop intake first so no new DNS/HTTP work lands while we flush.
       server.stop(false);
+      metricsServer?.stop(false);
       await dns53Handle?.stop();
       ruleSync.stop();
       blocklists.stop();

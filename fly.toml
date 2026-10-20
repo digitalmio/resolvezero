@@ -55,6 +55,12 @@ kill_timeout = 30
     method = "GET"
     path = "/readyz"
 
+# Private Prometheus scrape port (not exposed via http_service/[[services]]).
+[metrics]
+  port = 9091
+  path = "/metrics"
+  processes = ["app"]
+
 # Port 53 ingress (Deco/router path, readme §6.4): UDP requires a dedicated
 # IPv4 (we have three: dns/dns1/dns2). The edge binds fly-global-services:53
 # itself; internal and external ports must match — Fly does not rewrite

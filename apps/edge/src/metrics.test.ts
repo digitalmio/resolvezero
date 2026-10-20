@@ -67,4 +67,13 @@ describe("metrics endpoints", () => {
     expect(body).toContain("process_resident_memory_bytes"); // collectDefaultMetrics
     expect(body).toContain("rz_cpu_percent"); // custom gauge on same registry
   });
+
+  test("exposeMetrics:false keeps /metrics off the public app", async () => {
+    const reg = new Registry();
+    const { app, metricsApp } = createHealthApp({ registry: reg, exposeMetrics: false });
+    expect((await app.request("/metrics")).status).toBe(404);
+    const res = await metricsApp.request("/metrics");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("rz_cpu_percent");
+  });
 });

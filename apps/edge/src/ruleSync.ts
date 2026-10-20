@@ -30,11 +30,17 @@ interface Versions {
   blocklist: number;
 }
 
+export interface RuleSyncStatus {
+  lastPollAt: number | null;
+  lastPollError: string | null;
+}
+
 export interface RuleSyncHandle {
   /** Stop the poll timer (SIGTERM). */
   stop(): void;
   /** Force one poll now (tests/manual). */
   pollNow(): Promise<void>;
+  status(): RuleSyncStatus;
 }
 
 /**
@@ -61,6 +67,8 @@ export async function startRuleSync(
   let timer: ReturnType<typeof setInterval> | undefined;
   let polling = false;
   let pendingPoll = false;
+  let lastPollAt: number | null = null;
+  let lastPollError: string | null = null;
 
   async function readVersions(): Promise<Versions> {
     const rows = await db
@@ -151,7 +159,10 @@ export async function startRuleSync(
     polling = true;
     try {
       await poll();
+      lastPollAt = Date.now();
+      lastPollError = null;
     } catch (err) {
+      lastPollError = err instanceof Error ? err.message : String(err);
       log.error({ err }, "config poll failed — retrying next tick");
     } finally {
       polling = false;
@@ -170,10 +181,13 @@ export async function startRuleSync(
       await snapshot();
       lastConfigVersion = initial.config;
       lastBlocklistVersion = initial.blocklist;
+      lastPollAt = Date.now();
+      lastPollError = null;
       log.info({ version: initial.config, stats: store.stats }, "snapshot loaded");
       break;
     } catch (err) {
       attempt += 1;
+      lastPollError = err instanceof Error ? err.message : String(err);
       const delay = Math.min(RETRY_MS * 2 ** Math.min(attempt - 1, 4), MAX_RETRY_MS);
       log.error({ err, attempt, retryInMs: delay }, "initial snapshot failed, retrying");
       await Bun.sleep(delay);
@@ -189,5 +203,8 @@ export async function startRuleSync(
       if (timer) clearInterval(timer);
     },
     pollNow: runPoll,
+    status() {
+      return { lastPollAt, lastPollError };
+    },
   };
 }

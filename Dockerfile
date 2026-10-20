@@ -23,7 +23,7 @@ COPY apps/edge apps/edge
 COPY apps/control apps/control
 
 ENV NODE_ENV=production
-EXPOSE 8080 53 53/udp
+EXPOSE 8080 9091 53 53/udp
 
 CMD ["sh", "-c", "exec bun run $APP_ENTRY"]
 

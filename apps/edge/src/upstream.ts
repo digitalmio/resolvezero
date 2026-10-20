@@ -1,3 +1,4 @@
+import { decode, type Packet } from "dns-packet";
 import { allowPrivateTargets, fetchWithSafeRedirects } from "./netGuard";
 
 /**
@@ -35,6 +36,9 @@ export interface UpstreamResult {
 const MAX_UPSTREAM_BYTES = 65_535;
 const UPSTREAM_TIMEOUT_MS = 2_500;
 
+/** Coalesce concurrent identical cache misses (per PoP). */
+const inFlight = new Map<string, Promise<UpstreamResult>>();
+
 /**
  * Forwards a DNS wire-format query to a DoH upstream.
  * `upstreamUrl` is chosen per profile (preset name, absolute URL, or the
@@ -53,6 +57,20 @@ export async function resolveWire(
     ? UPSTREAM_PRESETS[url as UpstreamPreset]
     : url;
 
+  const key = flightKey(wire, finalUrl);
+  if (key) {
+    const existing = inFlight.get(key);
+    if (existing) return patchTransactionId(await existing, wire);
+  }
+
+  const request = fetchUpstream(wire, finalUrl).finally(() => {
+    if (key) inFlight.delete(key);
+  });
+  if (key) inFlight.set(key, request);
+  return request;
+}
+
+async function fetchUpstream(wire: Uint8Array, finalUrl: string): Promise<UpstreamResult> {
   const startedAt = performance.now();
   const { response } = await fetchWithSafeRedirects(
     finalUrl,
@@ -68,6 +86,69 @@ export async function resolveWire(
   const body = new Uint8Array(await response.arrayBuffer());
   if (body.length === 0) throw new Error("empty upstream response");
   if (body.length > MAX_UPSTREAM_BYTES) throw new Error("upstream response too large");
+
+  validateUpstreamResponse(wire, body);
   const rttMs = Math.round(performance.now() - startedAt);
   return { wire: body as Uint8Array<ArrayBuffer>, rttMs };
+}
+
+/**
+ * Rejects mismatched upstream responses before they can enter the cache:
+ * QR must be set, ID must match, and the question section must match the
+ * query (name/type/class). A malicious/buggy upstream otherwise poisons the
+ * cache under the query's key.
+ */
+export function validateUpstreamResponse(queryWire: Uint8Array, responseWire: Uint8Array): void {
+  let query: Packet;
+  let response: Packet;
+  try {
+    query = decode(Buffer.from(queryWire));
+    response = decode(Buffer.from(responseWire));
+  } catch {
+    throw new Error("upstream response is not valid DNS");
+  }
+
+  if (response.type !== "response") {
+    throw new Error("upstream response missing QR bit");
+  }
+  if (response.id !== query.id) {
+    throw new Error("upstream response ID mismatch");
+  }
+
+  const q = query.questions?.[0] as { name: string; type: string; class?: string } | undefined;
+  const r = response.questions?.[0] as { name: string; type: string; class?: string } | undefined;
+  if (!q || !r) throw new Error("upstream response missing question");
+  const canonical = (name: string) => name.toLowerCase().replace(/\.+$/, "");
+  if (
+    canonical(r.name) !== canonical(q.name) ||
+    String(r.type) !== String(q.type) ||
+    (r.class ?? "IN") !== (q.class ?? "IN")
+  ) {
+    throw new Error("upstream response question mismatch");
+  }
+}
+
+/** A single-flight key that ignores the client transaction ID. */
+function flightKey(wire: Uint8Array, finalUrl: string): string | undefined {
+  let packet: Packet;
+  try {
+    packet = decode(Buffer.from(wire));
+  } catch {
+    return undefined;
+  }
+  const q = packet.questions?.[0] as { name: string; type: string; class?: string } | undefined;
+  if (!q) return undefined;
+  const opt = (packet.additionals ?? []).find((r) => r.type === "OPT") as { flags?: number } | undefined;
+  const doBit = typeof opt?.flags === "number" && (opt.flags & 0x8000) !== 0;
+  const cdBit = ((packet.flags ?? 0) & 0x0010) !== 0;
+  const name = q.name.toLowerCase().replace(/\.+$/, "");
+  return `${finalUrl}|${name}|${q.type}|${q.class ?? "IN"}|${doBit ? "do" : "nodo"}|${cdBit ? "cd" : "nocd"}`;
+}
+
+function patchTransactionId(result: UpstreamResult, query: Uint8Array): UpstreamResult {
+  const copy = new Uint8Array(result.wire.length);
+  copy.set(result.wire);
+  copy[0] = query[0]!;
+  copy[1] = query[1]!;
+  return { wire: copy, rttMs: result.rttMs };
 }
