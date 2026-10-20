@@ -208,12 +208,12 @@ push main → test (tsc edge/db + bun test) → migrate (drizzle+triggers, idemp
 ### Scaling model (warm machines, not scale-to-zero)
 
 * **Anycast keep-warm rule:** a stopped Machine drops out of BGP, and UDP traffic cannot wake a stopped machine (`auto_start` doesn't apply to UDP) — so the DNS edge runs **always-warm**, N machines per region (`min_machines_running = N`, `auto_stop_machines = "off"` in fly.toml).
-* **Signal = CPU, not requests.** Fly's proxy meters HTTP but does **not count UDP datagrams**, so req-count-based autoscaling is impossible for the DNS path. Each edge exposes `GET /metrics` (Prometheus):
+* **Signal = CPU, not requests.** Fly's proxy meters HTTP but does **not count UDP datagrams**, so req-count-based autoscaling is impossible for the DNS path. Each edge exposes `GET /metrics` on a **private port 9091** (`fly.toml [metrics]`; public 8080 returns 404):
     * `rz_cpu_percent` — in-process CPU% delta since last scrape (the autoscale signal; stable across HTTP/UDP/DoH load)
     * `rz_queries_total{action}` — block/forward counters · `rz_query_rtt_ms` — upstream RTT histogram
     * `rz_rules`, `rz_dns_cache_entries` — memory-safety gauges
 * **Autoscale path (when load demands it):** run [fly-autoscaler](https://github.com/superfly/fly-autoscaler) reading `rz_cpu_percent` per machine → `fly machines run --region …` scale-up, idle-timeout scale-down *only between machines* (never below 1 warm per anycast region). Simpler interim lever: `FLY_SCALE=2 ./scripts/deploy.sh`.
-* Verification: `fly checks list` (healthz) + Grafana on `fly metrics` shows the same registry.
+* Verification: deploy smoke runs UDP/TCP 53 + DoH forward/sinkhole/zone (`apps/edge/scripts/smoke-edge.ts`); sentinel probes `/readyz` + DNS every 10 min and alerts via failed scheduled run.
 
 ## 8. Infra Growth Ladder
 

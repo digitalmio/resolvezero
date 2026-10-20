@@ -4,7 +4,7 @@ Scope: `apps/edge`, `apps/control`, `apps/control-plane`, `packages/db`, `packag
 
 Method: re-read of the v1 findings against the current working tree, full diff review, hot-path verification, plus:
 
-- `cd apps/edge && bun test` → **122 pass, 0 fail**
+- `cd apps/edge && bun test` → **127 pass, 0 fail**
 - `cd apps/control && bun test` → **6 pass, 0 fail**
 - `cd apps/edge && bunx tsc --noEmit` → clean
 - `cd apps/control && bunx tsc --noEmit` → clean
@@ -20,7 +20,7 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 1. **Rate limiting is deliberately deferred** (decision 2026-10-19, see §2). Do not treat the hosted edge as abuse-resistant yet.
 2. Tokens are no longer sent in dashboard→edge URLs, but tokens are still **plaintext at rest**.
 3. Zone overrides are still counted as `forward` in Prometheus/rollups (no `override` series).
-4. CI smoke still only checks `/healthz`; no DoH forward/sinkhole/zone probe.
+4. MVP hardening: CI now probes UDP/TCP 53 + DoH forward/sinkhole/zone; sentinel probes `/readyz` + DNS every 10 min.
 5. Some docs still describe the pre-fix behavior (Quad9 default, uncapped TTL, silent-drop).
 
 ### 0.1 Incident (2026-10-20): UDP/TCP DNS outage after the hardening deploy
@@ -49,7 +49,7 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 | Dashboard tokens | Control→edge stats/logs/sync/update-ip now use `Authorization: Bearer`; browser log downloads go through a session/ownership-checked control route that streams with a Bearer header. No DoH token in HTML URLs. | `apps/control/src/dash.ts` (`edgeFetch`, `/dash/logs/download`) |
 | CSRF | Origin/Referer gate on `/dash/*` POSTs (no token yet). | `dash.ts:268-294` |
 | Headers/CORS | CSP, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS, `nosniff`. CORS is same-origin unless `CORS_ORIGINS` is set (no more default `*`). | `apps/control/src/index.ts` |
-| Metrics | Optional `METRICS_TOKEN` bearer gate. | `apps/edge/src/metrics.ts` |
+| Metrics | Served on a **private port 9091** (`fly.toml [metrics]`); public `/metrics` is 404. Optional `METRICS_TOKEN` remains for direct scrapes. | `apps/edge/src/metrics.ts`, `fly.toml` |
 | Update-IP | Real `isIP` validation, bounded rate limit, upsert-move semantics. Token-free profiles remain unauthenticated by design. | `apps/edge/src/admin.ts` |
 | Container | Exec-form entrypoint + `HEALTHCHECK`; binds 53 as root then **drops to UID/GID 1000** (`dropPrivileges()`), so the runtime is unprivileged. | `Dockerfile`, `packages/shared/src/index.ts`, `apps/edge/src/index.ts` |
 
@@ -124,7 +124,7 @@ Parsing still holds the raw string + line splits + Sets before building the fing
 - §6.3 still says “cache by upstream TTL incl. NXDOMAIN” (now capped: positives ≤5 min, negatives ≤60 s).
 - §6.4 still says “silent-drop unauthenticated; rate-limit permitted sources” (code: REFUSED by default; rate limiting deferred).
 - Single `DATABASE_URL` + `max: 1` serializes all queries per POP; at N POPs consider a small pool. Version polling works through PgBouncer, so no direct/LISTEN URL is needed.
-- `S3_FLUSH_MINUTES`, `METRICS_TOKEN`, `ALLOW_PRIVATE_TARGETS`, `TRUSTED_ORIGINS` need to be in the deploy docs/secrets list.
+- `S3_FLUSH_MINUTES`, `CONFIG_POLL_MS`, `ALLOW_PRIVATE_TARGETS`, `TRUSTED_ORIGINS` need to be in the deploy docs/secrets list. Metrics are private on 9091 (no token required).
 
 ### 3.6 CI / ops [Medium]
 
@@ -187,10 +187,10 @@ Adding PoPs multiplies shared-state and startup assumptions. Gate on these befor
 
 - **DB connection architecture:** `packages/db/src/client.ts` uses `max: 1`, so every query in a POP serializes. At N POPs that is N query connections (plus no listener now). Consider a small pool / pooled URL budget; version polling is PgBouncer-safe.
 - **Rate limiting / abuse:** the deferred UDP penalty box and DoH per-IP/token limits become more important with every public POP. Global quotas need a shared store; per-PoP limits are a start.
-- **Upstream validation:** verify response ID/QR/question against the query before caching (`resolveWire`/`dnsCache.set`); add singleflight per (name,type,upstream) to prevent cache-miss stampedes; add upstream-error metrics.
+- **Upstream validation:** done — QR/ID/question validated before caching, singleflight coalesces concurrent misses per question. Add upstream-error metrics if needed.
 - **Token hashing at rest:** plaintext `doh_token` remains; do before hosted.
-- **Observability:** add/verify `region` labels on `rz_*` metrics; dashboards and alerts per POP (queries, blocks, drops, cache hit ratio, upstream RTT/errors, blocklist age, DB errors); set `METRICS_TOKEN`.
-- **CI smoke per POP:** UDP **and** TCP `dig`, DoH forward/sinkhole/zone, blocklist sync; `/healthz` alone let the port-53 regression ship.
+- **Observability:** metrics are private on 9091; sentinel now alerts on `/readyz`, UDP/TCP 53, config-poll age, and failed blocklists. Add per-region Grafana panels/upstream-error counters as needed.
+- **CI smoke per POP:** done — deploy job installs `dig`, runs UDP+TCP 53, DoH forward/sinkhole/zone (`apps/edge/scripts/smoke-edge.ts`).
 - **Blocklist fetch amplification:** N POPs × every list every 6 h (30 MB each). Add a shared artifact or randomized phase; monitor source 429s.
 
 **P2 — as scale grows**
@@ -264,4 +264,4 @@ cd apps/edge && bun test && bunx tsc --noEmit
 cd apps/control && bun test && bunx tsc --noEmit
 ```
 
-Current result: edge 122/122, control 6/6, both typechecks clean.
+Current result: edge 127/127, control 6/6, both typechecks clean.
