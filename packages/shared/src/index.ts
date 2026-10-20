@@ -28,6 +28,54 @@ export interface IpUpdateEvent {
   profile_id: string;
 }
 
+interface ProcessLike {
+  env: Record<string, string | undefined>;
+  getuid?: () => number;
+  setuid?: (uid: number) => void;
+  getgid?: () => number;
+  setgid?: (gid: number) => void;
+}
+
+function hostProcess(): ProcessLike | undefined {
+  return (globalThis as unknown as { process?: ProcessLike }).process;
+}
+
+/**
+ * Drops root privileges after privileged sockets have been bound.
+ *
+ * The edge must start as root to bind UDP/TCP 53, then immediately become
+ * unprivileged. Sockets bound before setuid remain usable. Returns true when
+ * a drop happened; false when already non-root / disabled / unsupported.
+ *
+ * Env: DROP_UID (default 1000), DROP_GID (default 1000), DROP_PRIVILEGES=0
+ * disables the drop entirely.
+ */
+export function dropPrivileges(opts: {
+  uid?: number;
+  gid?: number;
+  enabled?: boolean;
+  onDrop?: (uid: number, gid: number) => void;
+} = {}): boolean {
+  const proc = hostProcess();
+  if (!proc) return false;
+  const enabled = opts.enabled ?? proc.env.DROP_PRIVILEGES !== "0";
+  if (!enabled) return false;
+  if (typeof proc.setuid !== "function" || typeof proc.setgid !== "function") return false;
+  if (proc.getuid?.() !== 0) return false;
+
+  const uid = opts.uid ?? Number(proc.env.DROP_UID ?? 1000);
+  const gid = opts.gid ?? Number(proc.env.DROP_GID ?? 1000);
+  if (!Number.isInteger(uid) || uid <= 0 || !Number.isInteger(gid) || gid < 0) {
+    throw new Error(`invalid privilege-drop target uid=${uid} gid=${gid}`);
+  }
+
+  // Group first: once the UID changes we can no longer setgid.
+  proc.setgid(gid);
+  proc.setuid(uid);
+  opts.onDrop?.(uid, gid);
+  return true;
+}
+
 export function isIpUpdateEvent(value: unknown): value is IpUpdateEvent {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;

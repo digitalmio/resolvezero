@@ -29,13 +29,13 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 
 **Root cause:** the hardening commit added `USER 1000:1000` to the shared Dockerfile. Port 53 is privileged, so `createDns53Service()` caught `EACCES` and returned `null`; the edge continued serving DoH only. The failure was logged at `warn` and the health check (8080) stayed green.
 
-**Fix (deployed, versions 44–45):**
-- Removed `USER 1000:1000`; the edge runs as root again (documented: non-root needs `CAP_NET_BIND_SERVICE` or `net.ipv4.ip_unprivileged_port_start=0`).
+**Fix (deployed, versions 44–46):**
+- Replaced the image-level `USER 1000:1000` with a **runtime privilege drop**: the process binds 53 as root, then calls `dropPrivileges()` (shared) and runs as UID/GID 1000. Bound sockets survive `setuid`.
 - `createDns53Service` failure is now fatal when `FLY_REGION` is set (or `DNS53_REQUIRED=1`), so Fly cannot silently keep a DoH-only machine.
 - TCP now binds `0.0.0.0` (Fly’s TCP proxy cannot reach a `fly-global-services` TCP listener) and parses PROXY protocol v1 (`handlers = ["proxy_proto"]`) so source-IP auth sees the real client.
 - Added TCP framing + PROXY-header tests; added partial-frame buffering.
 
-**Verified:** `dig` over UDP and TCP to `37.16.24.46` → `NOERROR`, 6 answers; both fra/lhr machines healthy.
+**Verified:** `dig` over UDP and TCP to `37.16.24.24`/`.46` → `NOERROR`, 6 answers; logs show `uid:1000,gid:1000` after bind; both fra/lhr machines healthy.
 
 ---
 
@@ -51,7 +51,7 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 | Headers/CORS | CSP, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS, `nosniff`. CORS is same-origin unless `CORS_ORIGINS` is set (no more default `*`). | `apps/control/src/index.ts` |
 | Metrics | Optional `METRICS_TOKEN` bearer gate. | `apps/edge/src/metrics.ts` |
 | Update-IP | Real `isIP` validation, bounded rate limit, upsert-move semantics. Token-free profiles remain unauthenticated by design. | `apps/edge/src/admin.ts` |
-| Container | Exec-form entrypoint + `HEALTHCHECK`; **root retained** because the edge binds privileged port 53. Non-root requires `CAP_NET_BIND_SERVICE`/unprivileged-port sysctl. | `Dockerfile`, `apps/control/src/index.ts` |
+| Container | Exec-form entrypoint + `HEALTHCHECK`; binds 53 as root then **drops to UID/GID 1000** (`dropPrivileges()`), so the runtime is unprivileged. | `Dockerfile`, `packages/shared/src/index.ts`, `apps/edge/src/index.ts` |
 
 ### Correctness / data
 
@@ -157,7 +157,7 @@ The guard resolves the hostname immediately before each hop and rejects private 
 | S12 auth oracles | Low, unchanged |
 | S13 dash timeouts/link-ip | Fixed |
 | S14 CORS/headers | Fixed |
-| S15 container/signals | Partial — exec-form + healthcheck fixed; root retained for port 53. TCP bind/PROXY protocol fixed (§0.1). |
+| S15 container/signals | Fixed — exec-form + healthcheck; runtime drops to UID/GID 1000 after binding 53. TCP bind/PROXY protocol fixed (§0.1). |
 | S16 metrics/list regex | Metrics fixed; regex CPU unchanged |
 | B1 UDP remote lists | Fixed + explicit-allow parity |
 | B2 `mergeTop(clientIp)` | Fixed |
@@ -186,7 +186,7 @@ The guard resolves the hostname immediately before each hop and rejects private 
 
 ## 5. Suggested next steps
 
-1. **Commit + CI**: review/push the incident fix, run `bun test` + `tsc` in CI, and add a post-deploy `dig` check over UDP *and* TCP (healthz alone did not catch this). Non-root is deferred until the container gets `CAP_NET_BIND_SERVICE`.
+1. **Commit + CI**: review/push the incident fix, run `bun test` + `tsc` in CI, and add a post-deploy `dig` check over UDP *and* TCP (healthz alone did not catch this). Privilege drop is in place; `DROP_PRIVILEGES=0` is the escape hatch if a future base image breaks `setuid`.
 2. **Token hashing** (§3.1) — the largest remaining security item.
 3. **Zone `override` metric/rollup** (§3.2) — small, improves dashboard truthfulness.
 4. **CI DoH smoke probe** (§3.6) — forward + sinkhole + zone, so a broken edge can’t pass on `/healthz` alone.

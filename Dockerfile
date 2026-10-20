@@ -27,12 +27,11 @@ EXPOSE 8080 53 53/udp
 
 CMD ["sh", "-c", "exec bun run $APP_ENTRY"]
 
-# NOTE: the edge binds privileged port 53 (UDP + TCP). Do NOT drop to an
-# unprivileged user here unless the container is also granted
-# CAP_NET_BIND_SERVICE (or net.ipv4.ip_unprivileged_port_start=0); otherwise
-# createDns53Service logs "UDP 53 unavailable" and routers lose DNS while
-# DoH keeps working. Keep root for now.
-# USER 1000:1000
+# Privileges: start as root only to bind privileged port 53, then the app
+# calls dropPrivileges() immediately after binding and runs as UID/GID 1000.
+# Override with DROP_UID/DROP_GID; DROP_PRIVILEGES=0 keeps root (not
+# recommended). Home is writable by the unprivileged runtime user.
+ENV HOME=/tmp
 
 # Same path for edge and control (control aliases /healthz alongside /api/healthz).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

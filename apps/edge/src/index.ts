@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { ensureRuleNotifyTrigger, db } from "@resolvezero/db/client";
 import { profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
+import { dropPrivileges } from "@resolvezero/shared";
 import { QueryLogBatcher } from "./batcher";
 import { createDohApp, type QueryLogEntry } from "./doh";
 import { DnsCache } from "./dnsCache";
@@ -160,6 +161,19 @@ const server = Bun.serve({
   port: PORT,
   fetch: app.fetch,
 });
+
+// Ports are bound (8080 + 53); become unprivileged before serving traffic.
+try {
+  const dropped = dropPrivileges({
+    onDrop: (uid, gid) => log.info({ uid, gid }, "dropped root privileges after binding ports"),
+  });
+  if (!dropped) {
+    log.info({ uid: process.getuid?.(), gid: process.getgid?.() }, "running without privilege drop");
+  }
+} catch (err) {
+  log.error({ err }, "privilege drop failed");
+  if (process.env.FLY_REGION || process.env.DROP_PRIVILEGES === "1") process.exit(1);
+}
 
 // Drain: stop intake first, then flush archives before exit (rollups survive via retry).
 process.on("SIGTERM", () => {

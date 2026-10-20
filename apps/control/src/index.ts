@@ -9,6 +9,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@resolvezero/db/client";
 import { user, session, account, verification } from "@resolvezero/db/schema";
+import { dropPrivileges } from "@resolvezero/shared";
 import { createDashApp } from "./dash";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -101,6 +102,20 @@ site.route("/", api);
 site.route("/", createDashApp(auth));
 
 const server = Bun.serve({ port: PORT, fetch: site.fetch });
+
+// No privileged ports here, but drop root anyway (shared image).
+try {
+  const dropped = dropPrivileges({
+    onDrop: (uid, gid) => console.info(JSON.stringify({ module: "control", msg: "dropped root privileges", uid, gid })),
+  });
+  if (!dropped) {
+    console.info(JSON.stringify({ module: "control", msg: "running without privilege drop", uid: process.getuid?.(), gid: process.getgid?.() }));
+  }
+} catch (err) {
+  console.error(JSON.stringify({ module: "control", msg: "privilege drop failed", error: String(err) }));
+  if (process.env.FLY_REGION || process.env.DROP_PRIVILEGES === "1") process.exit(1);
+}
+
 console.info(JSON.stringify({ module: "control", port: server.port, msg: "resolvezero control listening" }));
 
 export { site };
