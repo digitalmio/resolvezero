@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import {
   BENCH_PROVIDERS,
   DOMAINS,
@@ -37,7 +37,7 @@ function fakeSession(latencyMs: number, failEvery = 0): TransportSession {
     async query() {
       n++;
       if (failEvery > 0 && n % failEvery === 0) return null;
-      await Bun.sleep(latencyMs);
+      await new Promise((r) => setTimeout(r, latencyMs));
       return latencyMs;
     },
     close() {},
@@ -108,6 +108,6 @@ describe("formatReport", () => {
 describe("DOMAINS sanity", () => {
   test("five real domains", () => {
     expect(DOMAINS.length).toBe(5);
-    expect(DOMAINS.every((d) => d.includes("."))).toBeTrue();
+    expect(DOMAINS.every((d) => d.includes("."))).toBe(true);
   });
 });

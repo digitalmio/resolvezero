@@ -7,13 +7,13 @@
 ResolveZero is a personal DNS & DoH (DNS-over-HTTPS) resolver you fully control. Think NextDNS or Pi-hole, but running in the cloud (no DHCP, no local box to babysit) and **programmatic at its core**: every config knob, rule, and log is an API, not a web form.
 
 * **Profiles** instead of enterprise tenants: small, isolated configs (`home`, `laptop`, `phone`), each with its own rules, blocklists, and DoH URL — the NextDNS model.
-* **Open source first**: the edge is a single Bun binary you can run anywhere with Postgres. The hosted option runs the same code on Fly.io.
+* **Open source first**: the edge is a Node 24 TypeScript service you can run anywhere with Postgres. The hosted option runs the same code on Fly.io.
 * **Privacy-respecting logs**: all queries are logged for the dashboard unless a profile opts out.
 * **Encrypted upstream**: edge → resolver traffic goes over DoH (Quad9 by default), not plain UDP.
 
 ## 2. Core Tech Stack
 
-* **Edge Runtime:** Bun (v1.4+, Rust-backed). Extreme low latency, low RAM footprint, and native `Bun.udpSocket()` for legacy device support.
+* **Edge Runtime:** Node 24 LTS (TypeScript via `tsx`). UDP/TCP 53 use `node:dgram` / `node:net` for legacy device support.
 * **Infrastructure (hosted option):** Fly.io. Edge compute + BGP Anycast + one shared dedicated IPv4 (UDP requires it; all profiles share it).
 * **Database:** PlanetScale Postgres (Metal) — profiles, rules, query logs, and the central source of truth.
     * Managed PgBouncer runs in transaction-pooling mode. Config propagation is **watermark polling** (below), so it works through the pool; no `LISTEN`/dedicated connection is required.
@@ -23,11 +23,11 @@ ResolveZero is a personal DNS & DoH (DNS-over-HTTPS) resolver you fully control.
 * **DNS Response Cache:** `lru-cache`, the only unbounded-by-nature data — safe to evict.
 * **DNS Parsing:** `dns2` or `dns-packet` (npm).
 * **Upstream Resolver:** DoH, **selectable per profile**: presets `cloudflare` (default), `google`, or a custom `upstream_url` (self-hosters can point it at a local Unbound DoH listener with a 1-line change).
-    * `quad9` exists as a preset but is **HTTP/2-only** ("505 requires HTTP/2" on Bun's h1 fetch); it runs through the h2 transport where reachable (verified 13ms p50 from lhr via `node:http2`) — needs verification from every deploy PoP before being offered in the UI.
+    * `quad9` exists as a preset but is **HTTP/2-only** ("505 requires HTTP/2" on Node/undici h1 fetch); it runs through the h2 transport where reachable (verified 13ms p50 from lhr via `node:http2`) — needs verification from every deploy PoP before being offered in the UI.
     * **Bench decision (2026-10-09, `apps/edge/scripts/bench-upstream.ts`, fra+lhr):** warm per-query RTT: DoH-h1 ≈ 2ms vs UDP 53 ≈ 1ms (CF, fra); Google 4 vs 2ms (lhr); Quad9 13 vs 11ms (lhr). UDP wins **1–2ms p50** — rejected: not worth the drop in transport privacy (plaintext to the provider), a second socket stack, and a per-profile protocol column. DoH-h1 is the default path; warm conns make the protocol overhead irrelevant.
     * Mullvad was excluded as a preset: dead from Fly egress (300/300 timeouts on all transports) and from the PL home ISP — provider emits no EU-reachable endpoint for our vantages.
 * **Custom zones:** per-profile DNS records (`profile_zones`: A/AAAA/CNAME/TXT, exact or `*.` suffix-wildcard, TTL) served from the edge cache via the config watermark — split-horizon names (`nas.lan`), LAN rewrites, and explicit overrides **win over blocklists** (user-authored config). Updated within one poll interval, no upstream round-trip.
-* **Raw Log Storage:** S3-compatible object storage (`Bun.S3Client` — iDrive E2 / R2 / Tigris / AWS via env endpoint). Postgres holds **stats rollups only** (raw logs never in PG).
+* **Raw Log Storage:** S3-compatible object storage (`@aws-sdk/client-s3` — iDrive E2 / R2 / Tigris / AWS via env endpoint, path-style). Postgres holds **stats rollups only** (raw logs never in PG).
 
 ## 3. System Architecture
 
@@ -38,7 +38,7 @@ Strictly decoupled: **Control Plane** (slow, persistent, Postgres) and **Data Pl
 Stores profiles, rules, blocklist picks, source-IP whitelists, log opt-outs, and the query log.
 Config writes bump `edge_config_state.config_version` (or `.blocklist_version`) in the same transaction via statement-level triggers. There is no `pg_notify` on the hot path.
 
-### B. The Edge Data Plane (Bun on Fly.io)
+### B. The Edge Data Plane (Node on Fly.io)
 
 1. **Boot Phase (race-free sync):** read the current `config_version` → `SELECT` snapshot into the policy `Map` → poll the watermark every ~5 s and re-snapshot when it moves. A change during the snapshot bumps the version and is caught next tick.
 2. **Resolution Phase:** authenticate (`profile id` from DoH path, or `senderAddress`→profile for UDP), then check the domain (`O(1)` exact + longest-suffix wildcard, `O(domain depth)`) against the profile's rules.
@@ -50,7 +50,7 @@ Config writes bump `edge_config_state.config_version` (or `.blocklist_version`) 
 
 **Raw logs live in S3-compatible object storage — Postgres never touches raw logs.**
 
-1. **Raw events →** batcher flush → one compressed NDJSON object per profile per 15-min window (`{S3_FLUSH_MINUTES}`): `s3://…/logs/{profile_id}/{date}/{HHmm}.{seq}.jsonl.gz` (`Bun.S3Client`, works with iDrive E2 / R2 / Tigris / AWS). Event shape: `{kind:"query", time, profile, domain, action, rttMs, clientIp}`. Cost at household scale: ~90 MB compressed/month → **pennies for two years of history**.
+1. **Raw events →** batcher flush → one compressed NDJSON object per profile per 15-min window (`{S3_FLUSH_MINUTES}`): `s3://…/logs/{profile_id}/{date}/{HHmm}.{seq}.jsonl.gz` (`@aws-sdk/client-s3`, works with iDrive E2 / R2 / Tigris / AWS). Event shape: `{kind:"query", time, profile, domain, action, rttMs, clientIp}`. Cost at household scale: ~90 MB compressed/month → **pennies for two years of history**.
 2. **Stats →** the same flush updates **rollup rows** in Postgres:
     * `stats_minute` (totals only, PK profile+minute) — powers the live charts; hard-pruned after 6 h.
     * `stats_hourly` (totals, blocked, RTT mean, top-200 domains, top-100 blocked, top-50 clients — all bounded) — powers dashboard tiles + long ranges; pruned by `log_retention_days`.
@@ -82,7 +82,7 @@ Every query must be authenticated before processing. Unauthenticated/unknown UDP
 
 ### 4b. DNS-over-TLS (planned)
 
-TLS listener on port 853 (`Bun.listen` TLS) with profile identity in SNI: `{device-tag}.dns.resolvezero.com`. Enables Android Private DNS (system, no app), iOS/macOS DoT profiles, and exit-node survival (plaintext UDP gets hijacked by Mullvad-style exit nodes; TLS does not). Requires: fly.toml service, cert reuse, RuleStore SNI lookup — ~150 LOC + tests.
+TLS listener on port 853 (`node:tls` server) with profile identity in SNI: `{device-tag}.dns.resolvezero.com`. Enables Android Private DNS (system, no app), iOS/macOS DoT profiles, and exit-node survival (plaintext UDP gets hijacked by Mullvad-style exit nodes; TLS does not). Requires: fly.toml service, cert reuse, RuleStore SNI lookup — ~150 LOC + tests.
 
 ## 5. Database Schema (drizzle sources: `packages/db/src/schema.ts`)
 
@@ -165,10 +165,10 @@ FOR EACH STATEMENT EXECUTE FUNCTION bump_edge_config_version();
 1. **Database layer** (`packages/db`) ✅ — drizzle schema + migrations + `ensureRuleNotifyTrigger()` at edge boot.
 2. **Policy sync** ✅ — race-free boot (subscribe → buffer → snapshot → reconcile) into the policy `Map`; unit-tested.
 3. **DoH endpoint + DoH upstream:**
-    * Bun HTTP server: `POST/GET /v1/{profile_id}[/{token}]` (RFC 8484 style), auth profile, parse wire format, resolve, answer.
+    * Node HTTP server (`@hono/node-server`): `POST/GET /v1/{profile_id}[/{token}]` (RFC 8484 style), auth profile, parse wire format, resolve, answer.
     * Allowed/uncached queries → **DoH upstream** (Quad9); LRU-cache by upstream TTL incl. NXDOMAIN.
 4. **UDP ingress (legacy devices):**
-    * Single `Bun.udpSocket()` bound to `fly-global-services:53` (mandatory on Fly; same port in/out).
+    * Single `dgram` UDP socket bound to `fly-global-services:53` (mandatory on Fly; same port in/out).
     * Silent-drop unauthenticated; rate-limit permitted sources; TC flag fallback for oversized responses.
 5. **Query log batching:** async ring-buffer flushes (2 s / 500 rows): raw events → S3 object per 15-min window (or stdout → Fly Log Shipper), rollup upserts → `stats_minute` + `stats_hourly`; flush failure = retain + exponential backoff, DNS resolution never blocked; respects `log_queries = false`; daily prune of rollups by `log_retention_days`.
 6. **Log manager + stats endpoints** (NextDNS parity): `GET /v1/:p/logs?format=csv|jsonl[&date=]` (streamed download), `DELETE /v1/:p/logs` (prefix clear), `GET /v1/:p/stats?range=30m|6h|24h|7d|30d|90d` (adaptive ~30-pt chart ladder + aggregates).
@@ -181,7 +181,7 @@ FOR EACH STATEMENT EXECUTE FUNCTION bump_edge_config_version();
 `.github/workflows/deploy.yml` — one run per push to `main`:
 
 ```
-push main → test (tsc edge/db + bun test) → migrate (drizzle+triggers, idempotent) → deploy (fra+lhr via scripts/deploy.sh)
+push main → test (tsc edge/db/control + Vitest) → migrate (drizzle+triggers, idempotent) → deploy (fra+lhr via scripts/deploy.sh)
 ```
 
 * Secrets: `DATABASE_URL_ADMIN` (migrations only, never runtime) + `FLY_API_TOKEN` (app-scoped). Runtime secrets (`DATABASE_URL`, `S3_*`) stay in Fly.
@@ -216,6 +216,10 @@ push main → test (tsc edge/db + bun test) → migrate (drizzle+triggers, idemp
 * Verification: deploy smoke runs UDP/TCP 53 + DoH forward/sinkhole/zone (`apps/edge/scripts/smoke-edge.ts`); sentinel probes `/readyz` + DNS every 10 min and alerts via failed scheduled run.
 
 ## 8. Infra Growth Ladder
+
+See [`docs/rules-at-scale.md`](docs/rules-at-scale.md) for the rules/blocklist scaling design:
+compiled base bundles + tenant overlays, artifact distribution, 2 GB capacity estimates,
+Node-vs-Bun measurements, and why Redis is not the rule path.
 
 | Stage | Setup | Cost |
 |---|---|---|

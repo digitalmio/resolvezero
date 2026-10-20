@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { SuffixFingerprintBuilder, SuffixFingerprintTable } from "./fingerprint";
 
 describe("SuffixFingerprintTable semantics (parity with Set + suffix matching)", () => {
@@ -78,7 +78,7 @@ describe("SuffixFingerprintTable semantics (parity with Set + suffix matching)",
   });
 });
 
-describe("SuffixFingerprintTable at scale (Bun.hash + sorted arrays)", () => {
+describe("SuffixFingerprintTable at scale (xxhash64 + sorted arrays)", () => {
   test("100k synthetic entries: exact parity with Set-based semantics", () => {
     const domains: string[] = [];
     for (let i = 0; i < 100_000; i++) {

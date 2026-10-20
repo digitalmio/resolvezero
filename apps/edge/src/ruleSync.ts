@@ -190,7 +190,7 @@ export async function startRuleSync(
       lastPollError = err instanceof Error ? err.message : String(err);
       const delay = Math.min(RETRY_MS * 2 ** Math.min(attempt - 1, 4), MAX_RETRY_MS);
       log.error({ err, attempt, retryInMs: delay }, "initial snapshot failed, retrying");
-      await Bun.sleep(delay);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 

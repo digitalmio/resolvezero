@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { gzipSync } from "node:zlib";
 import { createLogsApp } from "./logs";
 import { RuleStore } from "./ruleStore";

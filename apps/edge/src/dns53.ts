@@ -1,4 +1,6 @@
 import { decode } from "dns-packet";
+import dgram from "node:dgram";
+import net from "node:net";
 import type { QueryLogEntry, Upstream } from "./doh";
 import type { DnsCache } from "./dnsCache";
 import type { Recorder } from "./metrics";
@@ -50,24 +52,6 @@ export interface Dns53Handle {
  *    or silence with =silent (open-resolver defense, readme §4).
  * - Same pipeline as DoH: zone override → blocklist → LRU → upstream.
  */
-/** Bun runtime socket surfaces, pinned structurally (types churn between versions). */
-interface UdpSocketLike {
-  readonly port: number;
-  readonly hostname: string;
-  send(data: Uint8Array, port: number, address: string): number;
-  ref?(): void;
-  unref?(): void;
-  close(): void;
-}
-interface TcpListenerLike {
-  readonly port: number;
-  stop(closeActive?: boolean): void;
-}
-interface TcpSocketLike {
-  write(data: Uint8Array): unknown;
-  readonly remoteAddress?: string;
-}
-
 /** PROXY protocol v1 signature ("PROXY "). */
 const PROXY_SIGNATURE = new TextEncoder().encode("PROXY ");
 
@@ -99,27 +83,34 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   const port = deps.port ?? Number(process.env.UDP_PORT ?? 53);
   const tcpStates = new WeakMap<object, TcpState>();
 
-  let udp: UdpSocketLike | undefined;
-  let tcp: TcpListenerLike | undefined;
+  let udp: dgram.Socket | undefined;
+  let tcp: net.Server | undefined;
 
   try {
-    udp = (await Bun.udpSocket<"buffer">({
-      hostname: host,
-      port,
-      socket: {
-        data(sock: { send(data: Uint8Array, port: number, address: string): number }, data: Uint8Array | string, _port: number, addr: string) {
-          void handleUdp(new Uint8Array(data as Uint8Array), normalizeIp(addr)).then((reply) => {
-            if (reply) sock.send(reply as Uint8Array, _port, addr);
-          }).catch((err) => log.error({ err }, "udp handler failed"));
-        },
-        error(_sock: unknown, err: Error) {
-          log.error({ err }, "udp socket error");
-        },
-      },
-    } as never)) as unknown as UdpSocketLike;
+    udp = dgram.createSocket("udp4");
+    await new Promise<void>((resolve, reject) => {
+      const onError = (err: Error) => reject(err);
+      udp!.once("error", onError);
+      udp!.bind({ address: host, port }, () => {
+        udp!.off("error", onError);
+        resolve();
+      });
+    });
+    udp.on("error", (err) => log.error({ err }, "udp socket error"));
+    udp.on("message", (data, rinfo) => {
+      void handleUdp(new Uint8Array(data), normalizeIp(rinfo.address))
+        .then((reply) => {
+          if (!reply) return;
+          udp!.send(reply, rinfo.port, rinfo.address, (err) => {
+            if (err) log.warn({ err }, "udp send failed");
+          });
+        })
+        .catch((err) => log.error({ err }, "udp handler failed"));
+    });
     log.info({ host, port }, "UDP 53 listening");
   } catch (err) {
     log.warn({ err, host, port }, "UDP 53 unavailable (local dev? port in use?) — continuing without DNS ingress");
+    try { udp?.close(); } catch { /* not bound */ }
     return null;
   }
 
@@ -129,32 +120,37 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     // unreachable (proxy: "is your app listening on 0.0.0.0:53?").
     const tcpHost = process.env.TCP_HOST ?? (host === "fly-global-services" ? "0.0.0.0" : host);
     try {
-      tcp = Bun.listen({
-        hostname: tcpHost,
-        port,
-        socket: {
-          open(_socket: unknown) {},
-          data(socket: TcpSocketLike, data: Uint8Array | string) {
-            tcpData(socket, new Uint8Array(data as Uint8Array));
-          },
-          error(_socket: unknown, err: Error) {
-            log.warn({ err }, "tcp listener error");
-          },
-        },
-      } as never) as unknown as TcpListenerLike;
+      tcp = net.createServer((socket) => {
+        socket.on("data", (chunk) => tcpData(socket, new Uint8Array(chunk)));
+        socket.on("error", (err) => log.warn({ err }, "tcp socket error"));
+      });
+      await new Promise<void>((resolve, reject) => {
+        const onError = (err: Error) => reject(err);
+        tcp!.once("error", onError);
+        tcp!.listen({ host: tcpHost, port }, () => {
+          tcp!.off("error", onError);
+          resolve();
+        });
+      });
+      tcp.on("error", (err) => log.warn({ err }, "tcp listener error"));
       log.info({ host: tcpHost, port }, "TCP 53 listening");
     } catch (err) {
       log.warn({ err }, "TCP 53 unavailable — TC-flag fallback still works; oversized queries fail");
+      try { tcp?.close(); } catch { /* not bound */ }
+      tcp = undefined;
     }
   }
 
-  const socketRef = udp;
+  const udpPort = udp.address().port;
   return {
-    udpPort: socketRef.port,
+    udpPort,
     tcpPort: tcp ? port : undefined,
     async stop() {
-      socketRef.close();
-      tcp?.stop(true);
+      await new Promise<void>((resolve) => udp!.close(() => resolve()));
+      if (tcp) {
+        tcp.close();
+        (tcp as net.Server & { closeAllConnections?: () => void }).closeAllConnections?.();
+      }
     },
   };
 
@@ -174,7 +170,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   // prepends a v1 header ("PROXY TCP4 src dst sport dport\r\n"). Parse it
   // when present, otherwise fall back to the socket peer address (local /
   // direct deployments). Also buffers partial writes and multiple frames.
-  function tcpData(socket: TcpSocketLike, chunk: Uint8Array): void {
+  function tcpData(socket: net.Socket, chunk: Uint8Array): void {
     let state = tcpStates.get(socket);
     if (!state) {
       state = {

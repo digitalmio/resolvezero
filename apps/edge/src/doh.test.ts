@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { decode, encode } from "dns-packet";
 import { createDohApp, type QueryLogEntry, type Upstream } from "./doh";
 import { DnsCache } from "./dnsCache";

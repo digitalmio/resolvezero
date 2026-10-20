@@ -1,21 +1,24 @@
 {
   "name": "resolvezero",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "pnpm@10.2.0",
   "scripts": {
-    "db:generate": "bun run --filter '@resolvezero/db' db:generate",
-    "db:migrate": "bun run --filter '@resolvezero/db' db:migrate",
-    "db:push": "bun run --filter '@resolvezero/db' db:push",
-    "db:studio": "bun run --filter '@resolvezero/db' db:studio"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p apps/edge --noEmit && tsc -p apps/control --noEmit && tsc -p packages/db --noEmit",
+    "db:generate": "pnpm --filter '@resolvezero/db' db:generate",
+    "db:migrate": "pnpm --filter '@resolvezero/db' db:migrate",
+    "db:push": "pnpm --filter '@resolvezero/db' db:push",
+    "db:studio": "pnpm --filter '@resolvezero/db' db:studio"
   },
   "devDependencies": {
-    "typescript": "^5.5.0"
+    "@types/node": "^24.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
   },
   "dependencies": {
     "better-auth": "^1.7.7",
+    "tsx": "^4.19.0",
     "yaml": "^2.9.1"
   }
 }

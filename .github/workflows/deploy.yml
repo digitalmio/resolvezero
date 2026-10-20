@@ -19,19 +19,23 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
         with:
-          bun-version: 1.4.2
+          version: 10.2.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - name: install
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: typecheck (edge)
-        run: bunx tsc -p apps/edge
+        run: pnpm exec tsc -p apps/edge
       - name: typecheck (db)
-        run: bunx tsc -p packages/db
+        run: pnpm exec tsc -p packages/db
       - name: typecheck (control)
-        run: bunx tsc -p apps/control
+        run: pnpm exec tsc -p apps/control
       - name: tests
-        run: bun test
+        run: pnpm test
 
   migrate:
     name: migrate
@@ -40,13 +44,17 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
         with:
-          bun-version: 1.4.2
+          version: 10.2.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - name: install
-        run: bun install --frozen-lockfile
-      - name: migrate (drizzle + NOTIFY triggers, idempotent)
-        run: bun apps/edge/scripts/migrate.ts
+        run: pnpm install --frozen-lockfile
+      - name: migrate (drizzle + version triggers, idempotent)
+        run: pnpm exec tsx apps/edge/scripts/migrate.ts
         env:
           DATABASE_URL_ADMIN: ${{ secrets.DATABASE_URL_ADMIN }}
 
@@ -73,18 +81,22 @@ jobs:
             echo "::error::edge failed post-deploy health check (Code $code) — see fly logs / machine state"
             exit 1
           fi
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
         with:
-          bun-version: 1.4.2
+          version: 10.2.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - name: install (for smoke script)
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: install dnsutils (dig)
         run: sudo apt-get update && sudo apt-get install -y dnsutils
       - name: smoke — DNS 53 + DoH forward/sinkhole/zone
         env:
           DATABASE_URL_ADMIN: ${{ secrets.DATABASE_URL_ADMIN }}
           EDGE_IP: 37.16.24.46
-        run: bun run apps/edge/scripts/smoke-edge.ts
+        run: pnpm exec tsx apps/edge/scripts/smoke-edge.ts
 
       - name: parity — all machines healthy on one image
         env:

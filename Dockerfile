@@ -1,38 +1,38 @@
-FROM oven/bun:1-slim
+FROM node:24-bookworm-slim
 
 # App entrypoint override (fly.toml build-args; defaults to the edge)
 ARG ENTRY=apps/edge/src/index.ts
-# ARG values are build-time only; ENV makes the entrypoint resolvable at RUN
-# (CMD shell form expands $ENTRY at container start).
 ENV APP_ENTRY=$ENTRY
 
 WORKDIR /app
 
-# Workspace-aware install: root manifests + dep manifests for layer caching
-COPY package.json bun.lock ./
+# Pin pnpm (Node images may/may not ship corepack).
+RUN npm install -g pnpm@10.2.0
+
+# Workspace-aware install: root manifests + dependency manifests for caching
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/db/package.json packages/db/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY apps/edge/package.json apps/edge/package.json
 COPY apps/control/package.json apps/control/package.json
-RUN bun install --frozen-lockfile
+COPY apps/control-plane/package.json apps/control-plane/package.json
+RUN pnpm install --frozen-lockfile --prod
 
 # Application sources
 COPY packages/db packages/db
 COPY packages/shared packages/shared
 COPY apps/edge apps/edge
 COPY apps/control apps/control
+COPY apps/control-plane apps/control-plane
 
 ENV NODE_ENV=production
+# Writable home for the unprivileged runtime user.
+ENV HOME=/tmp
 EXPOSE 8080 9091 53 53/udp
 
-CMD ["sh", "-c", "exec bun run $APP_ENTRY"]
+# Start as root only to bind 53; the app calls dropPrivileges() immediately
+# after binding and runs as UID/GID 1000. tsx executes TypeScript directly.
+CMD ["sh", "-c", "exec ./node_modules/.bin/tsx $APP_ENTRY"]
 
-# Privileges: start as root only to bind privileged port 53, then the app
-# calls dropPrivileges() immediately after binding and runs as UID/GID 1000.
-# Override with DROP_UID/DROP_GID; DROP_PRIVILEGES=0 keeps root (not
-# recommended). Home is writable by the unprivileged runtime user.
-ENV HOME=/tmp
-
-# Same path for edge and control (control aliases /healthz alongside /api/healthz).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD ["bun", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

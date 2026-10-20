@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { RANGE_CONFIG, buildSeries, mergeTop, sumTotals } from "./stats";
 import type { StatsTopEntry } from "@resolvezero/db/schema";
 

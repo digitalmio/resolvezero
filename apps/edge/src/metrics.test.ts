@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Registry } from "prom-client";
 import { createHealthApp, cpuPercent } from "./metrics";
 

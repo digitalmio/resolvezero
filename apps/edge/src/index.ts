@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { serve } from "@hono/node-server";
 import { db } from "@resolvezero/db/client";
 import { profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
@@ -17,7 +18,7 @@ import { createHealthApp } from "./metrics";
 import { createAdminApp } from "./admin";
 import { startBlocklistSync } from "./blocklists";
 import { createDns53Service, type Dns53Handle } from "./dns53";
-import { S3ArchiveSink, type S3ClientLike } from "./sinks/s3";
+import { S3ArchiveSink, createS3ClientFromEnv } from "./sinks/s3";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const METRICS_PORT = Number(process.env.METRICS_PORT ?? 9091);
@@ -40,20 +41,7 @@ const dnsCache = new DnsCache();
 // 3. Neither                   → stats rollups only, raw logs not persisted.
 const stdoutQueryLog = process.env.QUERY_LOG_STDOUT === "1";
 
-function s3ClientFromEnv(): S3ClientLike | null {
-  const { S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_ENDPOINT, S3_REGION } = process.env;
-  if (!S3_BUCKET || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY) return null;
-  // Any S3-compatible provider (iDrive E2 / R2 / Tigris / AWS) via endpoint.
-  return new Bun.S3Client({
-    accessKeyId: S3_ACCESS_KEY_ID,
-    secretAccessKey: S3_SECRET_ACCESS_KEY,
-    bucket: S3_BUCKET,
-    endpoint: S3_ENDPOINT,
-    region: S3_REGION ?? "auto",
-  }) as unknown as S3ClientLike;
-}
-
-const s3Client = s3ClientFromEnv();
+const s3Client = createS3ClientFromEnv();
 const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 15) || 15;
 const archive = s3Client
   ? new S3ArchiveSink({ client: s3Client, prefix: LOG_PREFIX, flushMinutes: FLUSH_MINUTES })
@@ -94,7 +82,7 @@ function logQuery(entry: QueryLogEntry): void {
 const isPrimaryRegion =
   !process.env.FLY_REGION || process.env.FLY_REGION === (process.env.PRIMARY_REGION ?? "fra");
 
-if (isPrimaryRegion) {
+if (isPrimaryRegion && process.env.PRUNE_ENABLED !== "0") {
   // NOTIFY triggers are created by the migrate job (admin role); the edge's
   // app role intentionally has no DDL rights.
   // Daily retention pruning of stats_hourly (readme §3 C).
@@ -206,15 +194,20 @@ if (process.env.DNS53_ENABLED !== "0") {
 }
 readiness.dns53Bound = process.env.DNS53_ENABLED === "0" || dns53Handle !== null;
 
-const server = Bun.serve({
+const server = serve({
   port: PORT,
+  hostname: "0.0.0.0",
   fetch: app.fetch,
 });
 
 // Metrics on a private port; Fly's [metrics] scraper reaches it over 6PN.
-let metricsServer: ReturnType<typeof Bun.serve> | undefined;
+let metricsServer: ReturnType<typeof serve> | undefined;
 try {
-  metricsServer = Bun.serve({ port: METRICS_PORT, fetch: metricsApp.fetch });
+  metricsServer = serve({
+    port: METRICS_PORT,
+    hostname: "0.0.0.0",
+    fetch: metricsApp.fetch,
+  });
   log.info({ port: METRICS_PORT }, "metrics listening (private)");
 } catch (err) {
   log.error({ err, port: METRICS_PORT }, "metrics server failed to bind");
@@ -239,8 +232,8 @@ process.on("SIGTERM", () => {
   void (async () => {
     try {
       // Stop intake first so no new DNS/HTTP work lands while we flush.
-      server.stop(false);
-      metricsServer?.stop(false);
+      server.close();
+      metricsServer?.close();
       await dns53Handle?.stop();
       ruleSync.stop();
       blocklists.stop();
@@ -260,6 +253,6 @@ log.info(
     remoteListEntries: store.remoteBlocklistEntryCount,
     rawLogs: archive ? "s3" : stdoutQueryLog ? "stdout" : "off",
   },
-  `resolvezero edge listening on :${server.port}`,
+  `resolvezero edge listening on :${PORT}`,
 );
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { fetchListText, parseList } from "./blocklists";
 import { RuleStore } from "./ruleStore";
 import { SuffixFingerprintBuilder } from "./fingerprint";
@@ -13,10 +13,10 @@ tracker2.pl
 `
         .replace("tracker2.pl", "tracker2.pl");
     const { blocks } = parseList(text, "hosts");
-    expect(blocks.has("ads.example.com")).toBeTrue();
-    expect(blocks.has("sub.tracker.pl")).toBeTrue();
-    expect(blocks.has("tracker2.pl")).toBeTrue();
-    expect(blocks.has("localhost")).toBeFalse();
+    expect(blocks.has("ads.example.com")).toBe(true);
+    expect(blocks.has("sub.tracker.pl")).toBe(true);
+    expect(blocks.has("tracker2.pl")).toBe(true);
+    expect(blocks.has("localhost")).toBe(false);
   });
 
   test("empty file", () => {
@@ -34,17 +34,17 @@ tracker2.pl
 ||not-a-domain^
 `;
     const { blocks, allows } = parseList(text, "abp");
-    expect(blocks.has("ads.pl")).toBeTrue();
+    expect(blocks.has("ads.pl")).toBe(true);
     // @@ exceptions live in `allows`; resolveRemote applies allow-first
-    expect(allows.has("cdn.adnet.pl")).toBeTrue();
+    expect(allows.has("cdn.adnet.pl")).toBe(true);
     expect(blocks.size).toBe(2); // cosmetics + non-domain rules dropped
   });
 
   test("invalid domains dropped", () => {
     const { blocks } = parseList(`notadomain\n0.0.0.0 .bad\n0.0.0.0 ok.example.com..`, "hosts");
-    expect(blocks.has("notadomain")).toBeFalse();
-    expect(blocks.has("bad") || blocks.has(".bad")).toBeFalse();
-    expect(blocks.has("ok.example.com")).toBeTrue();
+    expect(blocks.has("notadomain")).toBe(false);
+    expect(blocks.has("bad") || blocks.has(".bad")).toBe(false);
+    expect(blocks.has("ok.example.com")).toBe(true);
   });
 });
 
@@ -74,7 +74,7 @@ describe("RuleStore shared blocklist catalog", () => {
   test("catalog dedups: two profiles sharing one list parse/store once", () => {
     const store = new RuleStore();
     const t = tableFrom(["a.com", "b.com"]);
-    expect(store.upsertList("https://lists.example/shared", t)).toBeTrue();
+    expect(store.upsertList("https://lists.example/shared", t)).toBe(true);
     store.setSubscriptions("p1", ["https://lists.example/shared"]);
     // second profile subscribing: no new catalog entry
     store.setSubscriptions("p2", ["https://lists.example/shared"]);
@@ -83,11 +83,11 @@ describe("RuleStore shared blocklist catalog", () => {
     expect(store.resolveRemote("p2", "a.com")).toBe("block");
     // same-content re-upsert doesn't change state's consumed-changed flag
     store.consumeChanged();
-    expect(store.upsertList("https://lists.example/shared", tableFrom(["a.com", "b.com"]))).toBeFalse();
-    expect(store.consumeChanged()).toBeFalse();
+    expect(store.upsertList("https://lists.example/shared", tableFrom(["a.com", "b.com"]))).toBe(false);
+    expect(store.consumeChanged()).toBe(false);
     // changed content does
-    expect(store.upsertList("https://lists.example/shared", tableFrom(["a.com", "c.com"]))).toBeTrue();
-    expect(store.consumeChanged()).toBeTrue();
+    expect(store.upsertList("https://lists.example/shared", tableFrom(["a.com", "c.com"]))).toBe(true);
+    expect(store.consumeChanged()).toBe(true);
   });
 
   test("subset profile does not prune tables another profile needs", () => {
@@ -108,7 +108,7 @@ describe("RuleStore shared blocklist catalog", () => {
     store.upsertList("u", tableFrom(["a.com"]));
     store.setSubscriptions("p1", ["u"]);
     store.setSubscriptions("p1", []); // unsubscribed
-    expect(store.hasList("u")).toBeFalse();
+    expect(store.hasList("u")).toBe(false);
     expect(store.stats.remoteListTables).toBe(0);
   });
 
@@ -119,7 +119,7 @@ describe("RuleStore shared blocklist catalog", () => {
     // a DB snapshot without p1 must drop its subscription
     store.replaceAll([], [], [{ id: "other", dohToken: null, logQueries: true, upstream: null }]);
     expect(store.stats.remoteListSubscriptions).toBe(0);
-    expect(store.hasList("u")).toBeFalse();
+    expect(store.hasList("u")).toBe(false);
   });
 });
 
