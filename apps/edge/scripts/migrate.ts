@@ -53,5 +53,20 @@ if (watermark.length !== 1) {
 }
 console.log("→ watermark:", watermark[0]);
 
+const functions = (await rawClient().unsafe(
+  `SELECT proname FROM pg_proc WHERE proname LIKE 'bump\\_%' OR proname LIKE 'notify\\_%'`,
+)) as { proname: string }[];
+const legacyNotify = functions.filter((f) => f.proname.startsWith("notify_"));
+if (legacyNotify.length > 0) {
+  console.error("→ legacy NOTIFY functions still present:", legacyNotify.map((f) => f.proname));
+  process.exit(1);
+}
+const requiredBumps = ["bump_edge_config_version", "bump_edge_blocklist_version"];
+const missingBumps = requiredBumps.filter((name) => !functions.some((f) => f.proname === name));
+if (missingBumps.length > 0) {
+  console.error("→ missing bump functions:", missingBumps);
+  process.exit(1);
+}
+
 await rawClient().end();
 console.log("admin bootstrap complete ✅");
