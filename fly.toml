@@ -17,6 +17,13 @@ kill_timeout = 30
   strategy = "rolling"
   max_unavailable = 1
 
+# Node runtime needs 512 MB for the 397k-rule blocklist build (256 MB stalls
+# during boot). Bun ran comfortably in 256 MB.
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
+
 [env]
   PORT = "8080"
   LOG_LEVEL = "info"
