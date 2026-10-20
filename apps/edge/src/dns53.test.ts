@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import dgram from "node:dgram";
+import net from "node:net";
 import { encode, decode } from "dns-packet";
 import { normalizeIp, UDP_MAX_PAYLOAD } from "./wire";
 import { createDns53Service, type Dns53Deps } from "./dns53";
@@ -50,80 +52,69 @@ function fakeDeps(authSourceIp: string | null = "127.0.0.1"): Dns53Deps & { logs
 }
 
 /** Real UDP client pointed at the test service. */
-async function client(port: number): Promise<{ ask(wire: Uint8Array): Promise<Uint8Array | undefined>; close(): Promise<void> }> {
-  let pending: ((v: Uint8Array) => void) | undefined;
-  const sock = await Bun.udpSocket({
-    connect: { hostname: "127.0.0.1", port },
-    socket: {
-      data(_s: unknown, d: Uint8Array | string) {
-        pending?.(new Uint8Array(d as Uint8Array));
-      },
-    },
-  } as never) as unknown as Awaited<ReturnType<typeof Bun.udpSocket>> & { send(wire: Uint8Array): unknown };
-  return {
-    ask: (wire) => {
-      return new Promise((resolve) => {
-        pending = (v) => {
-          pending = undefined;
-          resolve(v);
-        };
-        (sock as any).send(wire);
-        setTimeout(() => {
-          if (pending) {
-            pending = undefined;
-            resolve(undefined); // timeout = silence
-          }
-        }, 700);
+function client(port: number): Promise<{ ask(wire: Uint8Array): Promise<Uint8Array | undefined>; close(): Promise<void> }> {
+  return new Promise((resolve, reject) => {
+    let pending: ((v: Uint8Array | undefined) => void) | undefined;
+    const sock = dgram.createSocket("udp4");
+    sock.on("message", (msg) => {
+      pending?.(new Uint8Array(msg));
+    });
+    sock.on("error", reject);
+    sock.connect(port, "127.0.0.1", () => {
+      resolve({
+        ask: (wire) =>
+          new Promise((res) => {
+            pending = (v) => {
+              pending = undefined;
+              res(v);
+            };
+            sock.send(wire);
+            setTimeout(() => {
+              if (pending) {
+                pending = undefined;
+                res(undefined); // timeout = silence
+              }
+            }, 700);
+          }),
+        close: () =>
+          new Promise((res) => {
+            sock.close(() => res());
+          }),
       });
-    },
-    close: async () => {
-      await sock.close();
-    },
-  };
+    });
+  });
 }
 
 /** Minimal TCP DNS client (2-byte length-prefixed frames) for the test service. */
-async function tcpAsk(port: number, wire: Uint8Array, proxySource?: string): Promise<Uint8Array> {
+function tcpAsk(port: number, wire: Uint8Array, proxySource?: string): Promise<Uint8Array> {
   return new Promise<Uint8Array>((resolve, reject) => {
-    let buf = new Uint8Array(0);
-    const timer = setTimeout(() => reject(new Error("tcp timeout")), 1500);
-    void Bun.connect({
-      hostname: "127.0.0.1",
-      port,
-      socket: {
-        open(socket: { write(data: Uint8Array): unknown }) {
-          const header = proxySource
-            ? new TextEncoder().encode(`PROXY TCP4 ${proxySource} 127.0.0.1 12345 53\r\n`)
-            : new Uint8Array(0);
-          const frame = new Uint8Array(header.length + wire.length + 2);
-          frame.set(header);
-          frame[header.length] = wire.length >> 8;
-          frame[header.length + 1] = wire.length & 0xff;
-          frame.set(wire, header.length + 2);
-          socket.write(frame);
-        },
-        data(_socket: unknown, data: Uint8Array | string) {
-          const chunk = new Uint8Array(data as Uint8Array);
-          const next = new Uint8Array(buf.length + chunk.length);
-          next.set(buf);
-          next.set(chunk, buf.length);
-          buf = next;
-          if (buf.length >= 2) {
-            const len = (buf[0]! << 8) | buf[1]!;
-            if (buf.length >= len + 2) {
-              clearTimeout(timer);
-              resolve(buf.slice(2, 2 + len));
-            }
-          }
-        },
-        error(_socket: unknown, err: Error) {
-          clearTimeout(timer);
-          reject(err);
-        },
-      },
-    } as never).catch((err) => {
+    let buf = Buffer.alloc(0);
+    const sock = net.connect({ host: "127.0.0.1", port });
+    const timer = setTimeout(() => {
+      sock.destroy();
+      reject(new Error("tcp timeout"));
+    }, 1500);
+    sock.on("error", (err) => {
       clearTimeout(timer);
       reject(err);
+    });
+    sock.on("connect", () => {
+      const header = proxySource
+        ? Buffer.from(`PROXY TCP4 ${proxySource} 127.0.0.1 12345 53\r\n`)
+        : Buffer.alloc(0);
+      const len = Buffer.alloc(2);
+      len.writeUInt16BE(wire.length);
+      sock.write(Buffer.concat([header, len, Buffer.from(wire)]));
+    });
+    sock.on("data", (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (buf.length < 2) return;
+      const len = buf.readUInt16BE(0);
+      if (buf.length >= len + 2) {
+        clearTimeout(timer);
+        sock.end();
+        resolve(new Uint8Array(buf.subarray(2, 2 + len)));
+      }
     });
   });
 }

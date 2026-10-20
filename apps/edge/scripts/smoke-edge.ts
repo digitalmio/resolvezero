@@ -1,13 +1,16 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
 /**
- * Post-deploy edge smoke test.
- *
  * - /readyz must be ok
  * - UDP and TCP 53 must answer (any RCODE; the CI runner's IP is not in
  *   profile_source_ips, so REFUSED is a valid listener response)
  * - DoH must forward, sinkhole a configured block rule, and answer a zone
  *
  * Usage:
- *   DATABASE_URL_ADMIN=... EDGE_IP=37.16.24.46 bun run apps/edge/scripts/smoke-edge.ts
+ *   DATABASE_URL_ADMIN=... EDGE_IP=37.16.24.46 pnpm exec tsx apps/edge/scripts/smoke-edge.ts
  */
 if (process.env.SMOKE_USE_ADMIN === "1" && process.env.DATABASE_URL_ADMIN) {
   process.env.DATABASE_URL = process.env.DATABASE_URL_ADMIN;
@@ -44,18 +47,17 @@ async function checkPort(protocol: "udp" | "tcp"): Promise<void> {
   const args = ["+time=3", "+tries=1"];
   if (protocol === "tcp") args.push("+tcp");
   args.push("example.com", `@${EDGE_IP}`);
-  const proc = Bun.spawn(["dig", ...args], { stdout: "pipe", stderr: "pipe" });
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code !== 0) return fail(`${protocol} 53 dig exited ${code}: ${err.trim()}`);
-  const status = out.match(/status: ([A-Z]+)/)?.[1];
-  if (!status) return fail(`${protocol} 53 got no DNS response`);
-  // REFUSED is expected from a non-whitelisted CI runner; a response proves
-  // the listener is alive and the process is routing DNS.
-  pass(`${protocol} 53 responded status=${status}`);
+  try {
+    const { stdout } = await execFileAsync("dig", args, { timeout: 10_000 });
+    const status = stdout.match(/status: ([A-Z]+)/)?.[1];
+    if (!status) return fail(`${protocol} 53 got no DNS response`);
+    // REFUSED is expected from a non-whitelisted CI runner; a response proves
+    // the listener is alive and the process is routing DNS.
+    pass(`${protocol} 53 responded status=${status}`);
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    fail(`${protocol} 53 dig failed: ${(e.stderr || e.message || "unknown").trim()}`);
+  }
 }
 
 async function main(): Promise<void> {

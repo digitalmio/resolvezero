@@ -6,21 +6,18 @@ const q = new Uint8Array([
   1, 108, 2, 108, 110, // "l.ln" — name shape irrelevant for rcode test
   0, 0, 1, 0, 1,
 ]);
-const s = await Bun.udpSocket({
-  hostname: "0.0.0.0",
-  port: 0,
-  socket: {
-    data(_s, d) {
-      console.log("reply bytes:", d.length, "rcode:", d[3] & 15);
-      process.exit(0);
-    },
-    error() {
-      console.log("socket error");
-      process.exit(1);
-    },
-  },
-} as never);
-s.send(q, 53, "fly-global-services");
-await Bun.sleep(2000);
+import dgram from "node:dgram";
+const s = dgram.createSocket("udp4");
+s.on("message", (d) => {
+  console.log("reply bytes:", d.length, "rcode:", d[3]! & 15);
+  s.close();
+  process.exit(0);
+});
+s.on("error", (err) => {
+  console.log("socket error", err.message);
+  process.exit(1);
+});
+s.bind(0, () => s.send(q, 53, "fly-global-services"));
+await new Promise((resolve) => setTimeout(resolve, 2000));
 console.log("no reply");
 process.exit(1);

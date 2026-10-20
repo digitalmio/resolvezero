@@ -3,7 +3,7 @@
  * (readme §6 — seeds the dashboard with real history, benchmarks rollups).
  *
  * Usage:
- *   DATABASE_URL=... bun run scripts/import-nextdns.ts ./logs.csv --profile <profile_id> [--dry-run]
+ *   DATABASE_URL=... pnpm exec tsx scripts/import-nextdns.ts ./logs.csv --profile <profile_id> [--dry-run]
  *
  * Header-driven column mapping (known NextDNS columns + fallbacks), bad
  * rows counted and skipped. Domain/client maps are aggregated in full
@@ -12,6 +12,9 @@
  * re-runs never double-count.
  */
 import { sql } from "drizzle-orm";
+import { createReadStream } from "node:fs";
+import { access } from "node:fs/promises";
+import { Readable } from "node:stream";
 import type { StatsTopEntry } from "@resolvezero/db/schema";
 
 const { db } = await import("@resolvezero/db/client");
@@ -35,7 +38,7 @@ function parseArgs(argv: string[]): Args {
     else if (!path) path = a;
   }
   if (!path || !profileId) {
-    console.error("Usage: bun run scripts/import-nextdns.ts <logs.csv> --profile <profile_id> [--dry-run]");
+    console.error("Usage: pnpm exec tsx scripts/import-nextdns.ts <logs.csv> --profile <profile_id> [--dry-run]");
     process.exit(1);
   }
   return { csv: path, profileId, dryRun };
@@ -86,10 +89,10 @@ interface BucketAgg {
   blockedDomains: Map<string, number>;
 }
 
-const { csv, profileId, dryRun } = parseArgs(Bun.argv);
+const { csv, profileId, dryRun } = parseArgs(process.argv.slice(2));
 
-const file = Bun.file(csv);
-if (!(await file.exists())) {
+const fileExists = await access(csv).then(() => true).catch(() => false);
+if (!fileExists) {
   console.error(`File not found: ${csv}`);
   process.exit(1);
 }
@@ -153,7 +156,7 @@ function processLine(line: string): void {
 }
 
 // Stream text, split on newlines (handles chunk boundaries across awaits).
-const stream = file.stream().pipeThrough(new TextDecoderStream("utf-8"));
+const stream = Readable.toWeb(createReadStream(csv)).pipeThrough(new TextDecoderStream("utf-8"));
 for await (const chunk of stream) {
   const text = remainder + chunk;
   const parts = text.split("\n");

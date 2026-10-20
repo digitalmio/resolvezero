@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { decode, encode } from "dns-packet";
 import { DnsCache } from "./dnsCache";
 

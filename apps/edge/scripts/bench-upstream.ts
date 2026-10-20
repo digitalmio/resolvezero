@@ -17,6 +17,8 @@
 import { encode, decode, type Packet } from "dns-packet";
 import http2 from "node:http2";
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 // ---- Providers / matrix ----
 
 export interface BenchProvider {
@@ -101,7 +103,7 @@ export function decodeWire(data: Uint8Array): Packet | undefined {
 }
 
 function deadlineRace<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race([p, Bun.sleep(ms).then(() => null)]);
+  return Promise.race([p, sleep(ms).then(() => null)]);
 }
 
 // ---- Real runtime transports (used by the CLI run) ----
@@ -286,7 +288,7 @@ class H2Transport implements TransportSession {
     const t = new H2Transport();
     t.path = new URL(url).pathname + new URL(url).search;
     t.client = http2.connect(new URL(url).origin);
-    await Bun.sleep(0); // let ALPN/TLS settle (session events settle lazily)
+    await sleep(0); // let ALPN/TLS settle (session events settle lazily)
     return t;
   }
 
@@ -407,7 +409,7 @@ const OPEN_TIMEOUT_MS = 5_000;
 /** Session creation with deadline — Bun.connect/TLS can blackhole forever. */
 async function openSession(rt: BenchRuntime, p: BenchProvider, t: TransportKind): Promise<TransportSession> {
   const SENTINEL = Symbol("open-timeout");
-  const arm = () => Promise.race([Bun.sleep(OPEN_TIMEOUT_MS)].map((x) => x.then(() => SENTINEL)));
+  const arm = () => Promise.race([sleep(OPEN_TIMEOUT_MS)].map((x) => x.then(() => SENTINEL)));
   let promise: Promise<TransportSession | typeof SENTINEL> | null = null;
   if (t === "udp") promise = Promise.race([rt.udpSession(p.ip), arm()]);
   else if (t === "tcp") promise = Promise.race([rt.tcpSession(p.ip), arm()]);
@@ -484,7 +486,7 @@ export function formatReport(results: BenchResult[], env: { region?: string; bun
       ].join("\t"),
     );
   }
-  return `# region=${env.region ?? "local"} bun=${env.bun ?? Bun.version}\n${rows.join("\n")}\n`;
+  return `# region=${env.region ?? "local"} bun=${env.bun ?? process.version}\n${rows.join("\n")}\n`;
 }
 
 const WARMUP_DEFAULT = 30;
@@ -504,7 +506,7 @@ async function runCellGuarded(
   const SENTINEL = Symbol("cell-hang");
   const r = await Promise.race([
     runCell(rt, p, t, mode, opts),
-    Bun.sleep(CELL_CAP_MS).then(() => SENTINEL),
+    sleep(CELL_CAP_MS).then(() => SENTINEL),
   ]);
   return r === SENTINEL ? null : (r as CellTimes);
 }

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { QueryLogBatcher, type QueryLogEntry } from "./batcher";
 
 const entry = (over: Partial<QueryLogEntry> = {}): QueryLogEntry => ({
@@ -33,7 +33,7 @@ describe("QueryLogBatcher", () => {
 
     b.add(entry()); b.add(entry()); b.add(entry({ domain: "c.com" }));
     // allow the void flush promise to settle
-    await Bun.sleep(0);
+    await new Promise((r) => setTimeout(r, 0));
 
     expect(inserted).toHaveLength(3);
   });
@@ -50,7 +50,7 @@ describe("QueryLogBatcher", () => {
     });
 
     b.add(entry({ domain: "x.com" }));
-    await Bun.sleep(0); // auto-flush attempted, fails
+    await new Promise((r) => setTimeout(r, 0)); // auto-flush attempted, fails
     expect(inserted).toHaveLength(0);
     expect(b.size).toBe(1); // batch retained
 

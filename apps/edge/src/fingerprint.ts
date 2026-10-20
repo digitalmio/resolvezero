@@ -14,7 +14,7 @@
  *   - Every rule expands to the fingerprints of ALL its suffixes
  *     ("a.b.example.com" → a.b.example.com, b.example.com, example.com —
  *     label-boundary correctness comes free from the split).
- *   - Fingerprints are Bun.hash (wyhash64) persisted into sorted
+ *   - Fingerprints are xxhash64 persisted into sorted
  *     BigUint64Arrays; lookup = hash each queried suffix + binary search.
  *   - One 64-bit fingerprint table holds a finite collision risk
  *     (~6.8e-7 for 5M exact-vs-suffix pairs — modeled at ~2^-42 per by
@@ -22,11 +22,12 @@
  *     If a stricter variant ever matters, re-run parse with double-hash.
  */
 
+import xxhash from "xxhash-wasm";
+
 export type FingerprintAction = "allow" | "block";
 
-/** Bun.hash is declared with a `number | bigint` union in @types/bun; the
- *  runtime always returns wyhash64 as bigint. Narrow once here. */
-const hash64 = (s: string): bigint => Bun.hash(s) as bigint;
+const { h64 } = await xxhash();
+const hash64 = (s: string): bigint => h64(s);
 
 export class SuffixFingerprintBuilder {
   // Growable BigUint64Array stages — NEVER boxed bigint[] JS arrays

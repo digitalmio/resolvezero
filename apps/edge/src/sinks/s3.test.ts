@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { gzipSync, gunzipSync } from "node:zlib";
 import {
   S3ArchiveSink,

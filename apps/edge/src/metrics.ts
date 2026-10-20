@@ -4,7 +4,7 @@ import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 
 let cpuUsageLast = process.cpuUsage();
-let wallLast = Bun.nanoseconds();
+let wallLast = Number(process.hrtime.bigint());
 
 /** Slices process CPU% since the last observation. Pure — unit-tested. */
 export function cpuPercent(
@@ -137,7 +137,7 @@ export function createHealthApp(deps: {
     }
     try {
       const cpuNow = process.cpuUsage();
-      const wallNow = Bun.nanoseconds();
+      const wallNow = Number(process.hrtime.bigint());
       cpu.set(cpuPercent(cpuNow, wallNow, cpuUsageLast, wallLast));
       cpuUsageLast = cpuNow;
       wallLast = wallNow;

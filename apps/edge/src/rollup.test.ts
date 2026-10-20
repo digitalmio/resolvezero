@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import {
   aggregate,
   hourFloor,
@@ -90,11 +90,6 @@ describe("rollup pure helpers", () => {
     expect(m.get("old")).toBe(7);
     expect(m.get("fresh")).toBe(2);
   });
-});
-
-describe("applyBucket merge math", () => {
-  // read-modify-write against the live DB is exercised in the M2 live run;
-  // the pure merge pieces above are what could regress silently here.
 });
 
 describe("minute rollups", () => {

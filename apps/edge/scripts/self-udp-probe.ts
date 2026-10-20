@@ -21,6 +21,7 @@ function encodeWire(name: string): Uint8Array {
   return out;
 }
 import { readFileSync } from "node:fs";
+import dgram from "node:dgram";
 /**
  * Machine-local UDP-53 self-probe: answers "is MY dns53 socket bound and
  * serving on fly-global-services?" from inside the VM — exactly what you
@@ -49,24 +50,19 @@ if (!line) {
 const ip = line.trim().split(/\s+/)[0]!;
 // built above via encodeWire()
 
-const s = await Bun.udpSocket({
-  hostname: "0.0.0.0",
-  port: 0,
-  socket: {
-    data(_s: unknown, d: Uint8Array) {
-      // decode minimal: flags at bytes 2-3 (QR=b15, rcode=b0-3 of byte3)
-      const rcode = d[3]! % 16;
-      const qr = (d[2]! & 0x80) !== 0;
-      console.log(`reply from ${ip}: qr=${qr ? "1" : "0"} rcode=${rcode} (5=REFUSED expected — source not whitelisted, but listener is ALIVE)`);
-      process.exit(0);
-    },
-    error() {
-      console.error("socket error");
-      process.exit(1);
-    },
-  },
-} as never);
-s.send(q, 53, ip);
-await Bun.sleep(3000);
+const s = dgram.createSocket("udp4");
+s.on("message", (d) => {
+  const rcode = d[3]! % 16;
+  const qr = (d[2]! & 0x80) !== 0;
+  console.log(`reply from ${ip}: qr=${qr ? "1" : "0"} rcode=${rcode} (5=REFUSED expected — source not whitelisted, but listener is ALIVE)`);
+  s.close();
+  process.exit(0);
+});
+s.on("error", () => {
+  console.error("socket error");
+  process.exit(1);
+});
+s.bind(0, () => s.send(q, 53, ip));
+await new Promise((resolve) => setTimeout(resolve, 3000));
 console.log(`no reply from ${ip}:53 — dns53 listener NOT answering on this machine`);
 process.exit(1);

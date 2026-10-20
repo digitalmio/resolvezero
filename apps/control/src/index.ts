@@ -5,6 +5,7 @@
  *           Logs, Settings.
  */
 import { Hono } from "hono";
+import { serve } from "@hono/node-server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@resolvezero/db/client";
@@ -101,7 +102,8 @@ site.use("*", async (c, next) => {
 site.route("/", api);
 site.route("/", createDashApp(auth));
 
-const server = Bun.serve({ port: PORT, fetch: site.fetch });
+const server = serve({ port: PORT, hostname: "0.0.0.0", fetch: site.fetch });
+void server;
 
 // No privileged ports here, but drop root anyway (shared image).
 try {
@@ -116,6 +118,6 @@ try {
   if (process.env.FLY_REGION || process.env.DROP_PRIVILEGES === "1") process.exit(1);
 }
 
-console.info(JSON.stringify({ module: "control", port: server.port, msg: "resolvezero control listening" }));
+console.info(JSON.stringify({ module: "control", port: PORT, msg: "resolvezero control listening" }));
 
 export { site };

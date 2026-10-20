@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run src/index.ts",
-    "test": "bun test"
+    "dev": "tsx src/index.ts",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@resolvezero/shared": "workspace:*"
+    "@resolvezero/shared": "workspace:*",
+    "tsx": "^4.19.0"
   }
 }

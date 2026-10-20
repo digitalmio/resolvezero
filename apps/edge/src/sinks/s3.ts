@@ -1,13 +1,21 @@
+import { gzipSync } from "node:zlib";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { moduleLogger } from "../logger";
 import type { QueryLogRow } from "../batcher";
 
 const log = moduleLogger("s3sink");
 
-/** Minimal surface of Bun.S3Client we rely on (injectable for tests). */
+/** Minimal S3 surface we rely on (injectable for tests). */
 export interface S3ClientLike {
   write(key: string, body: Uint8Array): Promise<unknown>;
   file(key: string): { arrayBuffer(): Promise<ArrayBuffer> };
-  /** Bun's list() returns one page; nextContinuationToken feeds the next call. */
+  /** One page; nextContinuationToken feeds the next call. */
   list(opts: {
     prefix: string;
     continuationToken?: string;
@@ -21,6 +29,65 @@ export interface S3ClientLike {
 }
 
 /** Collects every key under a prefix across all pages (caps at 50k for safety). */
+/** Builds the production S3 adapter from env. Returns null when unconfigured. */
+export function createS3ClientFromEnv(): S3ClientLike | null {
+  const bucket = process.env.S3_BUCKET;
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  if (!bucket || !accessKeyId || !secretAccessKey) return null;
+
+  const endpoint = process.env.S3_ENDPOINT;
+  const client = new S3Client({
+    region: process.env.S3_REGION ?? "auto",
+    endpoint,
+    // iDrive E2 (and most S3-compatible stores) require path-style URLs.
+    forcePathStyle: true,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+
+  return {
+    async write(key, body) {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: "application/gzip",
+        }),
+      );
+    },
+    file(key) {
+      return {
+        async arrayBuffer() {
+          const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+          const body = out.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined;
+          if (!body?.transformToByteArray) throw new Error("S3 GetObject returned no body");
+          const bytes = await body.transformToByteArray();
+          return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        },
+      };
+    },
+    async list({ prefix, continuationToken, maxKeys }) {
+      const out = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+          MaxKeys: maxKeys,
+        }),
+      );
+      return {
+        contents: (out.Contents ?? []).map((o) => ({ key: o.Key! })),
+        isTruncated: out.IsTruncated,
+        nextContinuationToken: out.NextContinuationToken,
+      };
+    },
+    async delete(key) {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    },
+  };
+}
+
 export async function listAllKeys(
   client: S3ClientLike,
   prefix: string,
@@ -274,7 +341,7 @@ export function lineFor(row: QueryLogRow): Record<string, unknown> {
 }
 
 function gzip(text: string): Uint8Array {
-  return Bun.gzipSync(new TextEncoder().encode(text));
+  return new Uint8Array(gzipSync(new TextEncoder().encode(text)));
 }
 
 /** Aligns a timestamp to the flush window grid (aligned to unix epoch). */

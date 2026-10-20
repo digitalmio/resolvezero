@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 
 /**
  * Login-first control plane (readme §4a): real GitHub OAuth can't be unit-
