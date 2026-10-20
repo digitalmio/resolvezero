@@ -2,7 +2,6 @@
  * PlanetScale Postgres URLs carry libpq-only params (`sslrootcert=system`)
  * that node-side drivers mishandle:
  *   - postgres.js forwards them as server options → server rejects them
- *   - pg-connection-string (pg-listen) reads sslrootcert as a FILE path → ENOENT
  * This helper parses non-portable params out while preserving TLS intent
  * (Bun/Node verify certificate chains by default when ssl is on).
  */

@@ -1,16 +1,14 @@
-import { db, sanitizePgUrl } from "@resolvezero/db/client";
-import { moduleLogger } from "./logger";
-import { profileRules, profiles, profileSourceIps, profileZones } from "@resolvezero/db/schema";
+import { eq } from "drizzle-orm";
+import { db } from "@resolvezero/db/client";
 import {
-  isIpUpdateEvent,
-  isRuleUpdateEvent,
-  isZoneUpdateEvent,
-  type IpUpdateEvent,
-  type RuleUpdateEvent,
-  type ZoneRecordType,
-  type ZoneUpdateEvent,
-} from "@resolvezero/shared";
-import createListener, { type Subscriber } from "pg-listen";
+  edgeConfigState,
+  profileRules,
+  profiles,
+  profileSourceIps,
+  profileZones,
+} from "@resolvezero/db/schema";
+import type { ZoneRecordType } from "@resolvezero/shared";
+import { moduleLogger } from "./logger";
 import {
   RuleStore,
   type ProfileRow,
@@ -22,239 +20,174 @@ import {
 
 const log = moduleLogger("ruleSync");
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-  throw new Error("DATABASE_URL is not set");
+/** How often each POP checks the watermark. Config changes are rare. */
+const POLL_MS = Math.max(1_000, Number(process.env.CONFIG_POLL_MS ?? 5_000) || 5_000);
+const RETRY_MS = 2_000;
+const MAX_RETRY_MS = 30_000;
+
+interface Versions {
+  config: number;
+  blocklist: number;
+}
+
+export interface RuleSyncHandle {
+  /** Stop the poll timer (SIGTERM). */
+  stop(): void;
+  /** Force one poll now (tests/manual). */
+  pollNow(): Promise<void>;
 }
 
 /**
- * Race-free rule sync (readme.md §3 B, Boot Phase):
- *   1. subscribe FIRST      — LISTEN registered before any snapshot
- *   2. buffer               — collect NOTIFY payloads arriving during snapshot
- *   3. snapshot             — bulk SELECT into the RuleStore
- *   4. reconcile            — replay buffered events in order (idempotent,
- *                             since each payload carries full row state)
+ * Config propagation without LISTEN/NOTIFY.
  *
- * A change committed between steps 2-4 can only be *double-applied*, never
- * lost — events are upsert semantics, so replay is harmless.
+ * Triggers bump `edge_config_state.config_version` / `.blocklist_version` in
+ * the same transaction as config writes. Each POP polls the watermark and
+ * re-snapshots (or asks the blocklist sync to refresh) when it changes.
+ *
+ * Reliability properties:
+ *  - a missed poll only delays convergence (no lost events),
+ *  - no dedicated LISTEN connection, so it works through PgBouncer,
+ *  - reads happen before the snapshot; a change during the snapshot bumps the
+ *    version and is picked up by the next poll.
  */
 export async function startRuleSync(
   store: RuleStore,
-  /** Called (debounced) when blocklist subscriptions change in PG. */
-  onBlocklistEvent?: () => void,
-): Promise<Subscriber> {
-  // NOTE: dedicated direct postgres connection — must NOT pass through
-  // PgBouncer in transaction pooling mode (LISTEN is unsupported there).
-  const subscriber = createListener({
-    // same sslrootcert sanitization as the query client (pg-connection-
-    // string would otherwise read sslrootcert=system as a file path)
-    connectionString: sanitizePgUrl(DATABASE_URL!),
-    maxAttempts: Infinity,
-  });
+  /** Called when blocklist_version moves (edge re-fetches subscriptions). */
+  onBlocklistChange?: () => void,
+): Promise<RuleSyncHandle> {
+  let lastConfigVersion = -1;
+  let lastBlocklistVersion = -1;
+  let stopped = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let polling = false;
+  let pendingPoll = false;
 
-  const bufferedRules: RuleUpdateEvent[] = [];
-  const bufferedZones: ZoneUpdateEvent[] = [];
-  const bufferedIps: IpUpdateEvent[] = [];
-  let snapshotLoaded = false;
+  async function readVersions(): Promise<Versions> {
+    const rows = await db
+      .select({
+        config: edgeConfigState.configVersion,
+        blocklist: edgeConfigState.blocklistVersion,
+      })
+      .from(edgeConfigState)
+      .where(eq(edgeConfigState.id, true))
+      .limit(1);
+    return rows[0] ?? { config: 0, blocklist: 0 };
+  }
 
-  // 1. Listener event handlers registered before connecting.
-  subscriber.events.on("connected", () => {
-    log.info("LISTEN connection established");
-  });
-  subscriber.events.on("error", (err) => {
-    log.error({ err }, "LISTEN connection error");
-  });
+  async function snapshot(): Promise<void> {
+    const [profileRows, ruleRows, sourceIpRows, zoneRows] = await Promise.all([
+      db
+        .select({
+          id: profiles.id,
+          dohToken: profiles.dohToken,
+          logQueries: profiles.logQueries,
+          upstream: profiles.upstream,
+          upstreamUrl: profiles.upstreamUrl,
+        })
+        .from(profiles),
+      db
+        .select({
+          profileId: profileRules.profileId,
+          domain: profileRules.domain,
+          action: profileRules.action,
+        })
+        .from(profileRules),
+      db
+        .select({
+          ipAddress: profileSourceIps.ipAddress,
+          profileId: profileSourceIps.profileId,
+        })
+        .from(profileSourceIps),
+      db
+        .select({
+          profileId: profileZones.profileId,
+          domain: profileZones.domain,
+          recordType: profileZones.recordType,
+          values: profileZones.values,
+          ttl: profileZones.ttl,
+        })
+        .from(profileZones),
+    ]);
 
-  subscriber.notifications.on("profile_updates", (payload) => {
-    if (!isRuleUpdateEvent(payload)) {
-      log.warn("unrecognized NOTIFY payload, ignoring");
+    // Snapshot replaces state atomically. The version was read before this
+    // query; any concurrent change bumps it and will be caught next poll.
+    store.replaceAll(
+      ruleRows.map((r): RuleRow => ({ ...r, action: r.action as RuleAction })),
+      sourceIpRows.map((s): SourceIpRow => ({ ...s })),
+      profileRows.map(
+        (p): ProfileRow => ({
+          id: p.id,
+          dohToken: p.dohToken,
+          logQueries: p.logQueries,
+          upstream: p.upstream,
+          upstreamUrl: p.upstreamUrl ?? null,
+        }),
+      ),
+      zoneRows.map((z): ZoneRow => ({ ...z, recordType: z.recordType as ZoneRecordType })),
+    );
+  }
+
+  async function poll(): Promise<void> {
+    const before = await readVersions();
+
+    if (before.config !== lastConfigVersion) {
+      await snapshot();
+      lastConfigVersion = before.config;
+      log.info({ version: before.config, stats: store.stats }, "config snapshot loaded");
+    }
+
+    if (before.blocklist !== lastBlocklistVersion) {
+      lastBlocklistVersion = before.blocklist;
+      onBlocklistChange?.();
+    }
+  }
+
+  async function runPoll(): Promise<void> {
+    if (stopped) return;
+    if (polling) {
+      pendingPoll = true;
       return;
     }
-    if (snapshotLoaded) {
-      store.applyEvent(payload);
-    } else {
-      bufferedRules.push(payload);
-    }
-  });
-
-  subscriber.notifications.on("zone_updates", (payload) => {
-    if (!isZoneUpdateEvent(payload)) {
-      log.warn("unrecognized zone NOTIFY payload, ignoring");
-      return;
-    }
-    if (snapshotLoaded) {
-      store.applyZoneEvent(payload);
-    } else {
-      bufferedZones.push(payload);
-    }
-  });
-
-  subscriber.notifications.on("blocklist_updates", () => {
-    // Only the trigger matters — sync reloads ALL enabled lists itself.
-    onBlocklistEvent?.();
-  });
-
-  subscriber.notifications.on("ip_updates", (payload) => {
-    if (!isIpUpdateEvent(payload)) {
-      log.warn("unrecognized ip NOTIFY payload, ignoring");
-      return;
-    }
-    if (snapshotLoaded) {
-      store.applySourceIpEvent(payload);
-    } else {
-      bufferedIps.push(payload);
-    }
-  });
-
-  // Profile create/delete or edge-relevant settings change (upstream, token,
-  // logging, retention). Re-snapshot so running POPs don't wait for reconnect.
-  let profileResyncTimer: ReturnType<typeof setTimeout> | undefined;
-  const scheduleProfileResync = (): void => {
-    if (profileResyncTimer) clearTimeout(profileResyncTimer);
-    profileResyncTimer = setTimeout(() => {
-      profileResyncTimer = undefined;
-      log.info("profile config changed — re-snapshotting");
-      void reconcileGuarded();
-    }, 500);
-    profileResyncTimer.unref?.();
-  };
-  subscriber.notifications.on("profile_config_updates", () => {
-    scheduleProfileResync();
-  });
-
-  // pg-listen auto-reconnects on connection loss (and re-issues LISTEN for
-  // its cached channels); re-reconcile the snapshot afterwards in case we
-  // missed events while disconnected.
-  let reconciling = false;
-  let reconcileQueued = false;
-  subscriber.events.on("reconnect", () => {
-    log.warn("reconnected — re-snapshotting rules");
-    snapshotLoaded = false;
-    void reconcileGuarded();
-  });
-
-  async function reconcileGuarded(): Promise<void> {
-    if (reconciling) {
-      reconcileQueued = true;
-      return;
-    }
-    reconciling = true;
+    polling = true;
     try {
-      await reconcile();
+      await poll();
+    } catch (err) {
+      log.error({ err }, "config poll failed — retrying next tick");
     } finally {
-      reconciling = false;
-      if (reconcileQueued) {
-        reconcileQueued = false;
-        void reconcileGuarded();
+      polling = false;
+      if (pendingPoll) {
+        pendingPoll = false;
+        void runPoll();
       }
     }
   }
 
-  // 2-4. Connect + LISTEN, then snapshot, then replay the buffers.
-  await subscriber.connect();
-  await subscriber.listenTo("profile_updates");
-  await subscriber.listenTo("zone_updates");
-  await subscriber.listenTo("ip_updates");
-  await subscriber.listenTo("blocklist_updates");
-  await subscriber.listenTo("profile_config_updates");
-  await reconcileGuarded();
-
-  async function reconcile(): Promise<void> {
-    const MAX_BUFFERED = 5000;
-    const clamp = <T>(buf: T[]): void => {
-      if (buf.length > MAX_BUFFERED) {
-        buf.splice(0, buf.length - MAX_BUFFERED);
-        log.warn("pre-snapshot buffer overflow, dropped oldest events");
-      }
-    };
-    let attempt = 0;
-    for (;;) {
-      try {
-      const [profileRows, ruleRows, sourceIpRows, zoneRows] = await Promise.all([
-        db
-          .select({
-            id: profiles.id,
-            dohToken: profiles.dohToken,
-            logQueries: profiles.logQueries,
-            upstream: profiles.upstream,
-            upstreamUrl: profiles.upstreamUrl,
-          })
-          .from(profiles),
-        db
-          .select({
-            profileId: profileRules.profileId,
-            domain: profileRules.domain,
-            action: profileRules.action,
-          })
-          .from(profileRules),
-        db
-          .select({
-            ipAddress: profileSourceIps.ipAddress,
-            profileId: profileSourceIps.profileId,
-          })
-          .from(profileSourceIps),
-        db
-          .select({
-            profileId: profileZones.profileId,
-            domain: profileZones.domain,
-            recordType: profileZones.recordType,
-            values: profileZones.values,
-            ttl: profileZones.ttl,
-          })
-          .from(profileZones),
-      ]);
-
-      // Snapshot replaces state atomically, then buffered events re-apply.
-      store.replaceAll(
-        ruleRows.map(
-          (r): RuleRow => ({ ...r, action: r.action as RuleAction }),
-        ),
-        sourceIpRows.map(
-          (s): SourceIpRow => ({ ipAddress: s.ipAddress, profileId: s.profileId }),
-        ),
-        profileRows.map(
-          (p): ProfileRow => ({
-            id: p.id,
-            dohToken: p.dohToken,
-            logQueries: p.logQueries,
-            upstream: p.upstream,
-            upstreamUrl: p.upstreamUrl ?? null,
-          }),
-        ),
-        zoneRows.map(
-          (z): ZoneRow => ({ ...z, recordType: z.recordType as ZoneRecordType }),
-        ),
-      );
-
-      const ruleEvents = bufferedRules.splice(0);
-      for (const event of ruleEvents) {
-        store.applyEvent(event);
-      }
-      const zoneEvents = bufferedZones.splice(0);
-      for (const event of zoneEvents) {
-        store.applyZoneEvent(event);
-      }
-      const ipEvents = bufferedIps.splice(0);
-      for (const event of ipEvents) {
-        store.applySourceIpEvent(event);
-      }
-
-      snapshotLoaded = true;
-      log.info({ stats: store.stats }, "snapshot loaded");
-      return;
-      } catch (err) {
-        attempt += 1;
-        const delayMs = Math.min(2_000 * 2 ** Math.min(attempt - 1, 4), 30_000);
-        log.error({ err, attempt, retryInMs: delayMs }, "reconcile failed, retrying");
-        await Bun.sleep(delayMs);
-        if (!snapshotLoaded) {
-          clamp(bufferedRules as unknown[]);
-          clamp(bufferedZones as unknown[]);
-          clamp(bufferedIps as unknown[]);
-        }
-      }
+  // Initial snapshot must succeed before the edge starts serving.
+  let attempt = 0;
+  for (;;) {
+    try {
+      const initial = await readVersions();
+      await snapshot();
+      lastConfigVersion = initial.config;
+      lastBlocklistVersion = initial.blocklist;
+      log.info({ version: initial.config, stats: store.stats }, "snapshot loaded");
+      break;
+    } catch (err) {
+      attempt += 1;
+      const delay = Math.min(RETRY_MS * 2 ** Math.min(attempt - 1, 4), MAX_RETRY_MS);
+      log.error({ err, attempt, retryInMs: delay }, "initial snapshot failed, retrying");
+      await Bun.sleep(delay);
     }
   }
 
-  return subscriber;
+  timer = setInterval(() => void runPoll(), POLL_MS);
+  timer.unref?.();
+
+  return {
+    stop() {
+      stopped = true;
+      if (timer) clearInterval(timer);
+    },
+    pollNow: runPoll,
+  };
 }

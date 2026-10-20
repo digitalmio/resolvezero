@@ -112,7 +112,7 @@ const readiness = {
 // NOTIFY-driven re-sync + interval refresh.
 const blocklists = startBlocklistSync({ store, dnsCache });
 
-await startRuleSync(store, () => {
+const ruleSync = await startRuleSync(store, () => {
   void blocklists.syncNow();
 });
 readiness.rulesLoaded = true;
@@ -218,6 +218,7 @@ process.on("SIGTERM", () => {
       // Stop intake first so no new DNS/HTTP work lands while we flush.
       server.stop(false);
       await dns53Handle?.stop();
+      ruleSync.stop();
       blocklists.stop();
       await batcher.stop();
       await archive?.flushAll();

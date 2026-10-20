@@ -63,7 +63,7 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 | Zone safety | Malformed zone values answer SERVFAIL instead of throwing out of the resolver; dashboard validates A/AAAA/CNAME at write time. | `doh.ts`, `dns53.ts`, `dash.ts` |
 | Rollups | Hourly RMW is serialized with a transaction-scoped `pg_advisory_xact_lock` per (profile, hour) — safe across fra/lhr. | `apps/edge/src/rollup.ts` |
 | Reconcile retry | Replaced unbounded async recursion with a loop + exponential backoff (2 s → 30 s) and buffer clamps. | `apps/edge/src/ruleSync.ts` |
-| Blocklist sync | A NOTIFY during a running sync sets `needsResync` instead of being dropped; periodic refresh gets ±10% jitter. | `apps/edge/src/blocklists.ts` |
+| Blocklist sync | A `blocklist_version` bump during a running sync sets `needsResync` instead of being dropped; periodic refresh gets ±10% jitter. | `apps/edge/src/blocklists.ts` |
 | S3 logs | Real continuation-token pagination, bounded-concurrency deletes, streamed bounded gunzip (zip-bomb safe), `limit`/`order=desc` for dashboard tailing. | `sinks/s3.ts`, `logs.ts` |
 | Retention | `log_retention_days = 0` cannot delete the current hour (`GREATEST(..., 1)`). | `packages/db/src/prune.ts` |
 | Docker drain | `batcher.stop()` fully drains before `archive.flushAll()`; backoff is honored; stop loops over all full batches. | `index.ts`, `batcher.ts` |
@@ -123,7 +123,7 @@ Parsing still holds the raw string + line splits + Sets before building the fing
 - `readme.md` §1/§6.3 still says Quad9 is the default; code defaults to Cloudflare.
 - §6.3 still says “cache by upstream TTL incl. NXDOMAIN” (now capped: positives ≤5 min, negatives ≤60 s).
 - §6.4 still says “silent-drop unauthenticated; rate-limit permitted sources” (code: REFUSED by default; rate limiting deferred).
-- Single `DATABASE_URL` still differs from the pooled+direct design note; PgBouncer transaction mode would break `LISTEN`.
+- Single `DATABASE_URL` + `max: 1` serializes all queries per POP; at N POPs consider a small pool. Version polling works through PgBouncer, so no direct/LISTEN URL is needed.
 - `S3_FLUSH_MINUTES`, `METRICS_TOKEN`, `ALLOW_PRIVATE_TARGETS`, `TRUSTED_ORIGINS` need to be in the deploy docs/secrets list.
 
 ### 3.6 CI / ops [Medium]
@@ -171,7 +171,7 @@ Goal: absorb UDP/TCP 53 floods **while preserving the real client IP**, which `p
 
 Adding PoPs multiplies shared-state and startup assumptions. Gate on these before scaling out.
 
-**Implemented and live 2026-10-20 (migrate applied the trigger; verified on fra+lhr):** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain; new `profile_config_updates` NOTIFY trigger + edge re-snapshot. A harmless `log_queries` update produced “profile config changed — re-snapshotting” on both POPs.
+**Implemented and live 2026-10-20:** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain. Config propagation is now **Postgres watermark polling** (`edge_config_state` + statement-level bump triggers, edge poll every 5s) — `pg-listen`/NOTIFY removed. Profile create/delete/token/upstream/logging changes are picked up on the next poll.
 
 **P0 — fix before adding POPs**
 
@@ -185,7 +185,7 @@ Adding PoPs multiplies shared-state and startup assumptions. Gate on these befor
 
 **P1 — before hosted/many POPs**
 
-- **DB connection architecture:** `packages/db/src/client.ts` uses `max: 1` and the same `DATABASE_URL` for queries and `pg-listen`. At N POPs this serializes queries per POP and grows connections N×(query+listener). Add a pooled query URL + `DATABASE_DIRECT_URL` for LISTEN, and a pool size budget.
+- **DB connection architecture:** `packages/db/src/client.ts` uses `max: 1`, so every query in a POP serializes. At N POPs that is N query connections (plus no listener now). Consider a small pool / pooled URL budget; version polling is PgBouncer-safe.
 - **Rate limiting / abuse:** the deferred UDP penalty box and DoH per-IP/token limits become more important with every public POP. Global quotas need a shared store; per-PoP limits are a start.
 - **Upstream validation:** verify response ID/QR/question against the query before caching (`resolveWire`/`dnsCache.set`); add singleflight per (name,type,upstream) to prevent cache-miss stampedes; add upstream-error metrics.
 - **Token hashing at rest:** plaintext `doh_token` remains; do before hosted.

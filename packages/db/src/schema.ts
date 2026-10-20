@@ -107,6 +107,18 @@ export const profiles = pgTable("profiles", {
     .defaultNow(),
 });
 
+/**
+ * Single-row watermark for edge config propagation. Triggers bump one of the
+ * counters in the same transaction as the config write; edges poll this row
+ * (LISTEN/NOTIFY is intentionally not used). `id` is always true.
+ */
+export const edgeConfigState = pgTable("edge_config_state", {
+  id: boolean("id").primaryKey().default(true),
+  configVersion: integer("config_version").notNull().default(0),
+  blocklistVersion: integer("blocklist_version").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Flat domain rules, expanded for fast edge lookups.
 // Suffix semantics: stored "corp.example.com" matches "*.corp.example.com".
 export const profileRules = pgTable(
@@ -266,133 +278,3 @@ export const profileBlocklists = pgTable(
   },
   (t) => [index("profile_blocklists_profile_idx").on(t.profileId)],
 );
-
-/** Unique-managed list URL change events (drive edge re-syncs). */
-export const BLOCKLIST_NOTIFY_TRIGGER_SQL = `
-CREATE OR REPLACE FUNCTION notify_blocklist_change()
-RETURNS TRIGGER AS $$
-BEGIN
-    PERFORM pg_notify('blocklist_updates', JSONB_BUILD_OBJECT(
-        'op',        TG_OP,
-        'profile_id', COALESCE(NEW.profile_id, OLD.profile_id),
-        'id',        COALESCE(NEW.id, OLD.id)
-    )::text);
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS blocklist_update_trigger ON profile_blocklists;
-DROP TRIGGER IF EXISTS blocklist_update_cols_trigger ON profile_blocklists;
--- STATUS WRITE-BACKS (last_synced_at/last_status/entry_count updates) MUST
--- NOT NOTIFY: the edge sync writes status after every fetch and the NOTIFY
--- would re-trigger the sync forever. Update-notify only on subscription
--- columns (url/format/enabled/profile).
-CREATE TRIGGER blocklist_update_trigger
-AFTER INSERT OR DELETE ON profile_blocklists
-FOR EACH ROW EXECUTE FUNCTION notify_blocklist_change();
-CREATE TRIGGER blocklist_update_cols_trigger
-AFTER UPDATE OF url, format, enabled, profile_id ON profile_blocklists
-FOR EACH ROW EXECUTE FUNCTION notify_blocklist_change();
-`;
-
-// Fires NOTIFY('profile_config_updates') when a profile is created/deleted or
-// its edge-relevant settings change (upstream, token, logging, retention).
-// The edge re-snapshots so new profiles/tokens/upstreams take effect without
-// waiting for a reconnect or restart.
-export const PROFILE_NOTIFY_TRIGGER_SQL = `
-CREATE OR REPLACE FUNCTION notify_profile_change()
-RETURNS TRIGGER AS $$
-BEGIN
-    PERFORM pg_notify('profile_config_updates', JSONB_BUILD_OBJECT(
-        'op',         TG_OP,
-        'profile_id', COALESCE(NEW.id, OLD.id)
-    )::text);
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS profile_config_insert_delete_trigger ON profiles;
-DROP TRIGGER IF EXISTS profile_config_update_trigger ON profiles;
-CREATE TRIGGER profile_config_insert_delete_trigger
-AFTER INSERT OR DELETE ON profiles
-FOR EACH ROW EXECUTE FUNCTION notify_profile_change();
-CREATE TRIGGER profile_config_update_trigger
-AFTER UPDATE OF upstream, upstream_url, doh_token, log_queries, log_retention_days ON profiles
-FOR EACH ROW EXECUTE FUNCTION notify_profile_change();
-`;
-
-// Fires a NOTIFY('profile_updates', <json>) on every rule row change.
-// NEW is NULL on DELETE and OLD is NULL on INSERT: use TG_OP to pick the row.
-export const RULE_NOTIFY_TRIGGER_SQL = `
-CREATE OR REPLACE FUNCTION notify_rule_change()
-RETURNS TRIGGER AS $$
-DECLARE
-    payload JSONB;
-BEGIN
-    payload := JSONB_BUILD_OBJECT(
-        'op', TG_OP,
-        'profile_id', COALESCE(NEW.profile_id, OLD.profile_id),
-        'domain',     COALESCE(NEW.domain,     OLD.domain),
-        'action',     NEW.action
-    );
-    PERFORM pg_notify('profile_updates', payload::text);
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS rule_update_trigger ON profile_rules;
-CREATE TRIGGER rule_update_trigger
-AFTER INSERT OR UPDATE OR DELETE ON profile_rules
-FOR EACH ROW EXECUTE FUNCTION notify_rule_change();
-`;
-
-// Fires a NOTIFY('zone_updates', <json>) on every zone row change
-// (same payload shape; 'action' carries the record type + values snapshot).
-export const ZONE_NOTIFY_TRIGGER_SQL = `
-CREATE OR REPLACE FUNCTION notify_zone_change()
-RETURNS TRIGGER AS $$
-DECLARE
-    payload JSONB;
-BEGIN
-    payload := JSONB_BUILD_OBJECT(
-        'op', TG_OP,
-        'profile_id',  COALESCE(NEW.profile_id, OLD.profile_id),
-        'domain',      COALESCE(NEW.domain,     OLD.domain),
-        'record_type', COALESCE(NEW.record_type, OLD.record_type),
-        'values',      COALESCE(NEW.values,     OLD.values),
-        'ttl',         COALESCE(NEW.ttl,        OLD.ttl)
-    );
-    PERFORM pg_notify('zone_updates', payload::text);
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS zone_update_trigger ON profile_zones;
-CREATE TRIGGER zone_update_trigger
-AFTER INSERT OR UPDATE OR DELETE ON profile_zones
-FOR EACH ROW EXECUTE FUNCTION notify_zone_change();
-`;
-
-// Fires a NOTIFY('ip_updates', <json>) on whitelist changes so the edge's
-// authorizedSourceIps map stays live (update-ip endpoint uses this).
-export const IP_NOTIFY_TRIGGER_SQL = `
-CREATE OR REPLACE FUNCTION notify_ip_change()
-RETURNS TRIGGER AS $$
-DECLARE
-    payload JSONB;
-BEGIN
-    payload := JSONB_BUILD_OBJECT(
-        'op', TG_OP,
-        'ip_address', COALESCE(NEW.ip_address, OLD.ip_address),
-        'profile_id', COALESCE(NEW.profile_id, OLD.profile_id)
-    );
-    PERFORM pg_notify('ip_updates', payload::text);
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS ip_update_trigger ON profile_source_ips;
-CREATE TRIGGER ip_update_trigger
-AFTER INSERT OR UPDATE OR DELETE ON profile_source_ips
-FOR EACH ROW EXECUTE FUNCTION notify_ip_change();
-`;

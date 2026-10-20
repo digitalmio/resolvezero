@@ -29,6 +29,20 @@
       "when": 1791747069475,
       "tag": "0003_mature_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792508703806,
+      "tag": "0004_edge_config_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792508712705,
+      "tag": "0005_config_version_triggers",
+      "breakpoints": true
     }
   ]
 }

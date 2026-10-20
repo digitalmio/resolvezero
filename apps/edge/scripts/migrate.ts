@@ -1,8 +1,8 @@
 /**
  * Admin-side bootstrap (never runs on the edge; requires DATABASE_URL_ADMIN):
  *   1. applies drizzle migrations (drizzle/ journal)
- *   2. ensures the rule/zone NOTIFY triggers exist
- *   3. verifies: tables + triggers + NOTIFY smoke test
+ *   2. relies on version-bump triggers from the migration journal
+ *   3. verifies: tables + expected triggers + watermark row
  *
  * Usage: bun --env-file=.env apps/edge/scripts/migrate.ts
  */
@@ -15,13 +15,10 @@ if (!process.env.DATABASE_URL_ADMIN) {
 process.env.DATABASE_URL = process.env.DATABASE_URL_ADMIN;
 
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { db, rawClient, ensureRuleNotifyTrigger } from "@resolvezero/db/client";
+import { db, rawClient } from "@resolvezero/db/client";
 
 await migrate(db, { migrationsFolder: "./packages/db/drizzle" });
 console.log("→ migrations applied");
-
-await ensureRuleNotifyTrigger();
-console.log("→ rule/zone NOTIFY triggers ensured");
 
 const tables = (await rawClient().unsafe(
   `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`,
@@ -31,13 +28,30 @@ console.log("→ tables:", tables.map((t) => t.table_name));
 const triggers = (await rawClient().unsafe(
   `SELECT trigger_name, event_object_table FROM information_schema.triggers WHERE trigger_schema = 'public'`,
 )) as { trigger_name: string; event_object_table: string }[];
-console.log("→ triggers:", triggers);
+console.log("→ triggers:", triggers.map((t) => t.trigger_name));
 
-// NOTIFY smoke test: insert a test rule row, expect edge to get event; we can't
-// LISTEN here (admin connection) but the trigger firing is visible via pg_paper trail:
-await rawClient().unsafe(
-  `SELECT count(*) FROM pg_listening_channels()`,
-); // sanity SELECT; real listen verification happens in the live edge boot
+const expectedTriggers = [
+  "edge_config_profiles_trigger",
+  "edge_config_rules_trigger",
+  "edge_config_zones_trigger",
+  "edge_config_source_ips_trigger",
+  "edge_blocklist_trigger",
+];
+const found = new Set(triggers.map((t) => t.trigger_name));
+const missing = expectedTriggers.filter((t) => !found.has(t));
+if (missing.length > 0) {
+  console.error("→ missing triggers:", missing);
+  process.exit(1);
+}
+
+const watermark = (await rawClient().unsafe(
+  `SELECT config_version, blocklist_version FROM edge_config_state WHERE id = true`,
+)) as { config_version: number; blocklist_version: number }[];
+if (watermark.length !== 1) {
+  console.error("→ edge_config_state singleton row is missing");
+  process.exit(1);
+}
+console.log("→ watermark:", watermark[0]);
 
 await rawClient().end();
 console.log("admin bootstrap complete ✅");

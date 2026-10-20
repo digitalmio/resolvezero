@@ -56,20 +56,5 @@ export function rawClient(): postgres.Sql {
   return get().client;
 }
 
-/**
- * Admin-side NOTIFY trigger bootstrap (called by migrate.ts, never by the
- * edge runtime — the app role intentionally has no DDL rights).
- */
-export async function ensureRuleNotifyTrigger(): Promise<void> {
-  const schema = await import("./schema");
-  await rawClient().unsafe(
-    schema.RULE_NOTIFY_TRIGGER_SQL +
-      schema.ZONE_NOTIFY_TRIGGER_SQL +
-      schema.IP_NOTIFY_TRIGGER_SQL +
-      schema.BLOCKLIST_NOTIFY_TRIGGER_SQL +
-      schema.PROFILE_NOTIFY_TRIGGER_SQL,
-  );
-}
-
 export { schema };
 export { sanitizePgUrl } from "./url";

@@ -16,9 +16,9 @@ ResolveZero is a personal DNS & DoH (DNS-over-HTTPS) resolver you fully control.
 * **Edge Runtime:** Bun (v1.4+, Rust-backed). Extreme low latency, low RAM footprint, and native `Bun.udpSocket()` for legacy device support.
 * **Infrastructure (hosted option):** Fly.io. Edge compute + BGP Anycast + one shared dedicated IPv4 (UDP requires it; all profiles share it).
 * **Database:** PlanetScale Postgres (Metal) — profiles, rules, query logs, and the central source of truth.
-    * ⚠️ Managed PgBouncer runs in transaction-pooling mode, which does NOT support `LISTEN`/`NOTIFY`. Runtime queries use the pool; the edge's `pg-listen` socket uses a **direct connection**.
-* **ORM / Migrations:** Drizzle (package `packages/db`).
-* **Pub/Sub (Invalidation):** Native PostgreSQL `LISTEN`/`NOTIFY` via `pg-listen`.
+    * Managed PgBouncer runs in transaction-pooling mode. Config propagation is **watermark polling** (below), so it works through the pool; no `LISTEN`/dedicated connection is required.
+* **ORM / Migrations:** Drizzle (package `packages/db`) + custom SQL migrations for triggers.
+* **Config Propagation:** `edge_config_state` single-row watermark (`config_version`, `blocklist_version`) bumped by statement-level triggers in the same transaction as writes; each edge POP polls every ~5 s (`CONFIG_POLL_MS`) and re-snapshots/re-syncs when it moves. No `LISTEN`/`NOTIFY` on the hot path.
 * **Policy Cache:** A plain in-memory `Map` of ALL profiles' policies. Bounded set — NEVER evict (LRU is reserved for the resolver cache only).
 * **DNS Response Cache:** `lru-cache`, the only unbounded-by-nature data — safe to evict.
 * **DNS Parsing:** `dns2` or `dns-packet` (npm).
@@ -26,7 +26,7 @@ ResolveZero is a personal DNS & DoH (DNS-over-HTTPS) resolver you fully control.
     * `quad9` exists as a preset but is **HTTP/2-only** ("505 requires HTTP/2" on Bun's h1 fetch); it runs through the h2 transport where reachable (verified 13ms p50 from lhr via `node:http2`) — needs verification from every deploy PoP before being offered in the UI.
     * **Bench decision (2026-10-09, `apps/edge/scripts/bench-upstream.ts`, fra+lhr):** warm per-query RTT: DoH-h1 ≈ 2ms vs UDP 53 ≈ 1ms (CF, fra); Google 4 vs 2ms (lhr); Quad9 13 vs 11ms (lhr). UDP wins **1–2ms p50** — rejected: not worth the drop in transport privacy (plaintext to the provider), a second socket stack, and a per-profile protocol column. DoH-h1 is the default path; warm conns make the protocol overhead irrelevant.
     * Mullvad was excluded as a preset: dead from Fly egress (300/300 timeouts on all transports) and from the PL home ISP — provider emits no EU-reachable endpoint for our vantages.
-* **Custom zones:** per-profile DNS records (`profile_zones`: A/AAAA/CNAME/TXT, exact or `*.` suffix-wildcard, TTL) served from the edge cache via a second `zone_updates` NOTIFY channel — split-horizon names (`nas.lan`), LAN rewrites, and explicit overrides **win over blocklists** (user-authored config). Updated live, no upstream round-trip.
+* **Custom zones:** per-profile DNS records (`profile_zones`: A/AAAA/CNAME/TXT, exact or `*.` suffix-wildcard, TTL) served from the edge cache via the config watermark — split-horizon names (`nas.lan`), LAN rewrites, and explicit overrides **win over blocklists** (user-authored config). Updated within one poll interval, no upstream round-trip.
 * **Raw Log Storage:** S3-compatible object storage (`Bun.S3Client` — iDrive E2 / R2 / Tigris / AWS via env endpoint). Postgres holds **stats rollups only** (raw logs never in PG).
 
 ## 3. System Architecture
@@ -36,11 +36,11 @@ Strictly decoupled: **Control Plane** (slow, persistent, Postgres) and **Data Pl
 ### A. The Control Plane (Postgres)
 
 Stores profiles, rules, blocklist picks, source-IP whitelists, log opt-outs, and the query log.
-When a rule changes, a Postgres trigger fires a `NOTIFY profile_updates` event with an `op` field (`INSERT`/`UPDATE`/`DELETE`) and the affected row's JSON (see trigger SQL — `TG_OP` selects `NEW`/`OLD`, so DELETEs propagate correctly).
+Config writes bump `edge_config_state.config_version` (or `.blocklist_version`) in the same transaction via statement-level triggers. There is no `pg_notify` on the hot path.
 
 ### B. The Edge Data Plane (Bun on Fly.io)
 
-1. **Boot Phase (race-free sync):** subscribe (`LISTEN profile_updates`) → buffer events → `SELECT` snapshot into the policy `Map` → replay the buffer (reconcile). Re-snapshot on `pg-listen` reconnect.
+1. **Boot Phase (race-free sync):** read the current `config_version` → `SELECT` snapshot into the policy `Map` → poll the watermark every ~5 s and re-snapshot when it moves. A change during the snapshot bumps the version and is caught next tick.
 2. **Resolution Phase:** authenticate (`profile id` from DoH path, or `senderAddress`→profile for UDP), then check the domain (`O(1)` exact + longest-suffix wildcard, `O(domain depth)`) against the profile's rules.
     * **Blocked** → sinkhole (`0.0.0.0`) — answerable locally, log, return.
     * **Allowed** → DNS response LRU cache; on miss, forward upstream **over DoH**, log, cache with capped TTL (positives ≤5 min, NODATA/NXDOMAIN ≤60s — a transient empty must never hide a record).
@@ -75,7 +75,7 @@ Every query must be authenticated before processing. Unauthenticated/unknown UDP
 
 * **Status:** `apps/control` deploys `resolvezero-control` (fra). Better Auth 1.7 (GitHub OAuth only, no email flows) owns `user`/`session`/`account`/`verification` tables (migration 0003, shapes mirror @better-auth/core exactly — text ids, cascade FKs). `GET /api/me` is the post-login smoke route; profile CRUD + auto-profiles are PARKED until the app-design session.
 * **Auth flow**: `/api/auth/sign-in/github` → consent → callback → session cookie (server crypto via `BETTER_AUTH_SECRET`). `TRUSTED_ORIGINS` env gates redirect targets; CORS is dev-open (`CORS_ORIGINS=*` default) until the UI lands, tightened at productionalization.
-* Mutations (rules/zones/blocklists/profile CRUD) move to the control-plane API (dashboard app); the edge stays a token-authed data plane consuming NOTIFYs only.
+* Mutations (rules/zones/blocklists/profile CRUD) move to the control-plane API (dashboard app); the edge stays a token-authed data plane consuming the config watermark only.
 * Linked-IP (parity with NextDNS): dashboard button + `?ip=` update URL (both live); later: DDNS hostname re-resolution; multi-profile-per-IP later via **per-profile anycast IP pools** (NextDNS pattern — not dedicated per-user IPs). Tailscale hardcodes DoH for NextDNS/ControlD only (ts#15724) — not supported by design; OS-native DoH profiles are our path.
 * Deployed via the shared pipeline: `deploy-control` job (FLY_CONFIG=fly.control.toml), same migrate-first ordering as the edge.
 * Deferred: teams/sharing, billing/quotas, per-profile rate limits.
@@ -137,25 +137,27 @@ CREATE TABLE stats_hourly (
 );
 CREATE INDEX stats_hourly_profile_hour_idx ON stats_hourly (profile_id, hour);
 
--- Trigger function for pub/sub (renamed for profiles)
-CREATE OR REPLACE FUNCTION notify_rule_change()
-RETURNS TRIGGER AS $$
-DECLARE payload JSONB;
-BEGIN
-    payload := JSONB_BUILD_OBJECT(
-        'op', TG_OP,
-        'profile_id', COALESCE(NEW.profile_id, OLD.profile_id),
-        'domain',     COALESCE(NEW.domain,     OLD.domain),
-        'action',     NEW.action               -- NULL on DELETE
-    );
-    PERFORM pg_notify('profile_updates', payload::text);
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
+-- Config propagation watermark (single row)
+CREATE TABLE edge_config_state (
+  id BOOLEAN PRIMARY KEY DEFAULT true CHECK (id),
+  config_version BIGINT NOT NULL DEFAULT 0,
+  blocklist_version BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-CREATE TRIGGER rule_update_trigger
+CREATE OR REPLACE FUNCTION bump_edge_config_version()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+  UPDATE edge_config_state SET config_version = config_version + 1, updated_at = now() WHERE id;
+  RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER edge_config_rules_trigger
 AFTER INSERT OR UPDATE OR DELETE ON profile_rules
-FOR EACH ROW EXECUTE FUNCTION notify_rule_change();
+FOR EACH STATEMENT EXECUTE FUNCTION bump_edge_config_version();
+-- same pattern on profiles / profile_zones / profile_source_ips;
+-- profile_blocklists bumps blocklist_version instead (status write-backs excluded)
 ```
 
 ## 6. Phase 1 Build Order
@@ -200,8 +202,8 @@ push main → test (tsc edge/db + bun test) → migrate (drizzle+triggers, idemp
     * `dns2.resolvezero.com` → `37.16.24.46` (UDP secondary)
     * `dns.resolvezero.com` → `37.16.24.212` (DoH; `fly certs add` after DNS glues)
     * All three IPs serve BOTH DoH and UDP (app services are IP-agnostic); the naming is pure user-side DNS.
-* Postgres keeps the app-shaped `DATABASE_URL`; edge holds two configs: pooled (queries) + direct (LISTEN).
-* Log shipper (hosted): deploy [fly-log-shipper](https://github.com/superfly/fly-log-shipper) with `SUBJECT="logs.<edge-app>.>"`, Vector S3 sink keyed `logs/{profile}/{date}/{HHmm}.{seq}.jsonl.gz`, bucket region = data-residency choice. Raw-log lifetime via bucket lifecycle (up to 730 d).
+* Postgres keeps the app-shaped `DATABASE_URL`; version polling works through PgBouncer (no `LISTEN`/direct connection).
+* Log shipper (hosted): deploy [fly-log-shipper](https://github.com/superfly/fly-log-shipper) with `SUBJECT="logs.<edge-app>.>"`, Vector S3 sink keyed `logs/{profile}/{date}/{HHmm}.{instance}.{seq}.jsonl.gz` (`instance` = region+machine+boot nonce), bucket region = data-residency choice. Raw-log lifetime via bucket lifecycle (up to 730 d).
 
 ### Scaling model (warm machines, not scale-to-zero)
 
