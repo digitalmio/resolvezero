@@ -153,6 +153,20 @@ Decision: **stay on `oven/bun:1-slim` + runtime privilege drop for now.**
 
 Within one edge cache entry, TTLs now count down correctly (`187 → 186` across a 1 s repeat). Entries are also capped (positives ≤5 min, negatives ≤60 s) and hard-expire when their TTL elapses. Cross-region consistency would require a shared cache or sticky routing — not planned.
 
+### 3.10 DDoS protection / L4 anycast options (evaluated 2026-10-20)
+
+Goal: absorb UDP/TCP 53 floods **while preserving the real client IP**, which `profile_source_ips` auth depends on.
+
+| Option | Verdict |
+|---|---|
+| **Gcore Edge Proxy** | **Most promising non-Enterprise option.** L4 anycast TCP/UDP, no ASN/BGP/GRE required, dedicated proxy IP per protected server, ~€17/mo per Proxy Mapping (rules 2–5 €10, 6–10 €8, 11+ €6), attack traffic not billed. **Client IP: PROXY v2 supports both TCP and UDP** (v1 is TCP-only), so `profile_source_ips` can keep working — but the edge must parse the v2 binary header for UDP (first datagram of a flow) and we must PoC the exact header/flow behavior. DNS would use the **General UDP Countermeasure** profile for UDP/53 and **Generic TCP Server** for TCP/53; one protected server/proxy IP can hold both port mappings (~€27/mo). |
+| **Cloudflare Spectrum** | Technically the safest fit: UDP 53, SPP/PROXY v2 for client IP, static IP only with **BYOIP** (/24 IPv4 minimum). Requires Enterprise + Spectrum add-on — expensive for this stage. |
+| **Bunny Shield** | **Not a fit.** Website/API WAF + HTTP DDoS/CDN; no raw UDP/TCP 53 proxy. Bunny DNS is authoritative DNS, not a resolver front. |
+| **Psychz / Path.net / OVH** | L3/L4 mitigation, often cheaper at scale, but needs own IP space/ASN + BGP/GRE (or hosting on their network). Source IP preserved because traffic is routed, not proxied. |
+| **AWS Shield Standard (with GA)** | Free automatic L3/L4 protection on AWS; Advanced is ~$3k/mo and unnecessary here. |
+
+**Decision:** stay on Fly for now. Before paying anyone, implement the free first line: UDP per-source penalty box / rate limit, `silent` mode for unknown sources under attack (REFUSED amplifies), and alerts on `rz_dropped_total` / QPS / network rate. If actual abuse appears, PoC **Gcore Edge Proxy** first: enable PROXY v2 on the UDP/53 mapping, verify the origin sees the real client IP (and how the first-datagram header/flow mapping behaves), and allowlist Gcore’s CDN edge IPs on the origin. Cloudflare Spectrum is the fallback if Enterprise/BYOIP is acceptable. Gcore setup notes: use “General UDP Countermeasure” + “Generic TCP Server”, block direct origin access, and exclude Gcore edge IPs from per-IP rate limits/auto-bans.
+
 ---
 
 ## 4. Fixed v1 findings (status board)

@@ -81,6 +81,7 @@ secrets — never pasted here.
 - NextDNS CSV import — **parked** as hosted-launch "switch from NextDNS" feature (`apps/edge/scripts/import-nextdns.ts` skeleton exists).
 - Hosted-launch runbook items: MR-only flip, branch protection (needs Pro), Unbound/live RRL gate, returned-A-record sanity pass, weekly Timescale/s3 eval (readme §7).
 - Distroless: **evaluated 2026-10-20, deferred.** `oven/bun:1-distroless` exists (~same size as slim, no shell/apt) and `bun build --compile` works, but it costs `fly ssh console` debugging and adds little over the runtime privilege drop. Revisit at hosted launch.
+- DDoS / L4 anycast (2026-10-20): **Gcore Edge Proxy is the promising option** — L4 anycast TCP/UDP, no ASN/BGP/GRE, dedicated proxy IP, ~€17/mo per mapping (UDP+TCP 53 ≈ €27), attack traffic not billed. **UDP client IP is covered by PROXY v2 (v1 is TCP-only)** — needs a v2 header parser + flow PoC. Use General UDP Countermeasure + Generic TCP Server; allowlist Gcore edge IPs and block direct origin. Cloudflare Spectrum = Enterprise + BYOIP (/24); Bunny Shield is website/API-only (not raw 53). Free first step: UDP penalty box/rate limit + silent unknown-source mode. Deferred until abuse appears.
 - Mobileconfig polish + device tagging UX (topDevices rollups exist; UI chart pending).
 - Remote `doh_token` regen from dashboard (admin RPC path already exists in `.env` admin).
 
