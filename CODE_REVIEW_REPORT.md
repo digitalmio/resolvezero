@@ -171,7 +171,7 @@ Goal: absorb UDP/TCP 53 floods **while preserving the real client IP**, which `p
 
 Adding PoPs multiplies shared-state and startup assumptions. Gate on these before scaling out.
 
-**Implemented and live 2026-10-20:** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain. Config propagation is now **Postgres watermark polling** (`edge_config_state` + statement-level bump triggers, edge poll every 5s) — `pg-listen`/NOTIFY removed. Profile create/delete/token/upstream/logging changes are picked up on the next poll.
+**Implemented and live 2026-10-20:** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain. Config propagation is now **Postgres watermark polling** (`edge_config_state` + statement-level bump triggers, edge poll every 5s) — `pg-listen`/NOTIFY removed. Migrations 0004/0005 applied by CI; a live `log_queries` update bumped `config_version` 0→1 and both fra+lhr logged `config snapshot loaded` within ~5s.
 
 **P0 — fix before adding POPs**
 
