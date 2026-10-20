@@ -115,14 +115,26 @@ export class RuleStore {
   }
 
   /** Sets a profile's enabled subscription URLs (tables already upserted). */
-  setSubscriptions(profileId: string, urls: string[]): boolean {
+  setSubscriptions(
+    profileId: string,
+    urls: string[],
+    opts: { prune?: boolean } = {},
+  ): boolean {
     const prev = this.subscriptions.get(profileId)?.join("|") ?? "";
     const next = urls.join("|");
     this.subscriptions.set(profileId, urls);
-    this.pruneCatalog();
+    // Multi-profile wiring should pass prune:false and call
+    // pruneUnreferencedLists() once after every profile is wired; otherwise a
+    // profile with a subset of lists can delete tables another profile needs.
+    if (opts.prune !== false) this.pruneCatalog();
     const changed = prev !== next;
     this.markChanged(changed);
     return changed;
+  }
+
+  /** Prune catalog entries no subscription references (call after bulk wiring). */
+  pruneUnreferencedLists(): void {
+    this.pruneCatalog();
   }
 
   /** Drop catalog entries no subscriber references (memory hygiene). */

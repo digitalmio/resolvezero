@@ -124,15 +124,17 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
       }
       const fetchedAnyChanged = cacheFlushed;
 
-      // 2) wiring — subscriptions for every profile (urls whose table exists)
+      // 2) wiring — subscriptions for every profile (urls whose table exists).
+      //    Defer pruning until all profiles are wired: a profile with a subset
+      //    of lists must not delete tables another profile still references.
       for (const [profileId, rowsForProfile] of enabledByProfile) {
-        const urls: string[] = [];
-        for (const row of rowsForProfile) {
-          if (deps.store.hasList(row.url)) urls.push(row.url);
-        }
-        const changed = deps.store.setSubscriptions(profileId, urls);
+        const urls = [...new Set(rowsForProfile.map((r) => r.url))].filter((url) =>
+          deps.store.hasList(url),
+        );
+        const changed = deps.store.setSubscriptions(profileId, urls, { prune: false });
         if (changed && !fetchedAnyChanged) log.info({ profileId, urls: urls.length }, "subscriptions rewired");
       }
+      deps.store.pruneUnreferencedLists();
       if (deps.store.consumeChanged()) {
         deps.dnsCache.clear();
         log.info("blocklist state changed — dns cache flushed");

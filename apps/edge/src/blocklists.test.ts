@@ -90,6 +90,19 @@ describe("RuleStore shared blocklist catalog", () => {
     expect(store.consumeChanged()).toBeTrue();
   });
 
+  test("subset profile does not prune tables another profile needs", () => {
+    const store = new RuleStore();
+    store.upsertList("a", tableFrom(["a.com"]));
+    store.upsertList("b", tableFrom(["b.com"]));
+    // Wire p1 (a+b) then p2 (a only), deferring pruning as the sync loop does.
+    store.setSubscriptions("p1", ["a", "b"], { prune: false });
+    store.setSubscriptions("p2", ["a"], { prune: false });
+    store.pruneUnreferencedLists();
+    expect(store.stats.remoteListTables).toBe(2);
+    expect(store.resolveRemote("p1", "b.com")).toBe("block");
+    expect(store.resolveRemote("p2", "b.com")).toBeUndefined();
+  });
+
   test("GC: catalog entry dropped when no profile subscribes to it", () => {
     const store = new RuleStore();
     store.upsertList("u", tableFrom(["a.com"]));
