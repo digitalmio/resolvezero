@@ -108,4 +108,28 @@ describe("DnsCache", () => {
     cache.set(query("zero.test"), response("zero.test", 1, { ttl: 0 }));
     expect(cache.get(query("zero.test", 2))).toBeDefined();
   });
+
+  test("decrements TTLs on cache hits (RFC 1035/2181)", () => {
+    let now = 1_000_000;
+    const cache = new DnsCache(() => now);
+    cache.set(query("ttl.test"), response("ttl.test", 1, { ttl: 300 }));
+
+    now += 5_000;
+    const got = cache.get(query("ttl.test", 2));
+    expect(got).toBeDefined();
+    const packet = decode(Buffer.from(got!));
+    expect((packet.answers?.[0] as { ttl?: number }).ttl).toBe(295);
+
+    now += 60_000;
+    const later = decode(Buffer.from(cache.get(query("ttl.test", 3))!));
+    expect((later.answers?.[0] as { ttl?: number }).ttl).toBe(235);
+  });
+
+  test("stops serving an entry once its TTL has elapsed", () => {
+    let now = 1_000_000;
+    const cache = new DnsCache(() => now);
+    cache.set(query("expire.test"), response("expire.test", 1, { ttl: 60 }));
+    now += 61_000;
+    expect(cache.get(query("expire.test", 2))).toBeUndefined();
+  });
 });

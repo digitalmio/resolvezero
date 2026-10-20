@@ -58,7 +58,7 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 | Area | Change | Where |
 |---|---|---|
 | UDP/DoH parity | Explicit `allow` now short-circuits remote blocks on UDP too (same rule as DoH). | `apps/edge/src/dns53.ts:174-188` |
-| DNS cache | Key includes upstream + class + DO/CD; responses are normalized (OPT stripped) and the question name is rewritten to the request’s 0x20 case; TTL 0 floored to 1 s; NODATA/NXDOMAIN use SOA MINIMUM. | `apps/edge/src/dnsCache.ts` |
+| DNS cache | Key includes upstream + class + DO/CD; responses are normalized (OPT stripped), the question name is rewritten to the request’s 0x20 case, and **TTLs count down on cache hits**; TTL 0 floored to 1 s; NODATA/NXDOMAIN use SOA MINIMUM. | `apps/edge/src/dnsCache.ts` |
 | Cache-hit logging | Cache hits emit a `forward` query log row, so stats/rollups match “all queries are logged”. | `doh.ts`, `dns53.ts` |
 | Zone safety | Malformed zone values answer SERVFAIL instead of throwing out of the resolver; dashboard validates A/AAAA/CNAME at write time. | `doh.ts`, `dns53.ts`, `dash.ts` |
 | Rollups | Hourly RMW is serialized with a transaction-scoped `pg_advisory_xact_lock` per (profile, hour) — safe across fra/lhr. | `apps/edge/src/rollup.ts` |
@@ -146,6 +146,12 @@ Decision: **stay on `oven/bun:1-slim` + runtime privilege drop for now.**
 - Removes the shell/apt, but also loses `fly ssh console` — the main incident-debugging tool.
 - The biggest win (non-root) is already obtained by `dropPrivileges()` after binding 53.
 - Revisit at hosted/multi-tenant launch, or if a debugging workflow no longer depends on SSH. If adopted, use a `Dockerfile.distroless` variant with `edge`/`control` build targets, keep runtime drop, and smoke-test DoH + UDP/TCP 53 + S3/DB TLS + SIGTERM.
+
+### 3.9 Why TTLs can jump between queries [Informational]
+
+`37.16.24.x` is anycast, and fra/lhr each run an independent LRU. Consecutive `dig`s can therefore hit different machines and different upstream (Cloudflare/etc.) cache entries, so both the TTL and the returned A-record subset can differ. Example: `227` then `68` is two upstream cache ages, not the edge changing a TTL.
+
+Within one edge cache entry, TTLs now count down correctly (`187 → 186` across a 1 s repeat). Entries are also capped (positives ≤5 min, negatives ≤60 s) and hard-expire when their TTL elapses. Cross-region consistency would require a shared cache or sticky routing — not planned.
 
 ---
 

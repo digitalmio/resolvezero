@@ -30,6 +30,10 @@ interface CachedResponse {
   wire: Uint8Array<ArrayBuffer>;
   /** Question name exactly as it appeared in the originating query. */
   questionName: string;
+  /** Monotonic-ish wall clock at insertion (Date.now by default). */
+  cachedAt: number;
+  /** When this entry must no longer be served. */
+  expiresAt: number;
 }
 
 interface QueryMeta {
@@ -49,11 +53,22 @@ export class DnsCache {
     },
   });
 
+  constructor(private readonly now: () => number = Date.now) {}
+
   get(wire: Uint8Array, upstream?: string | null): Uint8Array<ArrayBuffer> | undefined {
     const meta = queryMeta(wire, upstream);
     if (!meta) return undefined;
     const cached = this.cache.get(meta.key);
-    return cached ? patchResponse(cached, wire, meta.rawName) : undefined;
+    if (!cached) return undefined;
+
+    const now = this.now();
+    if (now >= cached.expiresAt) {
+      this.cache.delete(meta.key);
+      return undefined;
+    }
+    // RFC 1035/2181: TTLs count down while an answer sits in a cache.
+    const elapsedSeconds = Math.max(0, Math.floor((now - cached.cachedAt) / 1000));
+    return patchResponse(cached, wire, meta.rawName, elapsedSeconds);
   }
 
   /**
@@ -79,7 +94,12 @@ export class DnsCache {
 
     const normalized = encodePacket(packet);
     if (!normalized) return;
-    this.cache.set(meta.key, { wire: normalized, questionName: meta.rawName }, { ttl });
+    const now = this.now();
+    this.cache.set(
+      meta.key,
+      { wire: normalized, questionName: meta.rawName, cachedAt: now, expiresAt: now + ttl },
+      { ttl },
+    );
   }
 
   /** Drop every cached upstream answer (blocklist refresh may change policy). */
@@ -154,8 +174,9 @@ function patchResponse(
   cached: CachedResponse,
   query: Uint8Array,
   queryName: string,
+  elapsedSeconds: number,
 ): Uint8Array<ArrayBuffer> {
-  if (cached.questionName === queryName) {
+  if (elapsedSeconds === 0 && cached.questionName === queryName) {
     const copy = new Uint8Array(cached.wire.length);
     copy.set(cached.wire);
     copy[0] = query[0]!;
@@ -163,12 +184,27 @@ function patchResponse(
     return copy;
   }
 
-  // 0x20/case-randomizing client: rewrite the question name to match.
+  // Case-randomizing client and/or elapsed time: re-encode so the question
+  // name matches and every record's TTL reflects the remaining lifetime.
   const packet = safeDecode(cached.wire);
   if (!packet) return cached.wire;
   packet.id = (query[0]! << 8) | query[1]!;
   if (packet.questions?.[0]) packet.questions[0].name = queryName;
+  if (elapsedSeconds > 0) decrementTtls(packet, elapsedSeconds);
   return encodePacket(packet) ?? cached.wire;
+}
+
+function decrementTtls(packet: Packet, elapsedSeconds: number): void {
+  const records = [
+    ...(packet.answers ?? []),
+    ...(packet.authorities ?? []),
+    ...(packet.additionals ?? []),
+  ] as { ttl?: number }[];
+  for (const record of records) {
+    if (typeof record.ttl === "number") {
+      record.ttl = Math.max(0, record.ttl - elapsedSeconds);
+    }
+  }
 }
 
 function encodePacket(packet: Packet): Uint8Array<ArrayBuffer> | undefined {
