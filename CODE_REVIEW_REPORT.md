@@ -4,7 +4,7 @@ Scope: `apps/edge`, `apps/control`, `apps/control-plane`, `packages/db`, `packag
 
 Method: re-read of the v1 findings against the current working tree, full diff review, hot-path verification, plus:
 
-- `cd apps/edge && bun test` → **118 pass, 0 fail**
+- `cd apps/edge && bun test` → **121 pass, 0 fail**
 - `cd apps/control && bun test` → **6 pass, 0 fail**
 - `cd apps/edge && bunx tsc --noEmit` → clean
 - `cd apps/control && bunx tsc --noEmit` → clean
@@ -171,7 +171,7 @@ Goal: absorb UDP/TCP 53 floods **while preserving the real client IP**, which `p
 
 Adding PoPs multiplies shared-state and startup assumptions. Gate on these before scaling out.
 
-**Implemented 2026-10-20 (pending CI migrate applying the new profile trigger):** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain; new `profile_config_updates` NOTIFY trigger + edge re-snapshot.
+**Implemented and live 2026-10-20 (migrate applied the trigger; verified on fra+lhr):** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain; new `profile_config_updates` NOTIFY trigger + edge re-snapshot. A harmless `log_queries` update produced “profile config changed — re-snapshotting” on both POPs.
 
 **P0 — fix before adding POPs**
 
@@ -264,4 +264,4 @@ cd apps/edge && bun test && bunx tsc --noEmit
 cd apps/control && bun test && bunx tsc --noEmit
 ```
 
-Current result: edge 118/118, control 6/6, both typechecks clean.
+Current result: edge 121/121, control 6/6, both typechecks clean.
