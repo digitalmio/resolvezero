@@ -217,6 +217,10 @@ push main → test (tsc edge/db/control + Vitest) → migrate (drizzle+triggers,
 
 ## 8. Infra Growth Ladder
 
+See [`docs/rules-at-scale.md`](docs/rules-at-scale.md) for the rules/blocklist scaling design:
+compiled base bundles + tenant overlays, artifact distribution, 2 GB capacity estimates,
+Node-vs-Bun measurements, and why Redis is not the rule path.
+
 | Stage | Setup | Cost |
 |---|---|---|
 | Now (household / early) | Fly anycast + dedicated IPv4, PlanetScale, S3 logs | ~$10–30/mo total |

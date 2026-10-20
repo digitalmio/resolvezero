@@ -88,6 +88,7 @@ secrets — never pasted here.
 - **Node staging (`resolvezero-edge-node`, 2026-10-20):** deployed Node 24 to fra+lhr, **512 MB each**, dedicated IP `149.248.204.122`, S3 prefix `node-test-logs`; production `resolvezero-edge` untouched. UDP/TCP 53, DoH forward/sinkhole/zone, `/readyz`, UID 1000 drop, config poll, and S3 writes all verified. **256 MB is not enough for Node**: the lhr machine stalled during the 397k-rule blocklist build; 512 MB recovered. RSS: Bun ~83–87 MB on 256 MB; Node ~156 MB on 512 MB. Bench (same client, p50/p95): DoH Bun 35.6/41.1 ms vs Node 37.1/41.6 ms; cached UDP/TCP comparable; upstream-miss sample was slower on Node but anycast/region routing confounds it. Node image 104 MB vs Bun 90 MB.
 - Mobileconfig polish + device tagging UX (topDevices rollups exist; UI chart pending).
 - Remote `doh_token` regen from dashboard (admin RPC path already exists in `.env` admin).
+- Rules-at-scale design documented in [`docs/rules-at-scale.md`](docs/rules-at-scale.md): compiled base bundles + tenant overlays, artifact store/manifest, 2 GB capacity estimates, Node-vs-Bun findings, and why Redis is not the rule path. Not implemented yet.
 
 ## Tooling cheat-sheet
 - Deploy: push `main` (CI) or `scripts/deploy.sh local` (regions fra+lhr); control: `scripts/deploy.sh control`.
