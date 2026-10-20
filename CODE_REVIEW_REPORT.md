@@ -167,6 +167,38 @@ Goal: absorb UDP/TCP 53 floods **while preserving the real client IP**, which `p
 
 **Decision:** stay on Fly for now. Before paying anyone, implement the free first line: UDP per-source penalty box / rate limit, `silent` mode for unknown sources under attack (REFUSED amplifies), and alerts on `rz_dropped_total` / QPS / network rate. If actual abuse appears, PoC **Gcore Edge Proxy** first: enable PROXY v2 on the UDP/53 mapping, verify the origin sees the real client IP (and how the first-datagram header/flow mapping behaves), and allowlist Gcore’s CDN edge IPs on the origin. Cloudflare Spectrum is the fallback if Enterprise/BYOIP is acceptable. Gcore setup notes: use “General UDP Countermeasure” + “Generic TCP Server”, block direct origin access, and exclude Gcore edge IPs from per-IP rate limits/auto-bans.
 
+### 3.11 Multi-PoP readiness checklist
+
+Adding PoPs multiplies shared-state and startup assumptions. Gate on these before scaling out.
+
+**Implemented 2026-10-20 (pending CI migrate applying the new profile trigger):** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain; new `profile_config_updates` NOTIFY trigger + edge re-snapshot.
+
+**P0 — fix before adding POPs**
+
+| Item | Why | Fix / acceptance |
+|---|---|---|
+| **S3 log key collisions** | `sinks/s3.ts` keys are `{HHmm}.{seq}` with a per-process `seq` starting at 0. fra+lhr (or a restart) flushing the same profile/window overwrite each other → silent raw-log loss. | Include `FLY_REGION` + `FLY_MACHINE_ID` + a boot nonce in the key (or a UUID). Update the Log Shipper/Vector contract + tests. Acceptance: two sinks with different regions/restarts never produce the same key. |
+| **Cold-start filtering gap** | `blocklists.ts` starts a 5 s boot timer; `index.ts` binds 53 after the DB snapshot but does not wait for remote lists. A new POP can serve unfiltered for seconds/minutes. | Load a shared prebuilt list snapshot (S3) before binding, or `await` the first sync and fail closed. Add readiness so Fly doesn’t route until lists are loaded. Acceptance: a fresh POP never answers a remote-blocked domain before its lists load. |
+| **Single-owner jobs** | `ensureRuleNotifyTrigger()` (DDL) and `startPruneLoop()` run on every POP. N× DDL/prune is redundant and can lock/contend. | Run triggers in migrate only (or gate to `FLY_REGION === PRIMARY_REGION`); run prune from one region/cron. |
+| **Deploy/drain** | `scripts/deploy.sh` uses `--strategy immediate`; SIGTERM drains logs but doesn’t stop accepting DNS; default `kill_timeout` is 5 s. | Use rolling/canary with `max_unavailable=1`; set `kill_timeout` ≥ drain (e.g., 30 s); close UDP/TCP/HTTP listeners first, then flush. |
+| **Readiness/health** | `/healthz` is unconditional 204 despite the “deep-readiness” comment; no TCP 53 check; a dead UDP/TCP listener after boot stays green. | Add `/readyz` (DB snapshot loaded, blocklist age, dns53 bound, last upstream success); add `tcp_checks` for TCP 53; alert per POP. |
+
+**P1 — before hosted/many POPs**
+
+- **DB connection architecture:** `packages/db/src/client.ts` uses `max: 1` and the same `DATABASE_URL` for queries and `pg-listen`. At N POPs this serializes queries per POP and grows connections N×(query+listener). Add a pooled query URL + `DATABASE_DIRECT_URL` for LISTEN, and a pool size budget.
+- **Rate limiting / abuse:** the deferred UDP penalty box and DoH per-IP/token limits become more important with every public POP. Global quotas need a shared store; per-PoP limits are a start.
+- **Upstream validation:** verify response ID/QR/question against the query before caching (`resolveWire`/`dnsCache.set`); add singleflight per (name,type,upstream) to prevent cache-miss stampedes; add upstream-error metrics.
+- **Token hashing at rest:** plaintext `doh_token` remains; do before hosted.
+- **Observability:** add/verify `region` labels on `rz_*` metrics; dashboards and alerts per POP (queries, blocks, drops, cache hit ratio, upstream RTT/errors, blocklist age, DB errors); set `METRICS_TOKEN`.
+- **CI smoke per POP:** UDP **and** TCP `dig`, DoH forward/sinkhole/zone, blocklist sync; `/healthz` alone let the port-53 regression ship.
+- **Blocklist fetch amplification:** N POPs × every list every 6 h (30 MB each). Add a shared artifact or randomized phase; monitor source 429s.
+
+**P2 — as scale grows**
+
+- Rollup lock contention: the per-(profile,hour) advisory lock prevents lost increments but serializes N writers; consider region-keyed rows or batched flush if lock waits grow.
+- Resource sizing: 256 MB works now (52–84 MB RSS at 384k rules), but list parsing transients + more rules may warrant 512 MB for new POPs.
+- Cache/TTL variance across PoPs is expected (independent LRUs); keep per-region stats rather than trying to make them identical.
+
 ---
 
 ## 4. Fixed v1 findings (status board)

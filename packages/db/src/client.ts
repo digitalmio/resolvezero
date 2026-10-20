@@ -57,9 +57,8 @@ export function rawClient(): postgres.Sql {
 }
 
 /**
- * Creates the rule_update_trigger if missing / updates it to the latest
- * definition. Run this at boot (after db:push or db:migrate) — drizzle-kit
- * does not manage trigger SQL.
+ * Admin-side NOTIFY trigger bootstrap (called by migrate.ts, never by the
+ * edge runtime — the app role intentionally has no DDL rights).
  */
 export async function ensureRuleNotifyTrigger(): Promise<void> {
   const schema = await import("./schema");
@@ -67,7 +66,8 @@ export async function ensureRuleNotifyTrigger(): Promise<void> {
     schema.RULE_NOTIFY_TRIGGER_SQL +
       schema.ZONE_NOTIFY_TRIGGER_SQL +
       schema.IP_NOTIFY_TRIGGER_SQL +
-      schema.BLOCKLIST_NOTIFY_TRIGGER_SQL,
+      schema.BLOCKLIST_NOTIFY_TRIGGER_SQL +
+      schema.PROFILE_NOTIFY_TRIGGER_SQL,
   );
 }
 

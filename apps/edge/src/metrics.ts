@@ -41,6 +41,7 @@ export function createHealthApp(deps: {
   store?: RuleStore;
   dnsCache?: DnsCache;
   registry?: Registry;
+  readiness?: () => { ok: boolean; details?: Record<string, unknown> };
 }) {
   const app = new Hono().basePath("/");
   const registry = deps.registry ?? register;
@@ -115,6 +116,12 @@ export function createHealthApp(deps: {
   };
 
   app.get("healthz", (c) => c.body(null, 204));
+
+  // Deep readiness: rules snapshot + remote lists + bound DNS listener.
+  app.get("readyz", (c) => {
+    const r = deps.readiness?.() ?? { ok: true, details: { region: process.env.FLY_REGION ?? "local" } };
+    return c.json({ ok: r.ok, ...r.details }, r.ok ? 200 : 503);
+  });
 
   app.get("metrics", async (c) => {
     // Optional bearer gate: hosted deployments should set METRICS_TOKEN so

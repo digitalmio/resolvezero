@@ -18,7 +18,7 @@ FLY="fly"
 command -v fly >/dev/null 2>&1 || FLY="flyctl"
 
 echo "==> Deploying $APP ($FLY_CONFIG) to [$FLY_REGIONS], $FLY_SCALE machine(s) per region"
-$FLY deploy --config "$FLY_CONFIG" --strategy immediate
+$FLY deploy --config "$FLY_CONFIG" --strategy "${FLY_STRATEGY:-rolling}"
 
 for region in $FLY_REGIONS; do
   # Route is per region; scale ensures N warm machines (min_machines_running=1 in fly.toml)

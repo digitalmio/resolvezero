@@ -25,9 +25,15 @@ const row = (over: Partial<QueryLogRow> = {}): QueryLogRow => ({
 
 describe("key layout (shared contract)", () => {
   test("logObjectKey format", () => {
-    const key = logObjectKey("logs", "p111", new Date("2026-10-08T08:00:00Z"), 3);
-    // {prefix}/{profileId}/{date}/{HHmm}.{seq}.jsonl.gz — window-aligned
-    expect(key).toBe("logs/p111/2026-10-08/0800.3.jsonl.gz");
+    const key = logObjectKey("logs", "p111", new Date("2026-10-08T08:00:00Z"), "lhr-m1-abc123", 3);
+    // {prefix}/{profileId}/{date}/{HHmm}.{instance}.{seq}.jsonl.gz
+    expect(key).toBe("logs/p111/2026-10-08/0800.lhr-m1-abc123.3.jsonl.gz");
+  });
+
+  test("different instances never collide", () => {
+    const a = logObjectKey("logs", "p111", new Date("2026-10-08T08:00:00Z"), "lhr-m1", 0);
+    const b = logObjectKey("logs", "p111", new Date("2026-10-08T08:00:00Z"), "fra-m2", 0);
+    expect(a).not.toBe(b);
   });
 
   test("profilePrefix", () => {
@@ -77,12 +83,12 @@ describe("S3ArchiveSink", () => {
 
   test("completed window becomes one gzip NDJSON object", async () => {
     const client = new FakeClient();
-    const sink = new S3ArchiveSink({ client, flushMinutes: 15 });
+    const sink = new S3ArchiveSink({ client, flushMinutes: 15, instanceId: "test" });
     await filledWindow(sink, client, [row(), row({ domain: "x.org" })]);
 
     expect(client.written).toHaveLength(1);
     const [key, payload] = client.written[0]!;
-    expect(key).toBe("logs/11111111-1111-1111-1111-111111111111/2026-10-08/0800.0.jsonl.gz");
+    expect(key).toBe("logs/11111111-1111-1111-1111-111111111111/2026-10-08/0800.test.0.jsonl.gz");
     const text = new TextDecoder().decode(gunzipSync(payload));
     const lines = text.split("\n").filter(Boolean);
     expect(lines).toHaveLength(2);

@@ -295,6 +295,32 @@ AFTER UPDATE OF url, format, enabled, profile_id ON profile_blocklists
 FOR EACH ROW EXECUTE FUNCTION notify_blocklist_change();
 `;
 
+// Fires NOTIFY('profile_config_updates') when a profile is created/deleted or
+// its edge-relevant settings change (upstream, token, logging, retention).
+// The edge re-snapshots so new profiles/tokens/upstreams take effect without
+// waiting for a reconnect or restart.
+export const PROFILE_NOTIFY_TRIGGER_SQL = `
+CREATE OR REPLACE FUNCTION notify_profile_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_notify('profile_config_updates', JSONB_BUILD_OBJECT(
+        'op',         TG_OP,
+        'profile_id', COALESCE(NEW.id, OLD.id)
+    )::text);
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS profile_config_insert_delete_trigger ON profiles;
+DROP TRIGGER IF EXISTS profile_config_update_trigger ON profiles;
+CREATE TRIGGER profile_config_insert_delete_trigger
+AFTER INSERT OR DELETE ON profiles
+FOR EACH ROW EXECUTE FUNCTION notify_profile_change();
+CREATE TRIGGER profile_config_update_trigger
+AFTER UPDATE OF upstream, upstream_url, doh_token, log_queries, log_retention_days ON profiles
+FOR EACH ROW EXECUTE FUNCTION notify_profile_change();
+`;
+
 // Fires a NOTIFY('profile_updates', <json>) on every rule row change.
 // NEW is NULL on DELETE and OLD is NULL on INSERT: use TG_OP to pick the row.
 export const RULE_NOTIFY_TRIGGER_SQL = `

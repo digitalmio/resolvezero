@@ -82,25 +82,30 @@ export interface S3SinkOptions {
   prefix?: string;
   /** Flush window in minutes — one object per window per profile. Default 15. */
   flushMinutes?: number;
+  /** Unique per running edge instance (region+machine+boot nonce). */
+  instanceId?: string;
   log?: LoggerBaseLike;
 }
 
 /**
  * Key layout (SHARED CONTRACT with the Log Shipper/Vector path and the
  * /logs download + clear endpoints — do not change without updating all):
- *   {prefix}/{profileId}/{YYYY-MM-DD}/{HHmm}.{seq}.jsonl.gz
- * Raw NDJSON (one query event per line), gzip-compressed via Bun.gzipSync.
+ *   {prefix}/{profileId}/{YYYY-MM-DD}/{HHmm}.{instanceId}.{seq}.jsonl.gz
+ *
+ * `instanceId` is region+machine+boot-nonce so two PoPs (or a restarted
+ * machine) writing the same profile/window never overwrite each other.
  */
 export function logObjectKey(
   prefix: string,
   profileId: string,
   windowStart: Date,
+  instanceId: string,
   seq: number,
 ): string {
   const date = windowStart.toISOString().slice(0, 10);
   const hh = String(windowStart.getUTCHours()).padStart(2, "0");
   const mm = String(windowStart.getUTCMinutes()).padStart(2, "0");
-  return `${prefix}/${profileId}/${date}/${hh}${mm}.${seq}.jsonl.gz`;
+  return `${prefix}/${profileId}/${date}/${hh}${mm}.${instanceId}.${seq}.jsonl.gz`;
 }
 
 export function profilePrefix(prefix: string, profileId: string): string {
@@ -127,9 +132,11 @@ export class S3ArchiveSink {
   private pending: PendingObject[] = [];
   private timer: ReturnType<typeof setInterval> | undefined;
   private seq = 0;
+  private readonly instanceId: string;
   private readonly log: LoggerBaseLike;
 
   constructor(private opts: S3SinkOptions) {
+    this.instanceId = sanitizeInstanceId(opts.instanceId ?? defaultInstanceId());
     this.log = opts.log ?? moduleLogger("s3sink");
     this.start();
   }
@@ -205,6 +212,7 @@ export class S3ArchiveSink {
       this.opts.prefix ?? "logs",
       profileId,
       new Date(startsAt),
+      this.instanceId,
       this.seq++,
     );
   }
@@ -272,4 +280,16 @@ function gzip(text: string): Uint8Array {
 /** Aligns a timestamp to the flush window grid (aligned to unix epoch). */
 export function windowFloor(t: number, windowMs: number): number {
   return Math.floor(t / windowMs) * windowMs;
+}
+
+function defaultInstanceId(): string {
+  const region = process.env.FLY_REGION ?? "local";
+  const machine = process.env.FLY_MACHINE_ID ?? process.env.FLY_ALLOC_ID ?? "machine";
+  const boot = crypto.randomUUID().slice(0, 8);
+  return `${region}-${machine.slice(0, 8)}-${boot}`;
+}
+
+function sanitizeInstanceId(id: string): string {
+  const safe = id.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+  return safe || "local";
 }

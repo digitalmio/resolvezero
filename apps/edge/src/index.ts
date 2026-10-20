@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { ensureRuleNotifyTrigger, db } from "@resolvezero/db/client";
+import { db } from "@resolvezero/db/client";
 import { profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
 import { dropPrivileges } from "@resolvezero/shared";
@@ -16,7 +16,7 @@ import { createLogsApp } from "./logs";
 import { createHealthApp } from "./metrics";
 import { createAdminApp } from "./admin";
 import { startBlocklistSync } from "./blocklists";
-import { createDns53Service } from "./dns53";
+import { createDns53Service, type Dns53Handle } from "./dns53";
 import { S3ArchiveSink, type S3ClientLike } from "./sinks/s3";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -89,23 +89,56 @@ function logQuery(entry: QueryLogEntry): void {
   batcher.add(entry); // rollups always (still respected below opt-out)
 }
 
-await ensureRuleNotifyTrigger().catch((err) => {
-  // Non-fatal: trigger may already exist and DB may be briefly unreachable.
-  log.warn({ err }, "ensureRuleNotifyTrigger failed at boot");
-});
+// Only the primary region owns one-off DDL/prune; every POP runs the sync loop.
+const isPrimaryRegion =
+  !process.env.FLY_REGION || process.env.FLY_REGION === (process.env.PRIMARY_REGION ?? "fra");
 
-// Remote custom-URL blocklists: boot fetch (delayed until snapshot lands)
-// + NOTIFY-driven re-sync + interval refresh.
+if (isPrimaryRegion) {
+  // NOTIFY triggers are created by the migrate job (admin role); the edge's
+  // app role intentionally has no DDL rights.
+  // Daily retention pruning of stats_hourly (readme §3 C).
+  startPruneLoop(24);
+} else {
+  log.info({ region: process.env.FLY_REGION }, "skipping primary-only prune job");
+}
+
+const readiness = {
+  rulesLoaded: false,
+  blocklistsLoaded: false,
+  dns53Bound: false,
+};
+
+// Remote custom-URL blocklists: initial fetch before binding 53, then
+// NOTIFY-driven re-sync + interval refresh.
 const blocklists = startBlocklistSync({ store, dnsCache });
 
 await startRuleSync(store, () => {
   void blocklists.syncNow();
 });
+readiness.rulesLoaded = true;
 
-// Daily retention pruning of stats_hourly (readme §3 C).
-startPruneLoop(24);
+try {
+  await blocklists.initialSync();
+} catch (err) {
+  log.error({ err }, "initial blocklist sync failed; serving with explicit rules only");
+}
+readiness.blocklistsLoaded = true;
 
-const { app: healthApp, recorder } = createHealthApp({ store, dnsCache });
+const { app: healthApp, recorder } = createHealthApp({
+  store,
+  dnsCache,
+  readiness: () => ({
+    ok: readiness.rulesLoaded && readiness.blocklistsLoaded && readiness.dns53Bound,
+    details: {
+      region: process.env.FLY_REGION ?? "local",
+      rulesLoaded: readiness.rulesLoaded,
+      blocklistsLoaded: readiness.blocklistsLoaded,
+      dns53Bound: readiness.dns53Bound,
+      remoteLists: store.remoteBlocklistEntryCount,
+      profiles: store.stats.profiles,
+    },
+  }),
+});
 
 const app = new Hono()
   .route("/", healthApp)
@@ -135,8 +168,9 @@ const app = new Hono()
 
 // Port-53 ingress (Deco/router path) — UDP on fly-global-services. Skipped
 // locally when the bind fails (no root); decided by DNS53_ENABLED=0.
+let dns53Handle: Dns53Handle | null = null;
 if (process.env.DNS53_ENABLED !== "0") {
-  const dns53 = await createDns53Service({
+  dns53Handle = await createDns53Service({
     store,
     dnsCache,
     upstream: { resolveWire },
@@ -145,7 +179,7 @@ if (process.env.DNS53_ENABLED !== "0") {
     },
     recorder,
   });
-  if (!dns53) {
+  if (!dns53Handle) {
     log.error("port-53 DNS ingress not started (bind failed)");
     // On Fly (or any deployment that explicitly requires it), silence is
     // dangerous: DoH would keep working while every router/UDP client loses
@@ -156,6 +190,7 @@ if (process.env.DNS53_ENABLED !== "0") {
     }
   }
 }
+readiness.dns53Bound = process.env.DNS53_ENABLED === "0" || dns53Handle !== null;
 
 const server = Bun.serve({
   port: PORT,
@@ -180,6 +215,10 @@ process.on("SIGTERM", () => {
   log.info("SIGTERM — draining");
   void (async () => {
     try {
+      // Stop intake first so no new DNS/HTTP work lands while we flush.
+      server.stop(false);
+      await dns53Handle?.stop();
+      blocklists.stop();
       await batcher.stop();
       await archive?.flushAll();
       archive?.stop();

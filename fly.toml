@@ -6,9 +6,16 @@
 
 app = "resolvezero-edge"
 primary_region = "fra"
+# Give SIGTERM drain (DNS stop → batcher → S3 flush) time to finish.
+kill_timeout = 30
 
 [build]
   dockerfile = "Dockerfile"
+
+[deploy]
+  # Never replace every PoP at once.
+  strategy = "rolling"
+  max_unavailable = 1
 
 [env]
   PORT = "8080"
@@ -41,6 +48,13 @@ primary_region = "fra"
     method = "GET"
     path = "/healthz"
 
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "120s"   # first boot may fetch/parse remote lists
+    method = "GET"
+    path = "/readyz"
+
 # Port 53 ingress (Deco/router path, readme §6.4): UDP requires a dedicated
 # IPv4 (we have three: dns/dns1/dns2). The edge binds fly-global-services:53
 # itself; internal and external ports must match — Fly does not rewrite
@@ -53,6 +67,11 @@ primary_region = "fra"
     # Preserve the client IP for IPv4 source-IP auth (UDP gets it natively
     # via fly-global-services; raw TCP would otherwise see the proxy).
     handlers = ["proxy_proto"]
+
+  [[services.tcp_checks]]
+    grace_period = "10s"
+    interval = "15s"
+    timeout = "2s"
 
 [[services]]
   protocol = "udp"

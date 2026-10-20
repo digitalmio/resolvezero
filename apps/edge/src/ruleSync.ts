@@ -106,6 +106,22 @@ export async function startRuleSync(
     }
   });
 
+  // Profile create/delete or edge-relevant settings change (upstream, token,
+  // logging, retention). Re-snapshot so running POPs don't wait for reconnect.
+  let profileResyncTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleProfileResync = (): void => {
+    if (profileResyncTimer) clearTimeout(profileResyncTimer);
+    profileResyncTimer = setTimeout(() => {
+      profileResyncTimer = undefined;
+      log.info("profile config changed — re-snapshotting");
+      void reconcileGuarded();
+    }, 500);
+    profileResyncTimer.unref?.();
+  };
+  subscriber.notifications.on("profile_config_updates", () => {
+    scheduleProfileResync();
+  });
+
   // pg-listen auto-reconnects on connection loss (and re-issues LISTEN for
   // its cached channels); re-reconcile the snapshot afterwards in case we
   // missed events while disconnected.
@@ -140,6 +156,7 @@ export async function startRuleSync(
   await subscriber.listenTo("zone_updates");
   await subscriber.listenTo("ip_updates");
   await subscriber.listenTo("blocklist_updates");
+  await subscriber.listenTo("profile_config_updates");
   await reconcileGuarded();
 
   async function reconcile(): Promise<void> {

@@ -30,19 +30,24 @@ export interface ParsedList {
   allows: Set<string>;
 }
 
+export interface BlocklistSyncHandle {
+  /** Debounced NOTIFY-driven re-sync (3s). */
+  syncNow(): Promise<void>;
+  /** Boot-time synchronous cycle — callers await this before serving DNS. */
+  initialSync(): Promise<void>;
+  stop(): void;
+}
+
 /**
  * Fetches + parses remote blocklists and swaps them into the RuleStore.
  * NOTIFY-driven (DB trigger) + interval refresh; failures keep previous sets.
  */
-export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<void>; stop(): void } {
+export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
   const intervalHours = Number(process.env.LIST_SYNC_INTERVAL_HOURS ?? 6);
   let timer: ReturnType<typeof setInterval> | undefined;
   let syncing = false;
   let needsResync = false;
   let pending: Promise<void> | undefined;
-
-  const BOOT_SYNC_DELAY_MS = 5_000;
-  const bootKick = setTimeout(() => void syncNow(), BOOT_SYNC_DELAY_MS);
 
   const sync = async () => {
     if (syncing) {
@@ -166,8 +171,14 @@ export function startBlocklistSync(deps: BlocklistDeps): { syncNow(): Promise<vo
 
   return {
     syncNow,
+    async initialSync() {
+      if (syncing) {
+        needsResync = true;
+        return;
+      }
+      await sync();
+    },
     stop() {
-      clearTimeout(bootKick);
       if (timer) clearInterval(timer);
     },
   };
