@@ -137,6 +137,16 @@ Parsing still holds the raw string + line splits + Sets before building the fing
 
 The guard resolves the hostname immediately before each hop and rejects private answers. The 60 s DNS cache means a rebinding attack has a ≤60 s window in which a previously-public name flips private; closing that fully requires pinning the dial IP or a custom dispatcher. For the hosted deployment, leave `ALLOW_PRIVATE_TARGETS` unset; for self-host Unbound, set it explicitly (metadata IPs stay blocked).
 
+### 3.8 Distroless + compiled Bun (evaluated, deferred)
+
+Evaluated 2026-10-20. Bun does publish `oven/bun:1-distroless` (based on `gcr.io/distroless/base-nossl-debian13`, ~90 MB uncompressed, no shell/apt, CA certs + `/tmp` included), and `bun build --compile --target=bun-linux-x64` works (edge: 331 modules, ~100 MB ELF; control starts).
+
+Decision: **stay on `oven/bun:1-slim` + runtime privilege drop for now.**
+- No size win (distroless ≈ slim; compiled binary + base ≈ 120 MB).
+- Removes the shell/apt, but also loses `fly ssh console` — the main incident-debugging tool.
+- The biggest win (non-root) is already obtained by `dropPrivileges()` after binding 53.
+- Revisit at hosted/multi-tenant launch, or if a debugging workflow no longer depends on SSH. If adopted, use a `Dockerfile.distroless` variant with `edge`/`control` build targets, keep runtime drop, and smoke-test DoH + UDP/TCP 53 + S3/DB TLS + SIGTERM.
+
 ---
 
 ## 4. Fixed v1 findings (status board)

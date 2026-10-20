@@ -79,6 +79,7 @@ secrets — never pasted here.
 - DoT listener (~150 LOC, readme §4b) for Android Private DNS / native profiles.
 - NextDNS CSV import — **parked** as hosted-launch "switch from NextDNS" feature (`apps/edge/scripts/import-nextdns.ts` skeleton exists).
 - Hosted-launch runbook items: MR-only flip, branch protection (needs Pro), Unbound/live RRL gate, returned-A-record sanity pass, weekly Timescale/s3 eval (readme §7).
+- Distroless: **evaluated 2026-10-20, deferred.** `oven/bun:1-distroless` exists (~same size as slim, no shell/apt) and `bun build --compile` works, but it costs `fly ssh console` debugging and adds little over the runtime privilege drop. Revisit at hosted launch.
 - Mobileconfig polish + device tagging UX (topDevices rollups exist; UI chart pending).
 - Remote `doh_token` regen from dashboard (admin RPC path already exists in `.env` admin).
 
