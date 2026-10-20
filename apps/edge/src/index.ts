@@ -82,7 +82,7 @@ function logQuery(entry: QueryLogEntry): void {
 const isPrimaryRegion =
   !process.env.FLY_REGION || process.env.FLY_REGION === (process.env.PRIMARY_REGION ?? "fra");
 
-if (isPrimaryRegion) {
+if (isPrimaryRegion && process.env.PRUNE_ENABLED !== "0") {
   // NOTIFY triggers are created by the migrate job (admin role); the edge's
   // app role intentionally has no DDL rights.
   // Daily retention pruning of stats_hourly (readme §3 C).
