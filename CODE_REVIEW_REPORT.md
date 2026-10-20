@@ -4,7 +4,7 @@ Scope: `apps/edge`, `apps/control`, `apps/control-plane`, `packages/db`, `packag
 
 Method: re-read of the v1 findings against the current working tree, full diff review, hot-path verification, plus:
 
-- `cd apps/edge && bun test` → **116 pass, 0 fail**
+- `cd apps/edge && bun test` → **118 pass, 0 fail**
 - `cd apps/control && bun test` → **6 pass, 0 fail**
 - `cd apps/edge && bunx tsc --noEmit` → clean
 - `cd apps/control && bunx tsc --noEmit` → clean
@@ -23,6 +23,20 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 4. CI smoke still only checks `/healthz`; no DoH forward/sinkhole/zone probe.
 5. Some docs still describe the pre-fix behavior (Quad9 default, uncapped TTL, silent-drop).
 
+### 0.1 Incident (2026-10-20): UDP/TCP DNS outage after the hardening deploy
+
+**Symptom:** `dig google.com @37.16.24.24` timed out; Fly proxy logged `instance refused connection ... 0.0.0.0:53`; DoH kept working.
+
+**Root cause:** the hardening commit added `USER 1000:1000` to the shared Dockerfile. Port 53 is privileged, so `createDns53Service()` caught `EACCES` and returned `null`; the edge continued serving DoH only. The failure was logged at `warn` and the health check (8080) stayed green.
+
+**Fix (deployed, versions 44–45):**
+- Removed `USER 1000:1000`; the edge runs as root again (documented: non-root needs `CAP_NET_BIND_SERVICE` or `net.ipv4.ip_unprivileged_port_start=0`).
+- `createDns53Service` failure is now fatal when `FLY_REGION` is set (or `DNS53_REQUIRED=1`), so Fly cannot silently keep a DoH-only machine.
+- TCP now binds `0.0.0.0` (Fly’s TCP proxy cannot reach a `fly-global-services` TCP listener) and parses PROXY protocol v1 (`handlers = ["proxy_proto"]`) so source-IP auth sees the real client.
+- Added TCP framing + PROXY-header tests; added partial-frame buffering.
+
+**Verified:** `dig` over UDP and TCP to `37.16.24.46` → `NOERROR`, 6 answers; both fra/lhr machines healthy.
+
 ---
 
 ## 1. What landed in this pass
@@ -37,7 +51,7 @@ The v1 report was accurate. The v2 remediation pass closed the functional/data-c
 | Headers/CORS | CSP, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS, `nosniff`. CORS is same-origin unless `CORS_ORIGINS` is set (no more default `*`). | `apps/control/src/index.ts` |
 | Metrics | Optional `METRICS_TOKEN` bearer gate. | `apps/edge/src/metrics.ts` |
 | Update-IP | Real `isIP` validation, bounded rate limit, upsert-move semantics. Token-free profiles remain unauthenticated by design. | `apps/edge/src/admin.ts` |
-| Container | Non-root `USER 1000:1000`, exec-form entrypoint, `HEALTHCHECK` (control now aliases `/healthz`). | `Dockerfile`, `apps/control/src/index.ts` |
+| Container | Exec-form entrypoint + `HEALTHCHECK`; **root retained** because the edge binds privileged port 53. Non-root requires `CAP_NET_BIND_SERVICE`/unprivileged-port sysctl. | `Dockerfile`, `apps/control/src/index.ts` |
 
 ### Correctness / data
 
@@ -143,7 +157,7 @@ The guard resolves the hostname immediately before each hop and rejects private 
 | S12 auth oracles | Low, unchanged |
 | S13 dash timeouts/link-ip | Fixed |
 | S14 CORS/headers | Fixed |
-| S15 container/signals | Fixed |
+| S15 container/signals | Partial — exec-form + healthcheck fixed; root retained for port 53. TCP bind/PROXY protocol fixed (§0.1). |
 | S16 metrics/list regex | Metrics fixed; regex CPU unchanged |
 | B1 UDP remote lists | Fixed + explicit-allow parity |
 | B2 `mergeTop(clientIp)` | Fixed |
@@ -172,7 +186,7 @@ The guard resolves the hostname immediately before each hop and rejects private 
 
 ## 5. Suggested next steps
 
-1. **Commit + CI**: review the working-tree diff, push, run `bun test` + `tsc` in CI, deploy to staging. Confirm the Docker `HEALTHCHECK` and non-root user on Fly.
+1. **Commit + CI**: review/push the incident fix, run `bun test` + `tsc` in CI, and add a post-deploy `dig` check over UDP *and* TCP (healthz alone did not catch this). Non-root is deferred until the container gets `CAP_NET_BIND_SERVICE`.
 2. **Token hashing** (§3.1) — the largest remaining security item.
 3. **Zone `override` metric/rollup** (§3.2) — small, improves dashboard truthfulness.
 4. **CI DoH smoke probe** (§3.6) — forward + sinkhole + zone, so a broken edge can’t pass on `/healthz` alone.
@@ -188,4 +202,4 @@ cd apps/edge && bun test && bunx tsc --noEmit
 cd apps/control && bun test && bunx tsc --noEmit
 ```
 
-Current result: edge 116/116, control 6/6, both typechecks clean.
+Current result: edge 118/118, control 6/6, both typechecks clean.

@@ -17,6 +17,12 @@ import { moduleLogger } from "./logger";
 
 const log = moduleLogger("dns53");
 
+interface TcpState {
+  buffer: Uint8Array;
+  headerParsed: boolean;
+  sourceIp: string;
+}
+
 export interface Dns53Deps {
   store: RuleStore;
   dnsCache: DnsCache;
@@ -57,10 +63,41 @@ interface TcpListenerLike {
   readonly port: number;
   stop(closeActive?: boolean): void;
 }
+interface TcpSocketLike {
+  write(data: Uint8Array): unknown;
+  readonly remoteAddress?: string;
+}
+
+/** PROXY protocol v1 signature ("PROXY "). */
+const PROXY_SIGNATURE = new TextEncoder().encode("PROXY ");
+
+function matchesPrefix(buf: Uint8Array, signature: Uint8Array): boolean {
+  const n = Math.min(buf.length, signature.length);
+  for (let i = 0; i < n; i++) {
+    if (buf[i] !== signature[i]) return false;
+  }
+  return true;
+}
+
+function indexOfCrlf(buf: Uint8Array): number {
+  for (let i = 0; i + 1 < buf.length; i++) {
+    if (buf[i] === 13 && buf[i + 1] === 10) return i;
+  }
+  return -1;
+}
+
+function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+  if (a.length === 0) return b;
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
+}
 
 export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle | null> {
   const host = deps.host ?? process.env.UDP_HOST ?? "fly-global-services";
   const port = deps.port ?? Number(process.env.UDP_PORT ?? 53);
+  const tcpStates = new WeakMap<object, TcpState>();
 
   let udp: UdpSocketLike | undefined;
   let tcp: TcpListenerLike | undefined;
@@ -87,21 +124,25 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   }
 
   if (deps.tcp ?? true) {
+    // Fly's TCP service proxy connects to the instance's wildcard address,
+    // while `fly-global-services` is UDP-specific. Binding TCP there makes it
+    // unreachable (proxy: "is your app listening on 0.0.0.0:53?").
+    const tcpHost = process.env.TCP_HOST ?? (host === "fly-global-services" ? "0.0.0.0" : host);
     try {
       tcp = Bun.listen({
-        hostname: host,
+        hostname: tcpHost,
         port,
         socket: {
           open(_socket: unknown) {},
-          data(socket: { write(data: Uint8Array): unknown; remoteAddress?: string }, data: Uint8Array | string) {
-            void handleTcp(socket, new Uint8Array(data as Uint8Array));
+          data(socket: TcpSocketLike, data: Uint8Array | string) {
+            tcpData(socket, new Uint8Array(data as Uint8Array));
           },
           error(_socket: unknown, err: Error) {
             log.warn({ err }, "tcp listener error");
           },
         },
       } as never) as unknown as TcpListenerLike;
-      log.info({ host, port }, "TCP 53 listening");
+      log.info({ host: tcpHost, port }, "TCP 53 listening");
     } catch (err) {
       log.warn({ err }, "TCP 53 unavailable — TC-flag fallback still works; oversized queries fail");
     }
@@ -129,16 +170,58 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   }
 
   // ---- TCP framing path (2-byte length prefix per RFC 1035) ----
-  async function handleTcp(socket: { write(data: Uint8Array): unknown; remoteAddress?: string }, data: Uint8Array): Promise<void> {
-    const expected = data[0]! << 8 | data[1]!;
-    if (expected !== data.length - 2) return; // frame size sanity
-    const reply = await handlePacket(data.subarray(2), normalizeIp(socket.remoteAddress ?? ""));
-    if (!reply) return; // silent drop
-    const frame = new Uint8Array(reply.length + 2);
-    frame[0] = reply.length >> 8;
-    frame[1] = reply.length & 0xff;
-    frame.set(reply, 2);
-    socket.write(frame);
+  // Fly's TCP proxy hides the client address; the `proxy_proto` handler
+  // prepends a v1 header ("PROXY TCP4 src dst sport dport\r\n"). Parse it
+  // when present, otherwise fall back to the socket peer address (local /
+  // direct deployments). Also buffers partial writes and multiple frames.
+  function tcpData(socket: TcpSocketLike, chunk: Uint8Array): void {
+    let state = tcpStates.get(socket);
+    if (!state) {
+      state = {
+        buffer: new Uint8Array(0),
+        headerParsed: false,
+        sourceIp: normalizeIp(socket.remoteAddress ?? ""),
+      };
+      tcpStates.set(socket, state);
+    }
+    state.buffer = concatBytes(state.buffer, chunk);
+
+    if (!state.headerParsed) {
+      const couldBeProxy = matchesPrefix(state.buffer, PROXY_SIGNATURE);
+      if (couldBeProxy && state.buffer.length < PROXY_SIGNATURE.length) return; // wait for full signature
+      if (couldBeProxy) {
+        const end = indexOfCrlf(state.buffer);
+        if (end < 0) return; // wait for the header terminator
+        const line = new TextDecoder().decode(state.buffer.slice(0, end));
+        const parts = line.split(" ");
+        // "PROXY TCP4 1.2.3.4 5.6.7.8 1234 53" — UNKNOWN has no addresses.
+        if (parts[1] && parts[1] !== "UNKNOWN" && parts[2]) {
+          state.sourceIp = normalizeIp(parts[2]);
+        }
+        state.buffer = state.buffer.slice(end + 2);
+      }
+      state.headerParsed = true;
+    }
+
+    // Process every complete DNS frame in the buffer.
+    for (;;) {
+      if (state.buffer.length < 2) return;
+      const expected = (state.buffer[0]! << 8) | state.buffer[1]!;
+      if (expected === 0 || state.buffer.length < expected + 2) return;
+      const wire = state.buffer.slice(2, 2 + expected);
+      state.buffer = state.buffer.slice(2 + expected);
+      const sourceIp = state.sourceIp;
+      void handlePacket(wire, sourceIp)
+        .then((reply) => {
+          if (!reply) return;
+          const frame = new Uint8Array(reply.length + 2);
+          frame[0] = reply.length >> 8;
+          frame[1] = reply.length & 0xff;
+          frame.set(reply, 2);
+          socket.write(frame);
+        })
+        .catch((err) => log.error({ err }, "tcp handler failed"));
+    }
   }
 
   /** Core decision pipeline shared by UDP+TCP. Pure enough for tests. */

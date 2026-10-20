@@ -82,6 +82,52 @@ async function client(port: number): Promise<{ ask(wire: Uint8Array): Promise<Ui
   };
 }
 
+/** Minimal TCP DNS client (2-byte length-prefixed frames) for the test service. */
+async function tcpAsk(port: number, wire: Uint8Array, proxySource?: string): Promise<Uint8Array> {
+  return new Promise<Uint8Array>((resolve, reject) => {
+    let buf = new Uint8Array(0);
+    const timer = setTimeout(() => reject(new Error("tcp timeout")), 1500);
+    void Bun.connect({
+      hostname: "127.0.0.1",
+      port,
+      socket: {
+        open(socket: { write(data: Uint8Array): unknown }) {
+          const header = proxySource
+            ? new TextEncoder().encode(`PROXY TCP4 ${proxySource} 127.0.0.1 12345 53\r\n`)
+            : new Uint8Array(0);
+          const frame = new Uint8Array(header.length + wire.length + 2);
+          frame.set(header);
+          frame[header.length] = wire.length >> 8;
+          frame[header.length + 1] = wire.length & 0xff;
+          frame.set(wire, header.length + 2);
+          socket.write(frame);
+        },
+        data(_socket: unknown, data: Uint8Array | string) {
+          const chunk = new Uint8Array(data as Uint8Array);
+          const next = new Uint8Array(buf.length + chunk.length);
+          next.set(buf);
+          next.set(chunk, buf.length);
+          buf = next;
+          if (buf.length >= 2) {
+            const len = (buf[0]! << 8) | buf[1]!;
+            if (buf.length >= len + 2) {
+              clearTimeout(timer);
+              resolve(buf.slice(2, 2 + len));
+            }
+          }
+        },
+        error(_socket: unknown, err: Error) {
+          clearTimeout(timer);
+          reject(err);
+        },
+      },
+    } as never).catch((err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
 const PORT = 15353;
 const PORT2 = 15354;
 const PORT_TC = 15355;
@@ -104,6 +150,33 @@ describe("dns53 over real sockets", () => {
     expect(((p as any).answers?.[0] as { data?: string })?.data).toBe("1.2.3.4");
     expect(deps.logs.some((l) => l.action === "forward")).toBe(true);
     await c.close();
+    await svc!.stop();
+  });
+
+  test("TCP framing path answers (TC fallback)", async () => {
+    const deps = fakeDeps();
+    const svc = await createDns53Service({ ...deps, host: "127.0.0.1", port: 15356 });
+    expect(svc?.tcpPort).toBe(15356);
+    const reply = await tcpAsk(15356, wireQuery("example.com"));
+    const p = decode(Buffer.from(reply));
+    expect((p.answers?.[0] as { data?: string } | undefined)?.data).toBe("1.2.3.4");
+    await svc!.stop();
+  });
+
+  test("TCP PROXY protocol header supplies the real client IP", async () => {
+    const deps = fakeDeps();
+    // Only the PROXY-header source is authorized; the socket peer (127.0.0.1)
+    // is intentionally not, so this fails unless the header is parsed.
+    deps.store.replaceAll(
+      [],
+      [{ ipAddress: "9.9.9.9", profileId: P1 }],
+      [{ id: P1, dohToken: null, logQueries: true, upstream: null }],
+      [],
+    );
+    const svc = await createDns53Service({ ...deps, host: "127.0.0.1", port: 15357 });
+    const reply = await tcpAsk(15357, wireQuery("example.com"), "9.9.9.9");
+    const p = decode(Buffer.from(reply));
+    expect((p.answers?.[0] as { data?: string } | undefined)?.data).toBe("1.2.3.4");
     await svc!.stop();
   });
 

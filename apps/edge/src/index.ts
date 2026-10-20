@@ -145,7 +145,14 @@ if (process.env.DNS53_ENABLED !== "0") {
     recorder,
   });
   if (!dns53) {
-    log.warn("port-53 DNS ingress not started (bind failed or disabled)");
+    log.error("port-53 DNS ingress not started (bind failed)");
+    // On Fly (or any deployment that explicitly requires it), silence is
+    // dangerous: DoH would keep working while every router/UDP client loses
+    // DNS. Crash loudly instead so the health check/rollout fails.
+    if (process.env.FLY_REGION || process.env.DNS53_REQUIRED === "1") {
+      log.error("DNS53_REQUIRED: refusing to run without port 53 — exiting");
+      process.exit(1);
+    }
   }
 }
 

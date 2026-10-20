@@ -50,6 +50,9 @@ primary_region = "fra"
   internal_port = 53
   [[services.ports]]
     port = 53
+    # Preserve the client IP for IPv4 source-IP auth (UDP gets it natively
+    # via fly-global-services; raw TCP would otherwise see the proxy).
+    handlers = ["proxy_proto"]
 
 [[services]]
   protocol = "udp"
