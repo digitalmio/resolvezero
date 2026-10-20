@@ -4,7 +4,7 @@ Scope: `apps/edge`, `apps/control`, `apps/control-plane`, `packages/db`, `packag
 
 Method: re-read of the v1 findings against the current working tree, full diff review, hot-path verification, plus:
 
-- `cd apps/edge && bun test` → **121 pass, 0 fail**
+- `cd apps/edge && bun test` → **122 pass, 0 fail**
 - `cd apps/control && bun test` → **6 pass, 0 fail**
 - `cd apps/edge && bunx tsc --noEmit` → clean
 - `cd apps/control && bunx tsc --noEmit` → clean
@@ -171,7 +171,7 @@ Goal: absorb UDP/TCP 53 floods **while preserving the real client IP**, which `p
 
 Adding PoPs multiplies shared-state and startup assumptions. Gate on these before scaling out.
 
-**Implemented and live 2026-10-20:** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain. Config propagation is now **Postgres watermark polling** (`edge_config_state` + statement-level bump triggers, edge poll every 5s) — `pg-listen`/NOTIFY removed. Migrations 0004/0005 applied by CI; a live `log_queries` update bumped `config_version` 0→1 and both fra+lhr logged `config snapshot loaded` within ~5s. Migration 0006 drops the now-unused `notify_*` functions (bump functions stay); `migrate.ts` asserts both.
+**Implemented and live 2026-10-20:** S3 keys now include region+machine+boot nonce; blocklist `initialSync()` completes before port 53 binds; prune runs only in the primary region; runtime DDL removed (triggers are migrate-only, and the app role has no DDL rights); `/readyz` + TCP-53 health check added; deploy defaults to rolling with `kill_timeout=30` and listener-first drain. Config propagation is now **Postgres watermark polling** (`edge_config_state` + statement-level bump triggers, edge poll every 5s) — `pg-listen`/NOTIFY removed. Migrations 0004/0005 applied by CI; a live `log_queries` update bumped `config_version` 0→1 and both fra+lhr logged `config snapshot loaded` within ~5s. Migration 0006 drops the now-unused `notify_*` functions (bump functions stay); `migrate.ts` asserts both. Also fixed a multi-profile blocklist pruning bug: a profile with a subset of lists could delete tables another profile needed (`remote_list_tables` 4→2); wiring now defers pruning until every profile is wired.
 
 **P0 — fix before adding POPs**
 
@@ -264,4 +264,4 @@ cd apps/edge && bun test && bunx tsc --noEmit
 cd apps/control && bun test && bunx tsc --noEmit
 ```
 
-Current result: edge 121/121, control 6/6, both typechecks clean.
+Current result: edge 122/122, control 6/6, both typechecks clean.
