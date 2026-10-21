@@ -20,7 +20,9 @@ Implemented:
 - App shell: sidebar, topbar, profile switcher, status pills
 - Brand assets: `src/assets/logo-square.svg`
 - Overview screen with status hero, live traffic, KPIs, query chart, top blocked domains, devices, recent changes
-- Route placeholders for Rules, Blocklists, Devices, Logs, Analytics, Settings
+- Rules screen with static table, action tabs, filters, and summary cards
+- Devices screen with DoH tags, UDP source-IP labeling, and the UDP attribution caveat
+- Route placeholders for Blocklists, Logs, Analytics, Settings
 - Responsive layout foundation
 - TanStack Query provider
 
