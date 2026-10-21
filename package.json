@@ -9,7 +9,9 @@
     "db:generate": "pnpm --filter '@resolvezero/db' db:generate",
     "db:migrate": "pnpm --filter '@resolvezero/db' db:migrate",
     "db:push": "pnpm --filter '@resolvezero/db' db:push",
-    "db:studio": "pnpm --filter '@resolvezero/db' db:studio"
+    "db:studio": "pnpm --filter '@resolvezero/db' db:studio",
+    "typecheck:console": "pnpm --filter @resolvezero/console typecheck",
+    "build:console": "pnpm --filter @resolvezero/console build"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
