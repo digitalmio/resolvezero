@@ -52,10 +52,21 @@ export class DnsCache {
       return v.wire.length;
     },
   });
+  /** Keys with a background refresh already in flight. */
+  private refreshing = new Set<string>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  get(wire: Uint8Array, upstream?: string | null): Uint8Array<ArrayBuffer> | undefined {
+  /**
+   * @param onRefresh optional background refresh hook. It is invoked once when
+   *   the entry has consumed ~80% of its cache lifetime, so the next client
+   *   still gets the cached response while the upstream is refreshed.
+   */
+  get(
+    wire: Uint8Array,
+    upstream?: string | null,
+    onRefresh?: () => Promise<void>,
+  ): Uint8Array<ArrayBuffer> | undefined {
     const meta = queryMeta(wire, upstream);
     if (!meta) return undefined;
     const cached = this.cache.get(meta.key);
@@ -66,6 +77,18 @@ export class DnsCache {
       this.cache.delete(meta.key);
       return undefined;
     }
+
+    if (onRefresh && !this.refreshing.has(meta.key)) {
+      const lifetime = cached.expiresAt - cached.cachedAt;
+      if (lifetime > 0 && now >= cached.cachedAt + lifetime * 0.8) {
+        this.refreshing.add(meta.key);
+        void Promise.resolve()
+          .then(onRefresh)
+          .catch(() => undefined)
+          .finally(() => this.refreshing.delete(meta.key));
+      }
+    }
+
     // RFC 1035/2181: TTLs count down while an answer sits in a cache.
     const elapsedSeconds = Math.max(0, Math.floor((now - cached.cachedAt) / 1000));
     return patchResponse(cached, wire, meta.rawName, elapsedSeconds);

@@ -1,10 +1,22 @@
 import { Hono, type Context } from "hono";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 import { Counter, Gauge, Histogram, collectDefaultMetrics, register, type Registry } from "prom-client";
 import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 
 let cpuUsageLast = process.cpuUsage();
 let wallLast = Number(process.hrtime.bigint());
+
+/**
+ * Start the process-wide event-loop delay monitor. Kept separate from
+ * createHealthApp so unit tests don't leave a live timer behind.
+ */
+let eventLoopDelay: ReturnType<typeof monitorEventLoopDelay> | undefined;
+export function startEventLoopMonitor(resolutionMs = 20): void {
+  if (eventLoopDelay) return;
+  eventLoopDelay = monitorEventLoopDelay({ resolution: resolutionMs });
+  eventLoopDelay.enable();
+}
 
 /** Slices process CPU% since the last observation. Pure — unit-tested. */
 export function cpuPercent(
@@ -20,9 +32,15 @@ export function cpuPercent(
   return Number((((userMs + sysMs) / wallMs) * 100).toFixed(2));
 }
 
+export type Transport = "udp" | "tcp" | "doh";
+
 export interface Recorder {
   recordQuery(action: "block" | "forward"): void;
   recordRtt(ms: number): void;
+  /** End-to-end time inside the edge for a DNS query. */
+  recordDuration(transport: Transport, ms: number): void;
+  recordCacheHit(transport: Transport): void;
+  recordCacheMiss(transport: Transport): void;
   /** Dropped packets (unauthorized source, malformed) — never counted as queries. */
   recordDrop(reason: string): void;
 }
@@ -72,11 +90,42 @@ export function createHealthApp(deps: {
     buckets: [5, 10, 25, 50, 100, 250, 500, 1000],
     registers: [registry],
   });
+  const duration = new Histogram({
+    name: "rz_query_duration_ms",
+    help: "End-to-end time inside the edge for a DNS query",
+    labelNames: ["transport"] as const,
+    buckets: [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500],
+    registers: [registry],
+  });
+  const cacheHits = new Counter({
+    name: "rz_cache_hits_total",
+    help: "DNS cache hits",
+    labelNames: ["transport"] as const,
+    registers: [registry],
+  });
+  const cacheMisses = new Counter({
+    name: "rz_cache_misses_total",
+    help: "DNS cache misses (forwarded upstream)",
+    labelNames: ["transport"] as const,
+    registers: [registry],
+  });
   const dropped = new Counter({
     name: "rz_dropped_total",
     help: "Packets dropped before policy evaluation",
     labelNames: ["reason"] as const,
     registers: [registry],
+  });
+  new Gauge({
+    name: "rz_event_loop_lag_ms",
+    help: "Mean event-loop delay since process start (ms)",
+    registers: [registry],
+    collect() { this.set(eventLoopDelay ? eventLoopDelay.mean / 1e6 : 0); },
+  });
+  new Gauge({
+    name: "rz_event_loop_lag_p99_ms",
+    help: "p99 event-loop delay since process start (ms)",
+    registers: [registry],
+    collect() { this.set(eventLoopDelay ? eventLoopDelay.percentile(99) / 1e6 : 0); },
   });
 
   if (deps.store) {
@@ -115,6 +164,11 @@ export function createHealthApp(deps: {
     recordQuery: (action) =>
       queries.inc({ action: action === "block" ? "block" : "forward" }),
     recordRtt: (ms) => rtt.observe(ms),
+    recordDuration: (transport, ms) => {
+      if (Number.isFinite(ms) && ms >= 0) duration.observe({ transport }, ms);
+    },
+    recordCacheHit: (transport) => cacheHits.inc({ transport }),
+    recordCacheMiss: (transport) => cacheMisses.inc({ transport }),
     recordDrop: (reason) => dropped.inc({ reason }),
   };
 

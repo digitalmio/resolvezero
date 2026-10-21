@@ -83,6 +83,13 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   const port = deps.port ?? Number(process.env.UDP_PORT ?? 53);
   const tcpStates = new WeakMap<object, TcpState>();
 
+  /** Refresh a cached entry before it expires (no client-visible latency). */
+  const refresh = async (queryWire: Uint8Array, upstreamUrl?: string | null): Promise<void> => {
+    const result = await deps.upstream.resolveWire(queryWire, upstreamUrl ?? undefined);
+    deps.dnsCache.set(queryWire, result.wire, upstreamUrl);
+    deps.recorder?.recordRtt(result.rttMs);
+  };
+
   let udp: dgram.Socket | undefined;
   let tcp: net.Server | undefined;
 
@@ -98,6 +105,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     });
     udp.on("error", (err) => log.error({ err }, "udp socket error"));
     udp.on("message", (data, rinfo) => {
+      const started = performance.now();
       void handleUdp(new Uint8Array(data), normalizeIp(rinfo.address))
         .then((reply) => {
           if (!reply) return;
@@ -105,7 +113,8 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
             if (err) log.warn({ err }, "udp send failed");
           });
         })
-        .catch((err) => log.error({ err }, "udp handler failed"));
+        .catch((err) => log.error({ err }, "udp handler failed"))
+        .finally(() => deps.recorder?.recordDuration("udp", performance.now() - started));
     });
     log.info({ host, port }, "UDP 53 listening");
   } catch (err) {
@@ -156,7 +165,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
 
   // ---- UDP path ----
   async function handleUdp(wire: Uint8Array, sourceIp: string): Promise<Uint8Array | null> {
-    const reply = await handlePacket(wire, sourceIp);
+    const reply = await handlePacket(wire, sourceIp, "udp");
     if (reply && reply.length > UDP_MAX_PAYLOAD) {
       // TC bit — real clients will retry over TCP
       const q = decodeQuestion(wire);
@@ -207,7 +216,8 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       const wire = state.buffer.slice(2, 2 + expected);
       state.buffer = state.buffer.slice(2 + expected);
       const sourceIp = state.sourceIp;
-      void handlePacket(wire, sourceIp)
+      const started = performance.now();
+      void handlePacket(wire, sourceIp, "tcp")
         .then((reply) => {
           if (!reply) return;
           const frame = new Uint8Array(reply.length + 2);
@@ -216,12 +226,17 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
           frame.set(reply, 2);
           socket.write(frame);
         })
-        .catch((err) => log.error({ err }, "tcp handler failed"));
+        .catch((err) => log.error({ err }, "tcp handler failed"))
+        .finally(() => deps.recorder?.recordDuration("tcp", performance.now() - started));
     }
   }
 
   /** Core decision pipeline shared by UDP+TCP. Pure enough for tests. */
-  async function handlePacket(wire: Uint8Array, sourceIp: string): Promise<Uint8Array | null> {
+  async function handlePacket(
+    wire: Uint8Array,
+    sourceIp: string,
+    transport: "udp" | "tcp",
+  ): Promise<Uint8Array | null> {
     // 1. Source-IP auth — unknown source: REFUSED (default) or silent drop.
     //    QueryLog events are NEVER emitted for unauthorized sources (privacy).
     const profileId = deps.store.authorizeSourceIp(sourceIp);
@@ -273,14 +288,16 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
 
     // 5. Cache (keyed by question + upstream)
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
-    const cached = deps.dnsCache.get(wire, upstreamUrl);
+    const cached = deps.dnsCache.get(wire, upstreamUrl, () => refresh(wire, upstreamUrl));
     if (cached) {
+      deps.recorder?.recordCacheHit(transport);
       deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs: null, clientIp: sourceIp, device: null });
       deps.recorder?.recordQuery("forward");
       return cached;
     }
 
     // 6. Forward upstream (per-profile choice)
+    deps.recorder?.recordCacheMiss(transport);
     try {
       const { wire: responseWire, rttMs } = await deps.upstream.resolveWire(
         wire,

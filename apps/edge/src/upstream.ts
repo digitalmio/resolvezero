@@ -18,6 +18,7 @@ export type UpstreamPreset = keyof typeof UPSTREAM_PRESETS;
 
 const ENV_URL = process.env.UPSTREAM_DOH_URL;
 const ENV_PRESET = process.env.UPSTREAM_PRESET as UpstreamPreset | undefined;
+const TRUSTED_UPSTREAM_HOSTS = [...new Set(Object.values(UPSTREAM_PRESETS).map((url) => new URL(url).hostname))];
 
 /** Edge default: preset/env over rid. */
 export function defaultUpstreamUrl(): string {
@@ -80,7 +81,13 @@ async function fetchUpstream(wire: Uint8Array, finalUrl: string): Promise<Upstre
       body: Buffer.from(wire),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     },
-    { label: "upstream", allowPrivate: allowPrivateTargets() },
+    {
+      label: "upstream",
+      allowPrivate: allowPrivateTargets(),
+      // Presets are hard-coded and safe; skip a DNS lookup on every cache
+      // expiry. Redirects to other hosts still get the full SSRF check.
+      trustedHosts: TRUSTED_UPSTREAM_HOSTS,
+    },
   );
   if (!response.ok) throw new Error(`upstream HTTP ${response.status}`);
   const body = new Uint8Array(await response.arrayBuffer());

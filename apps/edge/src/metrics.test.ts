@@ -46,7 +46,26 @@ describe("metrics endpoints", () => {
     expect(body).toContain("rz_cpu_percent");
     expect(body).toContain("rz_queries_total");
     expect(body).toContain("rz_query_rtt_ms");
+    expect(body).toContain("rz_query_duration_ms");
+    expect(body).toContain("rz_cache_hits_total");
+    expect(body).toContain("rz_cache_misses_total");
+    expect(body).toContain("rz_event_loop_lag_ms");
+    expect(body).toContain("rz_event_loop_lag_p99_ms");
     expect(body).toContain("rz_dropped_total");
+  });
+
+  test("records duration and cache hit/miss by transport", async () => {
+    const reg = new Registry();
+    const { recorder } = createHealthApp({ registry: reg });
+    recorder.recordDuration("doh", 12.5);
+    recorder.recordDuration("udp", 3);
+    recorder.recordCacheHit("doh");
+    recorder.recordCacheMiss("udp");
+    const body = await reg.metrics();
+    expect(body).toContain('rz_cache_hits_total{transport="doh"} 1');
+    expect(body).toContain('rz_cache_misses_total{transport="udp"} 1');
+    expect(body).toContain('rz_query_duration_ms_count{transport="doh"} 1');
+    expect(body).toContain('rz_query_duration_ms_count{transport="udp"} 1');
   });
 
   test("recordDrop increments rz_dropped_total with reason label", async () => {

@@ -14,7 +14,7 @@ import { startRuleSync } from "./ruleSync";
 import { updateRollups } from "./rollup";
 import { createStatsApp } from "./stats";
 import { createLogsApp } from "./logs";
-import { createHealthApp } from "./metrics";
+import { createHealthApp, startEventLoopMonitor } from "./metrics";
 import { createAdminApp } from "./admin";
 import { startBlocklistSync } from "./blocklists";
 import { createDns53Service, type Dns53Handle } from "./dns53";
@@ -194,10 +194,18 @@ if (process.env.DNS53_ENABLED !== "0") {
 }
 readiness.dns53Bound = process.env.DNS53_ENABLED === "0" || dns53Handle !== null;
 
+startEventLoopMonitor();
+
 const server = serve({
   port: PORT,
   hostname: "0.0.0.0",
   fetch: app.fetch,
+  // Keep backend connections warm between DoH requests. Fly terminates TLS
+  // in front of the app, so this is the app<->Fly hop, not the client hop.
+  serverOptions: {
+    keepAliveTimeout: Number(process.env.KEEP_ALIVE_TIMEOUT_MS ?? 65_000),
+    headersTimeout: Number(process.env.HEADERS_TIMEOUT_MS ?? 66_000),
+  },
 });
 
 // Metrics on a private port; Fly's [metrics] scraper reaches it over 6PN.

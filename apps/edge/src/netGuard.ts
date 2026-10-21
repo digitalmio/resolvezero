@@ -24,6 +24,12 @@ export interface SafeUrlOptions {
   protocols?: string[];
   /** Allow RFC1918/loopback/link-local targets (self-host only). */
   allowPrivate?: boolean;
+  /**
+   * Hosts whose DNS resolution can be skipped because they are built-in,
+   * hard-coded endpoints (upstream presets). Syntax, credentials, metadata,
+   * and redirect-hop checks still apply.
+   */
+  trustedHosts?: readonly string[];
   /** Human label used in error messages ("list URL", "upstream"). */
   label?: string;
 }
@@ -66,7 +72,7 @@ export async function assertSafeRemoteUrl(raw: string, opts: SafeUrlOptions = {}
     return u;
   }
 
-  if (opts.allowPrivate) return u;
+  if (opts.allowPrivate || opts.trustedHosts?.includes(host)) return u;
 
   const resolved = await resolvePrivate(host);
   if (resolved) throw new Error(`${label}: host resolves to a private address`);

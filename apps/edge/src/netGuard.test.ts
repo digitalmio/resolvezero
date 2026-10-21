@@ -67,4 +67,15 @@ describe("assertSafeRemoteUrl", () => {
       assertSafeRemoteUrl("https://169.254.169.254/", { allowPrivate: true }),
     ).rejects.toThrow(/metadata/);
   });
+
+  test("trustedHosts skips resolution but not metadata checks", async () => {
+    await expect(
+      assertSafeRemoteUrl("https://localhost/", { trustedHosts: ["localhost"] }),
+    ).resolves.toBeInstanceOf(URL);
+    await expect(
+      assertSafeRemoteUrl("https://metadata.google.internal/", {
+        trustedHosts: ["metadata.google.internal"],
+      }),
+    ).rejects.toThrow(/metadata/);
+  });
 });

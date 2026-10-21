@@ -132,4 +132,40 @@ describe("DnsCache", () => {
     now += 61_000;
     expect(cache.get(query("expire.test", 2))).toBeUndefined();
   });
+
+  test("refreshes once at 80% lifetime and dedupes concurrent refreshes", async () => {
+    let now = 1_000_000;
+    const cache = new DnsCache(() => now);
+    cache.set(query("refresh.test"), response("refresh.test", 1, { ttl: 100 }));
+
+    let calls = 0;
+    let release!: () => void;
+    const refresh = (): Promise<void> => {
+      calls++;
+      return new Promise<void>((resolve) => { release = resolve; });
+    };
+
+    now += 70_000; // below 80%
+    expect(cache.get(query("refresh.test", 2), undefined, refresh)).toBeDefined();
+    await Promise.resolve();
+    expect(calls).toBe(0);
+
+    now += 10_000; // 80%
+    expect(cache.get(query("refresh.test", 3), undefined, refresh)).toBeDefined();
+    await Promise.resolve();
+    expect(calls).toBe(1);
+
+    now += 5_000; // still in flight
+    expect(cache.get(query("refresh.test", 4), undefined, refresh)).toBeDefined();
+    await Promise.resolve();
+    expect(calls).toBe(1);
+
+    release();
+    await new Promise((resolve) => setImmediate(resolve));
+    now += 5_000; // 90%; allow a fresh refresh after the first completed
+    expect(cache.get(query("refresh.test", 5), undefined, refresh)).toBeDefined();
+    await Promise.resolve();
+    expect(calls).toBe(2);
+    release();
+  });
 });

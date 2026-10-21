@@ -49,6 +49,22 @@ const DEVICE_RE = /^[a-zA-Z0-9_-]{1,32}$/;
 export function createDohApp(deps: DohAppDeps) {
   const app = new Hono().basePath("/v1");
 
+  app.use("*", async (_c, next) => {
+    const started = performance.now();
+    try {
+      await next();
+    } finally {
+      deps.recorder?.recordDuration("doh", performance.now() - started);
+    }
+  });
+
+  /** Refresh a cached entry before it expires (no client-visible latency). */
+  const refresh = async (queryWire: Uint8Array, upstreamUrl?: string | null): Promise<void> => {
+    const result = await deps.upstream.resolveWire(queryWire, upstreamUrl ?? undefined);
+    deps.dnsCache.set(queryWire, result.wire, upstreamUrl);
+    deps.recorder?.recordRtt(result.rttMs);
+  };
+
   app.on(["GET", "POST"], ":profileId/:seg2?/:token?", async (c) => {
     // ---- Profile auth (RFC-style silent failures) ----
     // Path shapes (NextDNS-parity: device between profile and token):
@@ -181,10 +197,11 @@ export function createDohApp(deps: DohAppDeps) {
 
     // ---- DNS response LRU cache (keyed by question + upstream) ----
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
-    const cached = deps.dnsCache.get(queryWire, upstreamUrl);
+    const cached = deps.dnsCache.get(queryWire, upstreamUrl, () => refresh(queryWire, upstreamUrl));
     if (cached) {
       // Cache hits are still queries the user asked for — log them so the
       // dashboard/rollups match the readme's "all queries are logged".
+      deps.recorder?.recordCacheHit("doh");
       deps.logQuery({
         profileId,
         domain: question.name,
@@ -198,6 +215,7 @@ export function createDohApp(deps: DohAppDeps) {
     }
 
     // ---- Forward upstream over DoH (per-profile upstream choice) ----
+    deps.recorder?.recordCacheMiss("doh");
     let rttMs: number;
     let responseWire: Uint8Array<ArrayBuffer>;
     try {
