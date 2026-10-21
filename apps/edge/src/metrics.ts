@@ -12,10 +12,19 @@ let wallLast = Number(process.hrtime.bigint());
  * createHealthApp so unit tests don't leave a live timer behind.
  */
 let eventLoopDelay: ReturnType<typeof monitorEventLoopDelay> | undefined;
+let eventLoopResolutionMs = 20;
 export function startEventLoopMonitor(resolutionMs = 20): void {
   if (eventLoopDelay) return;
+  eventLoopResolutionMs = resolutionMs;
   eventLoopDelay = monitorEventLoopDelay({ resolution: resolutionMs });
   eventLoopDelay.enable();
+}
+
+/** monitorEventLoopDelay includes the sampling interval in its baseline. */
+function eventLoopLagMs(percentile?: number): number {
+  if (!eventLoopDelay) return 0;
+  const ns = percentile == null ? eventLoopDelay.mean : eventLoopDelay.percentile(percentile);
+  return Math.max(0, ns / 1e6 - eventLoopResolutionMs);
 }
 
 /** Slices process CPU% since the last observation. Pure — unit-tested. */
@@ -119,13 +128,13 @@ export function createHealthApp(deps: {
     name: "rz_event_loop_lag_ms",
     help: "Mean event-loop delay since process start (ms)",
     registers: [registry],
-    collect() { this.set(eventLoopDelay ? eventLoopDelay.mean / 1e6 : 0); },
+    collect() { this.set(eventLoopLagMs()); },
   });
   new Gauge({
     name: "rz_event_loop_lag_p99_ms",
     help: "p99 event-loop delay since process start (ms)",
     registers: [registry],
-    collect() { this.set(eventLoopDelay ? eventLoopDelay.percentile(99) / 1e6 : 0); },
+    collect() { this.set(eventLoopLagMs(99)); },
   });
 
   if (deps.store) {
