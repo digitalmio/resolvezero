@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { getRulesData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
-import { Ban, Check, Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
+import { Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 
 export const Route = createFileRoute('/rules')({ component: Rules })
@@ -19,9 +19,6 @@ function Rules() {
     { label: 'Zones', count: data.counts.zones },
     { label: 'Blocklists', count: data.counts.lists },
   ]
-  const blockCount = data.counts.block
-  const allowCount = data.counts.allow
-  const zoneCount = data.counts.zones
   const visibleRules = rules.filter((rule) => {
     if (activeTab === 'Block') return rule.action === 'block'
     if (activeTab === 'Allow') return rule.action === 'allow'
@@ -111,12 +108,6 @@ function Rules() {
           <span className="font-mono">synced · v59</span>
         </div>
       </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Summary icon={<Ban size={15} />} label="Block rules" value={String(blockCount)} detail="explicit + list-driven" />
-        <Summary icon={<Check size={15} />} label="Allow rules" value={String(allowCount)} detail="Allow wins over blocklists" />
-        <Summary icon={<Network size={15} />} label="Zone records" value={String(zoneCount)} detail="Local overrides" />
-      </div>
     </div>
   )
 }
@@ -129,17 +120,4 @@ function ActionPill({ action }: { action: string }) {
         ? 'bg-[#edf8f0] text-[#247440] ring-[#cfe6d7]'
         : 'bg-[#eef2ff] text-[#3552a5] ring-[#dbe3ff]'
   return <span className={`inline-flex items-center rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ring-1 ${style}`}>{action}</span>
-}
-
-function Summary({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
-  return (
-    <div className="rz-card flex items-center gap-3 p-4">
-      <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--paper-2)] text-[var(--ink)]">{icon}</span>
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">{label}</p>
-        <p className="mt-0.5 text-[16px] font-semibold">{value}</p>
-        <p className="mt-0.5 text-[10px] text-[var(--muted)]">{detail}</p>
-      </div>
-    </div>
-  )
 }
