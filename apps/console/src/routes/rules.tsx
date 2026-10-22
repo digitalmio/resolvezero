@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getRulesData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { Ban, Check, Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
+import { useState } from 'react'
 
 export const Route = createFileRoute('/rules')({ component: Rules })
 
@@ -11,6 +12,7 @@ function Rules() {
   if (isPending) return <PageLoading label="Loading rules…" />
   if (isError || !data) return <PageError title="Could not load rules." onRetry={() => void refetch()} />
 
+  const [activeTab, setActiveTab] = useState<'Block' | 'Allow' | 'Zones' | 'Blocklists'>('Block')
   const rules = data.rules
   const tabs = [
     { label: 'Block', count: data.counts.block },
@@ -21,6 +23,12 @@ function Rules() {
   const blockCount = data.counts.block
   const allowCount = data.counts.allow
   const zoneCount = data.counts.zones
+  const visibleRules = rules.filter((rule) => {
+    if (activeTab === 'Block') return rule.action === 'block'
+    if (activeTab === 'Allow') return rule.action === 'allow'
+    if (activeTab === 'Zones') return rule.action === 'zone'
+    return rule.action === 'list'
+  })
 
   return (
     <div className="space-y-6">
@@ -37,19 +45,23 @@ function Rules() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)]">
-        {tabs.map((tab, index) => (
-          <button
-            key={tab.label}
-            className={[
-              'relative flex items-center gap-2 px-3 py-3 text-[12px] font-medium transition-colors',
-              index === 0 ? 'text-[var(--ink)]' : 'text-[var(--muted)] hover:text-[var(--ink)]',
-            ].join(' ')}
-          >
-            {tab.label}
-            <span className="rounded-md bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{tab.count}</span>
-            {index === 0 ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" /> : null}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const active = tab.label === activeTab
+          return (
+            <button
+              key={tab.label}
+              onClick={() => setActiveTab(tab.label as typeof activeTab)}
+              className={[
+                'relative flex items-center gap-2 px-3 py-3 text-[12px] font-medium transition-colors',
+                active ? 'text-[var(--ink)]' : 'text-[var(--muted)] hover:text-[var(--ink)]',
+              ].join(' ')}
+            >
+              {tab.label}
+              <span className="rounded-md bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{tab.count}</span>
+              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" /> : null}
+            </button>
+          )
+        })}
       </div>
 
       <div className="rz-card overflow-hidden">
@@ -81,8 +93,8 @@ function Rules() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--line)]">
-              {rules.length === 0 ? <tr><td colSpan={6} className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No rules yet.</td></tr> : null}
-              {rules.map((rule) => (
+              {visibleRules.length === 0 ? <tr><td colSpan={6} className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No {activeTab.toLowerCase()} entries yet.</td></tr> : null}
+              {visibleRules.map((rule) => (
                 <tr key={`${rule.domain}-${rule.action}`} className="group hover:bg-white/60">
                   <td className="px-5 py-3.5 font-mono text-[12px]">{rule.domain}</td>
                   <td className="px-4 py-3.5"><ActionPill action={rule.action} /></td>
@@ -96,7 +108,7 @@ function Rules() {
           </table>
         </div>
         <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-3 text-[11px] text-[var(--muted)]">
-          <span>{rules.length} rules</span>
+          <span>{visibleRules.length} {activeTab.toLowerCase()}</span>
           <span className="font-mono">synced · v59</span>
         </div>
       </div>
