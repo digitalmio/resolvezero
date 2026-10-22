@@ -15,9 +15,6 @@ function config(overrides: Partial<AgentConfig> = {}): AgentConfig {
     healthPort: 0,
     healthHost: "127.0.0.1",
     devices: new Map([["192.168.1.20", "MacBook Pro"]]),
-    localDomains: ["lan"],
-    localTtl: 60,
-    allowPublicIpEncoding: false,
     ...overrides,
   };
 }

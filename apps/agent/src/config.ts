@@ -1,5 +1,3 @@
-import { parseLocalDomains } from "@resolvezero/shared";
-
 export interface AgentConfig {
   profileId: string;
   token: string;
@@ -10,11 +8,6 @@ export interface AgentConfig {
   healthPort: number;
   healthHost: string;
   devices: Map<string, string>;
-  /** Domains where IP-encoded names are answered locally (e.g. .lan). */
-  localDomains: string[];
-  localTtl: number;
-  /** Allow synthetic answers for public IPs. Off by default. */
-  allowPublicIpEncoding: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
@@ -41,9 +34,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
     healthPort,
     healthHost: (env.HEALTH_HOST ?? "127.0.0.1").trim() || "127.0.0.1",
     devices: parseDeviceMap(env.DEVICE_MAP ?? ""),
-    localDomains: parseLocalDomains(env.LOCAL_DOMAINS ?? "lan,home.arpa"),
-    localTtl: numberEnv(env.LOCAL_TTL ?? "60", 60),
-    allowPublicIpEncoding: env.ALLOW_PUBLIC_IP_ENCODING === "1",
   };
 }
 

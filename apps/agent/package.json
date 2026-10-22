@@ -17,8 +17,7 @@
     "build:darwin-arm64": "bun build --compile --target=bun-darwin-arm64 src/index.ts --outfile dist/resolvezero-agent-darwin-arm64"
   },
   "dependencies": {
-    "dns-packet": "^5.6.1",
-    "@resolvezero/shared": "workspace:*"
+    "dns-packet": "^5.6.1"
   },
   "devDependencies": {
     "@types/dns-packet": "^5.6.5",
