@@ -1,4 +1,5 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   BarChart3,
@@ -17,6 +18,7 @@ import {
 import type { ReactNode } from 'react'
 
 import logo from '../assets/logo-square.svg'
+import { getOverview } from '../server/dashboard'
 
 type NavItem = {
   label: string
@@ -29,7 +31,7 @@ const primaryNav: NavItem[] = [
   { label: 'Overview', to: '/', icon: <Activity size={17} /> },
   { label: 'Rules', to: '/rules', icon: <ListFilter size={17} /> },
   { label: 'Blocklists', to: '/blocklists', icon: <Layers3 size={17} /> },
-  { label: 'Devices', to: '/devices', icon: <Monitor size={17} />, badge: '14' },
+  { label: 'Devices', to: '/devices', icon: <Monitor size={17} /> },
   { label: 'Logs', to: '/logs', icon: <FileText size={17} /> },
   { label: 'Analytics', to: '/analytics', icon: <BarChart3 size={17} /> },
 ]
@@ -41,6 +43,11 @@ const secondaryNav: NavItem[] = [
 
 export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const { data } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  const deviceCount = data?.activeDevices ?? 0
+  const nav = primaryNav.map((item) =>
+    item.label === 'Devices' && deviceCount > 0 ? { ...item, badge: String(deviceCount) } : item,
+  )
 
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
@@ -63,7 +70,7 @@ export function AppShell() {
 
         <nav className="flex flex-1 flex-col px-3">
           <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30">Workspace</p>
-          {primaryNav.map((item) => (
+          {nav.map((item) => (
             <SidebarLink key={item.label} item={item} active={pathname === item.to || (item.to !== '/' && pathname.startsWith(item.to))} />
           ))}
           <div className="my-5 h-px bg-white/8" />
