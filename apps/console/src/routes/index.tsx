@@ -17,24 +17,6 @@ import {
 
 export const Route = createFileRoute('/')({ component: Overview })
 
-const DEMO_QUERY = [38, 44, 41, 52, 49, 57, 54, 63, 58, 66, 61, 69, 65, 74, 70, 77, 72, 80, 75, 83, 79, 86, 82, 88]
-const DEMO_BLOCKED = [10, 12, 9, 15, 13, 17, 14, 19, 16, 20, 18, 22, 19, 24, 21, 26, 22, 27, 24, 29, 26, 30, 27, 32]
-
-const demoTopBlocked = [
-  { domain: 'doubleclick.net', count: '2,418', share: 82 },
-  { domain: 'googletagmanager.com', count: '1,204', share: 61 },
-  { domain: 'facebook.net', count: '978', share: 49 },
-  { domain: 'scorecardresearch.com', count: '642', share: 32 },
-  { domain: 'adservice.google.com', count: '511', share: 26 },
-]
-
-const demoDevices = [
-  { name: 'MacBook Pro', detail: 'DoH · macbook', queries: '18.2k', status: 'online' },
-  { name: 'iPhone 16 Pro', detail: 'DoH · iphone', queries: '12.6k', status: 'online' },
-  { name: 'Living room router', detail: 'UDP · 82.14.22.8', queries: '9.8k', status: 'online' },
-  { name: 'Unknown device', detail: 'UDP · 82.14.22.8', queries: '2.2k', status: 'unknown' },
-]
-
 const changes = [
   { time: '2 min ago', title: 'Blocklist synced', detail: 'KADhosts · 39,885 entries' },
   { time: '18 min ago', title: 'Rule added', detail: 'allow analytics.resolvezero.com' },
@@ -42,30 +24,31 @@ const changes = [
 ]
 
 function Overview() {
-  const { data, isError } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
-  const isPreview = !data
-  const querySeries = data?.series.map((p) => p.total) ?? DEMO_QUERY
-  const blockedSeries = data?.series.map((p) => p.blocked) ?? DEMO_BLOCKED
-  const topBlocked = data
-    ? (() => {
-        const max = Math.max(...data.topBlocked.map((d) => d.count), 1)
-        return data.topBlocked.map((d) => ({ domain: d.domain, count: formatNumber(d.count), share: Math.round((d.count / max) * 100) }))
-      })()
-    : demoTopBlocked
-  const devices = data
-    ? data.topDevices.map((d, index) => ({
-        name: d.device,
-        detail: 'DoH device tag',
-        queries: formatNumber(d.count),
-        status: index < 4 ? 'online' : 'unknown',
-      }))
-    : demoDevices
-  const totalQueries = data?.totalQueries ?? 42_861
-  const blocked = data?.blocked ?? 7_804
-  const activeDevices = data?.activeDevices ?? 14
+  const { data, isPending, isError, refetch } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+
+  if (isPending) return <OverviewSkeleton />
+  if (isError || !data) return <OverviewError onRetry={() => void refetch()} />
+
+  const querySeries = data.series.map((p) => p.total)
+  const blockedSeries = data.series.map((p) => p.blocked)
+  const maxBlocked = Math.max(...data.topBlocked.map((d) => d.count), 1)
+  const topBlocked = data.topBlocked.map((d) => ({
+    domain: d.domain,
+    count: formatNumber(d.count),
+    share: Math.round((d.count / maxBlocked) * 100),
+  }))
+  const devices = data.topDevices.map((d, index) => ({
+    name: d.device,
+    detail: 'DoH device tag',
+    queries: formatNumber(d.count),
+    status: index < 4 ? 'online' : 'unknown',
+  }))
+  const totalQueries = data.totalQueries
+  const blocked = data.blocked
+  const activeDevices = data.activeDevices
   const forwarded = Math.max(totalQueries - blocked, 0)
-  const qps = data ? totalQueries / 86_400 : 1_284
-  const qpsLabel = data ? (qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)) : formatNumber(1_284)
+  const qps = totalQueries / 86_400
+  const qpsLabel = qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)
   const forwardedPct = totalQueries > 0 ? Math.round((forwarded / totalQueries) * 100) : 0
   const blockedPct = totalQueries > 0 ? Math.round((blocked / totalQueries) * 100) : 0
 
@@ -79,10 +62,8 @@ function Overview() {
           </p>
           <h1 className="text-[30px] font-semibold tracking-[-0.045em] sm:text-[36px]">Good evening, Maciej.</h1>
           <p className="mt-2 flex items-center gap-2 text-[13px] text-[var(--muted)]">
-            {data ? `${data.profileName} · live from Postgres` : 'Your network is quiet. Everything that matters is protected.'}
-            {isPreview ? <span className="rounded-md border border-[#e7c6b8] bg-[#fff4ef] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#a64b22]">Preview</span> : null}
+            {data.profileName} · live from Postgres
           </p>
-          {isError ? <p className="mt-2 text-[11px] text-[#a64b22]">No live data source — preview values shown. Set DATABASE_URL to load Postgres rollups.</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <button className="rz-button-secondary">View public status</button>
@@ -148,7 +129,7 @@ function Overview() {
           </div>
           <div className="mt-6 flex items-center gap-2 border-t border-[var(--line)] pt-4 text-[11px] text-[var(--muted)]">
             <Zap size={12} className="text-[var(--accent)]" />
-            Window <span className="font-mono text-[var(--ink)]">{isPreview ? 'preview' : 'last 24h'}</span>
+            Window <span className="font-mono text-[var(--ink)]">last 24h</span>
           </div>
         </div>
       </section>
@@ -192,6 +173,7 @@ function Overview() {
             <button className="text-[var(--muted)]"><MoreHorizontal size={17} /></button>
           </div>
           <div className="mt-5 space-y-4">
+            {topBlocked.length === 0 ? <p className="py-6 text-center text-[12px] text-[var(--muted)]">No blocked domains in this window.</p> : null}
             {topBlocked.map((item) => (
               <div key={item.domain}>
                 <div className="mb-2 flex items-center justify-between gap-3">
@@ -220,6 +202,7 @@ function Overview() {
             <button className="rz-button-secondary !py-1.5 !text-[11px]">Manage</button>
           </div>
           <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+            {devices.length === 0 ? <p className="px-6 py-8 text-center text-[12px] text-[var(--muted)]">No tagged DoH devices in this window.</p> : null}
             {devices.map((device) => (
               <div key={device.name} className="flex items-center gap-3 px-6 py-3.5">
                 <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--paper-2)] text-[var(--muted)]">
@@ -283,6 +266,38 @@ function Kpi({ icon, label, value, delta, positive = false }: { icon: React.Reac
       </div>
       <p className="mt-4 font-mono text-[25px] tracking-[-0.055em]">{value}</p>
       <p className={['mt-1 text-[10px]', positive ? 'text-[#247440]' : 'text-[var(--muted)]'].join(' ')}>{delta}</p>
+    </div>
+  )
+}
+
+function OverviewSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Loading dashboard">
+      <div className="h-[72px] w-[320px] animate-pulse rounded-xl bg-[var(--paper-2)]" />
+      <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
+        <div className="rz-card h-[260px] animate-pulse bg-white/60" />
+        <div className="rz-card h-[260px] animate-pulse bg-white/60" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="rz-card h-[120px] animate-pulse bg-white/60" />)}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
+        <div className="rz-card h-[340px] animate-pulse bg-white/60" />
+        <div className="rz-card h-[340px] animate-pulse bg-white/60" />
+      </div>
+    </div>
+  )
+}
+
+function OverviewError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rz-card mx-auto mt-16 max-w-[520px] p-8 text-center">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Data unavailable</p>
+      <h1 className="mt-3 text-[24px] font-semibold tracking-[-0.04em]">Could not load live stats.</h1>
+      <p className="mt-2 text-[13px] leading-6 text-[var(--muted)]">
+        The dashboard needs a reachable Postgres connection. Check the server logs for the exact error.
+      </p>
+      <button className="rz-button-primary mt-5" onClick={onRetry}>Try again</button>
     </div>
   )
 }

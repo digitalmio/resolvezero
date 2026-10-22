@@ -25,7 +25,8 @@ Implemented:
 - Route placeholders for Blocklists, Logs, Analytics, Settings
 - Responsive layout foundation
 - TanStack Query provider
-- Server-side `getOverview` querying Postgres `stats_hourly` (with a design-preview fallback)
+- Server-side `getOverview` querying Postgres `stats_hourly`
+- Loading and error states for the overview instead of dummy data flashes
 - Server-side `getRulesData` for explicit rules, zones, and blocklist subscriptions
 
 Not implemented yet:
@@ -45,7 +46,7 @@ optionally `DASHBOARD_PROFILE_ID`) before starting:
 DATABASE_URL=postgres://... pnpm --filter @resolvezero/console dev
 ```
 
-Without a database, the UI falls back to the design-preview data and shows a warning.
+Without a reachable database, the overview shows a retryable error instead of dummy values.
 
 Build:
 
