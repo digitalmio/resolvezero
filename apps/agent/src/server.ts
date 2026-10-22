@@ -3,9 +3,9 @@ import http from "node:http";
 import net from "node:net";
 
 import type { AgentConfig } from "./config";
+import { localNameAnswer } from "@resolvezero/shared";
 import { maxUdpPayload, sameTransactionId, servfailResponse, truncatedResponse } from "./dns";
 import { resolveDoh } from "./doh";
-import { localAnswer } from "./local";
 
 export type Resolver = (query: Uint8Array, sourceIp: string) => Promise<Uint8Array>;
 
@@ -129,7 +129,11 @@ export async function startAgent(
 
   async function handleQuery(wire: Uint8Array, sourceIp: string): Promise<Uint8Array | null> {
     if (wire.length < 12) return null;
-    const local = localAnswer(config, wire);
+    const local = localNameAnswer(wire, {
+      localDomains: config.localDomains,
+      localTtl: config.localTtl,
+      allowPublicIpEncoding: config.allowPublicIpEncoding,
+    });
     if (local) return local;
     try {
       const response = await resolver(wire, sourceIp);

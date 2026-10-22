@@ -16,6 +16,7 @@ import {
   zoneAnswer,
 } from "./wire";
 import { moduleLogger } from "./logger";
+import { localNameAnswer } from "@resolvezero/shared";
 
 const log = moduleLogger("dns53");
 
@@ -35,6 +36,10 @@ export interface Dns53Deps {
   host?: string;
   port?: number;
   tcp?: boolean;
+  /** Local suffixes for IP-encoded names (default: lan). */
+  localDomains?: readonly string[];
+  localTtl?: number;
+  allowPublicIpEncoding?: boolean;
 }
 
 export interface Dns53Handle {
@@ -286,7 +291,19 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       return sinkholeResponse(question);
     }
 
-    // 5. Cache (keyed by question + upstream)
+    // 5. Synthetic local names (nip.io-style, scoped to .lan/.home.arpa)
+    const local = localNameAnswer(wire, {
+      localDomains: deps.localDomains ?? ["lan"],
+      localTtl: deps.localTtl ?? 60,
+      allowPublicIpEncoding: deps.allowPublicIpEncoding === true,
+    });
+    if (local) {
+      deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp, device: null });
+      deps.recorder?.recordQuery("forward");
+      return local;
+    }
+
+    // 6. Cache (keyed by question + upstream)
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
     const cached = deps.dnsCache.get(wire, upstreamUrl, () => refresh(wire, upstreamUrl));
     if (cached) {

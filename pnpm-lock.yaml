@@ -30,6 +30,9 @@ importers:
 
   apps/agent:
     dependencies:
+      '@resolvezero/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       dns-packet:
         specifier: ^5.6.1
         version: 5.6.1
@@ -136,7 +139,15 @@ importers:
         specifier: ^0.31.11
         version: 0.31.11
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      dns-packet:
+        specifier: ^5.6.1
+        version: 5.6.1
+    devDependencies:
+      '@types/dns-packet':
+        specifier: ^5.6.5
+        version: 5.6.5
 
 packages:
 

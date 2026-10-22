@@ -1,5 +1,12 @@
 import { decode, encode, type Packet } from "dns-packet";
-import type { AgentConfig } from "./config";
+
+export interface LocalNameOptions {
+  /** Domains where IP-encoded names are answered locally (e.g. lan). */
+  localDomains: readonly string[];
+  localTtl: number;
+  /** Allow synthetic answers for public IPs. Off by default. */
+  allowPublicIpEncoding?: boolean;
+}
 
 /**
  * Answer IP-encoded names locally:
@@ -9,10 +16,10 @@ import type { AgentConfig } from "./config";
  *   192-168-1-20.lan       -> 192.168.1.20
  *
  * This is nip.io/sslip.io-style behaviour, scoped to local domains.
- * Unmatched names return null and are forwarded to the edge (where zones
- * such as nas.lan can still be resolved).
+ * Unmatched names return null and can be handled by the caller (edge zones,
+ * upstream forwarding, etc.).
  */
-export function localAnswer(config: AgentConfig, query: Uint8Array): Uint8Array | null {
+export function localNameAnswer(query: Uint8Array, opts: LocalNameOptions): Uint8Array<ArrayBuffer> | null {
   let packet: Packet;
   try {
     packet = decode(Buffer.from(query));
@@ -23,18 +30,18 @@ export function localAnswer(config: AgentConfig, query: Uint8Array): Uint8Array 
   if (!question) return null;
 
   const name = String(question.name).toLowerCase().replace(/\.+$/, "");
-  if (!config.localDomains.some((domain) => name === domain || name.endsWith(`.${domain}`))) {
+  if (!opts.localDomains.some((domain) => name === domain || name.endsWith(`.${domain}`))) {
     return null;
   }
 
-  const ip = extractIpv4(name, config.localDomains);
+  const ip = extractIpv4(name, opts.localDomains);
   if (!ip) return null;
-  if (!config.allowPublicIpEncoding && !isPrivateIpv4(ip)) return null;
+  if (!opts.allowPublicIpEncoding && !isPrivateIpv4(ip)) return null;
 
   const flags = 0x8480 | ((packet.flags ?? 0) & 0x0100); // QR + AA + RA (+RD)
   const type = String(question.type).toUpperCase();
   if (type === "AAAA") {
-    return new Uint8Array(
+    return wireBytes(
       encode({
         id: packet.id,
         type: "response",
@@ -46,7 +53,7 @@ export function localAnswer(config: AgentConfig, query: Uint8Array): Uint8Array 
   }
   if (type !== "A" && type !== "ANY") return null;
 
-  return new Uint8Array(
+  return wireBytes(
     encode({
       id: packet.id,
       type: "response",
@@ -57,12 +64,25 @@ export function localAnswer(config: AgentConfig, query: Uint8Array): Uint8Array 
           name: question.name,
           type: "A",
           class: "IN",
-          ttl: config.localTtl,
+          ttl: opts.localTtl,
           data: ip,
         },
       ],
     } as never),
   );
+}
+
+function wireBytes(encoded: Uint8Array): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(encoded.length);
+  out.set(encoded);
+  return out;
+}
+
+export function parseLocalDomains(raw: string): string[] {
+  return raw
+    .split(/[\n,;]+/)
+    .map((d) => d.trim().toLowerCase().replace(/^\.+|\.+$/g, ""))
+    .filter(Boolean);
 }
 
 export function extractIpv4(name: string, localDomains: readonly string[]): string | null {

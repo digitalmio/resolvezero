@@ -343,6 +343,24 @@ describe("zone overrides", () => {
     expect((packet as any).answers?.[0]?.data).toBe("10.9.9.1"); // 0.0.0.0, user wins
   });
 
+  test("IP-encoded .lan answers locally without upstream", async () => {
+    const mock = mockUpstream({});
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mock.upstream,
+      logQuery: () => {},
+    });
+    const res = await api.request(`/v1/${PROFILE}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("192.168.1.20.lan"),
+    });
+    const packet = decode(Buffer.from(await (res as Response).arrayBuffer()));
+    expect((packet as any).answers?.[0]?.data).toBe("192.168.1.20");
+    expect(mock.calls).not.toContain("192.168.1.20.lan");
+  });
+
   test("zone SET works with per-profile upstream selection (profile upstream passes through)", async () => {
     let requestedUrl: string | undefined;
     const upstream: Upstream = {

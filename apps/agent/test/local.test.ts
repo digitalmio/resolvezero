@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { decode, encode, type Packet } from "dns-packet";
+import { extractIpv4, isPrivateIpv4, localNameAnswer } from "@resolvezero/shared";
 import type { AgentConfig } from "../src/config";
-import { extractIpv4, isPrivateIpv4, localAnswer } from "../src/local";
 
 function config(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
@@ -33,7 +33,11 @@ function query(name: string, type: "A" | "AAAA" = "A"): Uint8Array {
 }
 
 function answer(name: string, type: "A" | "AAAA" = "A", cfg = config()): Packet | undefined {
-  const res = localAnswer(cfg, query(name, type));
+  const res = localNameAnswer(query(name, type), {
+    localDomains: cfg.localDomains,
+    localTtl: cfg.localTtl,
+    allowPublicIpEncoding: cfg.allowPublicIpEncoding,
+  });
   return res ? decode(Buffer.from(res)) : undefined;
 }
 

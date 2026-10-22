@@ -78,7 +78,7 @@ PROFILE_ID=... DOH_TOKEN=... DNS_PORT=5353 pnpm --filter @resolvezero/agent dev
 | `DEVICE_MAP` | no | empty | `ip=label` entries, comma/`;`/newline separated |
 | `HEALTH_PORT` | no | `0` (off) | Localhost health/readiness port |
 | `HEALTH_HOST` | no | `127.0.0.1` | Health listen address |
-| `LOCAL_DOMAINS` | no | `lan` | Comma-separated local suffixes for IP-encoded answers; add `home.arpa` if desired |
+| `LOCAL_DOMAINS` | no | `lan,home.arpa` | Comma-separated local suffixes for IP-encoded answers |
 | `LOCAL_TTL` | no | `60` | TTL for synthetic local answers |
 | `ALLOW_PUBLIC_IP_ENCODING` | no | `0` | Set to `1` to allow public IPs in synthetic names |
 
