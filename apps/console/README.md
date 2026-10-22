@@ -37,8 +37,9 @@ Not implemented yet:
 
 ## Run
 
-The overview reads real Postgres rollups. Set `DATABASE_URL` (and optionally
-`DASHBOARD_PROFILE_ID`) before starting:
+The overview reads real Postgres rollups. In development it automatically
+loads the repo-root `.env`; you can also set `DATABASE_URL` explicitly (and
+optionally `DASHBOARD_PROFILE_ID`) before starting:
 
 ```bash
 DATABASE_URL=postgres://... pnpm --filter @resolvezero/console dev

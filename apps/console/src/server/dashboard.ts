@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createServerFn } from "@tanstack/react-start";
 import { and, asc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
@@ -28,15 +29,27 @@ export interface OverviewData {
   topClients: { clientIp: string; count: number }[];
 }
 
-// Local dev convenience: pnpm runs the app from apps/console, while the
-// repo secrets live in the root .env. Production env vars are untouched.
+// Local dev convenience: pnpm may run from the repo root or apps/console,
+// while the shared secrets live in the repo-root .env. Production env vars
+// are untouched.
 if (!process.env.DATABASE_URL) {
-  const envFile = process.env.DASHBOARD_ENV_FILE ?? resolve(process.cwd(), "../../.env");
-  if (existsSync(envFile)) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    process.env.DASHBOARD_ENV_FILE,
+    resolve(process.cwd(), ".env"),
+    resolve(process.cwd(), "../../.env"),
+    resolve(process.cwd(), "../../../.env"),
+    resolve(here, "../../../../.env"),
+    resolve(here, "../../../../../.env"),
+  ].filter((path): path is string => Boolean(path));
+
+  for (const envFile of candidates) {
+    if (!existsSync(envFile)) continue;
     try {
       process.loadEnvFile(envFile);
+      if (process.env.DATABASE_URL) break;
     } catch {
-      // keep the explicit error from the query if the file is malformed
+      // try the next candidate; a malformed file will surface as a query error
     }
   }
 }
