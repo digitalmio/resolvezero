@@ -6,11 +6,11 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "node --env-file-if-exists=../../.env node_modules/vite/bin/vite.js dev --port 3000",
     "generate-routes": "tsr generate",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "node --env-file-if-exists=../../.env node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
