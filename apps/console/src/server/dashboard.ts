@@ -1,7 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, asc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
-import { profiles, statsHourly, type StatsTopEntry } from "@resolvezero/db/schema";
+import {
+  profileBlocklists,
+  profileRules,
+  profileZones,
+  profiles,
+  statsHourly,
+  type StatsTopEntry,
+} from "@resolvezero/db/schema";
 
 export interface OverviewData {
   profileId: string;
@@ -16,22 +23,89 @@ export interface OverviewData {
   topBlocked: { domain: string; count: number }[];
   topDomains: { domain: string; count: number }[];
   topDevices: { device: string; count: number }[];
+  topClients: { clientIp: string; count: number }[];
 }
 
 const HOUR = 3_600_000;
 
-export const getOverview = createServerFn({ method: "GET" }).handler(async (): Promise<OverviewData> => {
-  const now = new Date();
-  const since = new Date(now.getTime() - 24 * HOUR);
-  const configuredProfile = process.env.DASHBOARD_PROFILE_ID;
+export interface RulesData {
+  profileId: string;
+  profileName: string;
+  rules: { domain: string; action: string; scope: string; source: string; updated: string }[];
+  counts: { block: number; allow: number; zones: number; lists: number };
+}
 
-  const profileRows = await db
+export const getRulesData = createServerFn({ method: "GET" }).handler(async (): Promise<RulesData> => {
+  const profile = await findProfile();
+  const [rules, zones, lists] = await Promise.all([
+    db
+      .select({ domain: profileRules.domain, action: profileRules.action })
+      .from(profileRules)
+      .where(eq(profileRules.profileId, profile.id))
+      .orderBy(asc(profileRules.domain)),
+    db
+      .select({
+        domain: profileZones.domain,
+        recordType: profileZones.recordType,
+        values: profileZones.values,
+      })
+      .from(profileZones)
+      .where(eq(profileZones.profileId, profile.id))
+      .orderBy(asc(profileZones.domain)),
+    db
+      .select({ url: profileBlocklists.url, format: profileBlocklists.format })
+      .from(profileBlocklists)
+      .where(eq(profileBlocklists.profileId, profile.id)),
+  ]);
+
+  const rows = [
+    ...rules.map((r) => ({
+      domain: r.domain,
+      action: r.action,
+      scope: "Custom",
+      source: "Explicit rule",
+      updated: "live",
+    })),
+    ...zones.map((z) => ({
+      domain: z.domain,
+      action: "zone",
+      scope: "Zone record",
+      source: `${z.recordType} · ${z.values.join(", ")}`,
+      updated: "live",
+    })),
+    ...lists.map((l) => ({
+      domain: l.url,
+      action: "list",
+      scope: "Blocklist",
+      source: l.format.toUpperCase(),
+      updated: "live",
+    })),
+  ];
+  const counts = {
+    block: rules.filter((r) => r.action === "block").length,
+    allow: rules.filter((r) => r.action === "allow").length,
+    zones: zones.length,
+    lists: lists.length,
+  };
+  return { profileId: profile.id, profileName: profile.name, rules: rows, counts };
+});
+
+async function findProfile(): Promise<{ id: string; name: string }> {
+  const configuredProfile = process.env.DASHBOARD_PROFILE_ID;
+  const rows = await db
     .select({ id: profiles.id, name: profiles.name })
     .from(profiles)
     .where(configuredProfile ? eq(profiles.id, configuredProfile) : undefined)
     .limit(1);
-  const profile = profileRows[0];
+  const profile = rows[0];
   if (!profile) throw new Error("no profile found");
+  return profile;
+}
+
+export const getOverview = createServerFn({ method: "GET" }).handler(async (): Promise<OverviewData> => {
+  const now = new Date();
+  const since = new Date(now.getTime() - 24 * HOUR);
+  const profile = await findProfile();
 
   const rows = await db
     .select({
@@ -43,6 +117,7 @@ export const getOverview = createServerFn({ method: "GET" }).handler(async (): P
       topDomains: statsHourly.topDomains,
       topBlocked: statsHourly.topBlocked,
       topDevices: statsHourly.topDevices,
+      topClients: statsHourly.topClients,
     })
     .from(statsHourly)
     .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, since)))
@@ -55,6 +130,7 @@ export const getOverview = createServerFn({ method: "GET" }).handler(async (): P
   const domainCounts = new Map<string, number>();
   const blockedCounts = new Map<string, number>();
   const deviceCounts = new Map<string, number>();
+  const clientCounts = new Map<string, number>();
 
   for (const row of rows) {
     totalQueries += row.totalQueries;
@@ -64,6 +140,7 @@ export const getOverview = createServerFn({ method: "GET" }).handler(async (): P
     merge(domainCounts, row.topDomains);
     merge(blockedCounts, row.topBlocked);
     merge(deviceCounts, row.topDevices);
+    merge(clientCounts, row.topClients as StatsTopEntry[]);
   }
 
   const start = Math.floor((now.getTime() - 24 * HOUR) / HOUR) * HOUR;
@@ -95,6 +172,7 @@ export const getOverview = createServerFn({ method: "GET" }).handler(async (): P
     topBlocked: top(blockedCounts, 5).map(([domain, count]) => ({ domain, count })),
     topDomains: top(domainCounts, 5).map(([domain, count]) => ({ domain, count })),
     topDevices: top(deviceCounts, 6).map(([device, count]) => ({ device, count })),
+    topClients: top(clientCounts, 6).map(([clientIp, count]) => ({ clientIp, count })),
   };
 });
 

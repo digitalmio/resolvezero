@@ -1,20 +1,30 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { getOverview } from '../server/dashboard'
 import { Info, Monitor, Plus, Router, Search, Smartphone } from 'lucide-react'
 
 export const Route = createFileRoute('/devices')({ component: Devices })
 
-const dohDevices = [
+const demoDohDevices = [
   { name: 'MacBook Pro', tag: 'macbook', queries: '18.2k', lastSeen: 'now', kind: 'DoH' },
   { name: 'iPhone 16 Pro', tag: 'iphone', queries: '12.6k', lastSeen: '2m ago', kind: 'DoH' },
   { name: 'Work laptop', tag: 'work-laptop', queries: '4.1k', lastSeen: '18m ago', kind: 'DoH' },
 ]
 
-const udpSources = [
+const demoUdpSources = [
   { name: 'Living room router', ip: '82.14.22.8', queries: '9.8k', lastSeen: 'now', kind: 'UDP' },
   { name: 'Unknown device', ip: '82.14.22.8', queries: '2.2k', lastSeen: 'now', kind: 'UDP' },
 ]
 
 function Devices() {
+  const { data } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  const dohDevices = data?.topDevices.length
+    ? data.topDevices.map((d, index) => ({ name: d.device, tag: d.device, queries: String(d.count), lastSeen: 'last 24h', kind: 'DoH', status: index < 4 ? 'online' : 'unknown' }))
+    : demoDohDevices
+  const udpSources = data?.topClients.length
+    ? data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: String(c.count), lastSeen: 'last 24h', kind: 'UDP' }))
+    : demoUdpSources
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">

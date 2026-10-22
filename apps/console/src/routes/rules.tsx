@@ -1,16 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { getRulesData } from '../server/dashboard'
 import { Ban, Check, Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
 
 export const Route = createFileRoute('/rules')({ component: Rules })
 
-const tabs = [
+const demoTabs = [
   { label: 'Block', count: 32 },
   { label: 'Allow', count: 8 },
   { label: 'Zones', count: 2 },
   { label: 'Blocklists', count: 4 },
 ]
 
-const rules = [
+const demoRules = [
   { domain: 'doubleclick.net', action: 'block', scope: 'Blocklist', source: 'KADhosts', updated: '2m ago' },
   { domain: 'googletagmanager.com', action: 'block', scope: 'Blocklist', source: 'AdGuard DNS', updated: '2m ago' },
   { domain: 'analytics.resolvezero.com', action: 'allow', scope: 'Custom', source: 'Explicit rule', updated: '18m ago' },
@@ -20,6 +22,20 @@ const rules = [
 ]
 
 function Rules() {
+  const { data } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
+  const rules = data?.rules.length ? data.rules : demoRules
+  const tabs = data
+    ? [
+        { label: 'Block', count: data.counts.block },
+        { label: 'Allow', count: data.counts.allow },
+        { label: 'Zones', count: data.counts.zones },
+        { label: 'Blocklists', count: data.counts.lists },
+      ]
+    : demoTabs
+  const blockCount = data?.counts.block ?? 32
+  const allowCount = data?.counts.allow ?? 8
+  const zoneCount = data?.counts.zones ?? 2
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -93,15 +109,15 @@ function Rules() {
           </table>
         </div>
         <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-3 text-[11px] text-[var(--muted)]">
-          <span>6 of 42 rules</span>
+          <span>{rules.length} rules</span>
           <span className="font-mono">synced · v59</span>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Summary icon={<Ban size={15} />} label="Block rules" value="32" detail="24 custom · 8 list-driven" />
-        <Summary icon={<Check size={15} />} label="Allow rules" value="8" detail="Allow wins over blocklists" />
-        <Summary icon={<Network size={15} />} label="Zone records" value="2" detail="Local overrides · TTL 300" />
+        <Summary icon={<Ban size={15} />} label="Block rules" value={String(blockCount)} detail="explicit + list-driven" />
+        <Summary icon={<Check size={15} />} label="Allow rules" value={String(allowCount)} detail="Allow wins over blocklists" />
+        <Summary icon={<Network size={15} />} label="Zone records" value={String(zoneCount)} detail="Local overrides" />
       </div>
     </div>
   )
