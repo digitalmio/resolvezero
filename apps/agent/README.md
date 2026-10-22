@@ -27,6 +27,12 @@ The agent is intentionally stateless. Policy, blocklists, logs, and analytics st
 - returns TC and lets the client retry over TCP when a response is too large
 - optional localhost health endpoint
 - no DNS cache by default, so the edge sees every query
+- answers IP-encoded local names locally (`.lan` by default):
+  - `192.168.1.20.lan` → `192.168.1.20`
+  - `app.192.168.1.20.lan` → `192.168.1.20`
+  - `192-168-1-20.lan` → `192.168.1.20`
+  - only private/loopback ranges by default; set `ALLOW_PUBLIC_IP_ENCODING=1` to opt in
+  - `nas.lan` and other non-IP names still go to the edge
 
 Device hostnames are not discovered automatically in this MVP. They can be supplied
 with `DEVICE_MAP`:
@@ -72,6 +78,9 @@ PROFILE_ID=... DOH_TOKEN=... DNS_PORT=5353 pnpm --filter @resolvezero/agent dev
 | `DEVICE_MAP` | no | empty | `ip=label` entries, comma/`;`/newline separated |
 | `HEALTH_PORT` | no | `0` (off) | Localhost health/readiness port |
 | `HEALTH_HOST` | no | `127.0.0.1` | Health listen address |
+| `LOCAL_DOMAINS` | no | `lan` | Comma-separated local suffixes for IP-encoded answers; add `home.arpa` if desired |
+| `LOCAL_TTL` | no | `60` | TTL for synthetic local answers |
+| `ALLOW_PUBLIC_IP_ENCODING` | no | `0` | Set to `1` to allow public IPs in synthetic names |
 
 ## Router setup
 

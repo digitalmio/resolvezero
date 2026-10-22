@@ -5,6 +5,7 @@ import net from "node:net";
 import type { AgentConfig } from "./config";
 import { maxUdpPayload, sameTransactionId, servfailResponse, truncatedResponse } from "./dns";
 import { resolveDoh } from "./doh";
+import { localAnswer } from "./local";
 
 export type Resolver = (query: Uint8Array, sourceIp: string) => Promise<Uint8Array>;
 
@@ -128,6 +129,8 @@ export async function startAgent(
 
   async function handleQuery(wire: Uint8Array, sourceIp: string): Promise<Uint8Array | null> {
     if (wire.length < 12) return null;
+    const local = localAnswer(config, wire);
+    if (local) return local;
     try {
       const response = await resolver(wire, sourceIp);
       if (!sameTransactionId(wire, response)) {

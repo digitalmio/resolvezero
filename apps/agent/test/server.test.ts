@@ -39,6 +39,9 @@ const config: AgentConfig = {
   healthPort: 0,
   healthHost: "127.0.0.1",
   devices: new Map(),
+  localDomains: ["lan"],
+  localTtl: 60,
+  allowPublicIpEncoding: false,
 };
 
 function udpQuery(port: number, wire: Uint8Array): Promise<Uint8Array> {
@@ -102,6 +105,22 @@ describe("agent listeners", () => {
       expect((decode(Buffer.from(tcp)).answers?.[0] as { data?: string }).data).toBe("1.2.3.4");
       expect(seen.length).toBe(2);
       expect(seen[0]).toBeTruthy();
+    } finally {
+      await agent.close();
+    }
+  });
+
+  test("answers IP-encoded local names without calling the edge", async () => {
+    let calls = 0;
+    const agent = await startAgent(config, async () => {
+      calls++;
+      throw new Error("should not be called");
+    });
+    try {
+      const reply = await udpQuery(agent.udpPort, query("192.168.1.20.lan"));
+      const packet = decode(Buffer.from(reply));
+      expect((packet.answers?.[0] as { data?: string } | undefined)?.data).toBe("192.168.1.20");
+      expect(calls).toBe(0);
     } finally {
       await agent.close();
     }
