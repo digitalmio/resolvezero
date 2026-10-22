@@ -43,6 +43,7 @@ const changes = [
 
 function Overview() {
   const { data, isError } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  const isPreview = !data
   const querySeries = data?.series.map((p) => p.total) ?? DEMO_QUERY
   const blockedSeries = data?.series.map((p) => p.blocked) ?? DEMO_BLOCKED
   const topBlocked = data?.topBlocked.length
@@ -72,10 +73,11 @@ function Overview() {
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
           <h1 className="text-[30px] font-semibold tracking-[-0.045em] sm:text-[36px]">Good evening, Maciej.</h1>
-          <p className="mt-2 text-[13px] text-[var(--muted)]">
+          <p className="mt-2 flex items-center gap-2 text-[13px] text-[var(--muted)]">
             {data ? `${data.profileName} · live from Postgres` : 'Your network is quiet. Everything that matters is protected.'}
+            {isPreview ? <span className="rounded-md border border-[#e7c6b8] bg-[#fff4ef] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#a64b22]">Preview</span> : null}
           </p>
-          {isError ? <p className="mt-2 text-[11px] text-[#a64b22]">Live data unavailable — showing the design preview.</p> : null}
+          {isError ? <p className="mt-2 text-[11px] text-[#a64b22]">No live data source — preview values shown. Set DATABASE_URL to load Postgres rollups.</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <button className="rz-button-secondary">View public status</button>

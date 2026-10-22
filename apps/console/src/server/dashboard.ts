@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { createServerFn } from "@tanstack/react-start";
 import { and, asc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
@@ -24,6 +26,19 @@ export interface OverviewData {
   topDomains: { domain: string; count: number }[];
   topDevices: { device: string; count: number }[];
   topClients: { clientIp: string; count: number }[];
+}
+
+// Local dev convenience: pnpm runs the app from apps/console, while the
+// repo secrets live in the root .env. Production env vars are untouched.
+if (!process.env.DATABASE_URL) {
+  const envFile = process.env.DASHBOARD_ENV_FILE ?? resolve(process.cwd(), "../../.env");
+  if (existsSync(envFile)) {
+    try {
+      process.loadEnvFile(envFile);
+    } catch {
+      // keep the explicit error from the query if the file is malformed
+    }
+  }
 }
 
 const HOUR = 3_600_000;
