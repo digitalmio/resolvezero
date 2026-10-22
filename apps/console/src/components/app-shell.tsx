@@ -44,7 +44,7 @@ const secondaryNav: NavItem[] = [
 export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { data } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
-  const deviceCount = data?.activeDevices ?? 0
+  const deviceCount = data ? Math.max(data.activeDevices, data.topClients.length) : 0
   const nav = primaryNav.map((item) =>
     item.label === 'Devices' && deviceCount > 0 ? { ...item, badge: String(deviceCount) } : item,
   )
