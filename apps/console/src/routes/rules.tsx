@@ -8,11 +8,10 @@ import { useState } from 'react'
 export const Route = createFileRoute('/rules')({ component: Rules })
 
 function Rules() {
+  const [activeTab, setActiveTab] = useState<'Block' | 'Allow' | 'Zones' | 'Blocklists'>('Block')
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
   if (isPending) return <PageLoading label="Loading rules…" />
   if (isError || !data) return <PageError title="Could not load rules." onRetry={() => void refetch()} />
-
-  const [activeTab, setActiveTab] = useState<'Block' | 'Allow' | 'Zones' | 'Blocklists'>('Block')
   const rules = data.rules
   const tabs = [
     { label: 'Block', count: data.counts.block },
