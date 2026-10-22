@@ -92,6 +92,19 @@ importers:
         specifier: ^8.0.0
         version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
+  apps/agent:
+    dependencies:
+      dns-packet:
+        specifier: ^5.6.1
+        version: 5.6.1
+    devDependencies:
+      '@types/dns-packet':
+        specifier: ^5.6.5
+        version: 5.6.5
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+
   apps/control:
     dependencies:
       '@hono/node-server':
@@ -187,7 +200,15 @@ importers:
         specifier: ^0.31.11
         version: 0.31.11
 
-  packages/shared: {}
+  packages/shared:
+    dependencies:
+      dns-packet:
+        specifier: ^5.6.1
+        version: 5.6.1
+    devDependencies:
+      '@types/dns-packet':
+        specifier: ^5.6.5
+        version: 5.6.5
 
 packages:
 
