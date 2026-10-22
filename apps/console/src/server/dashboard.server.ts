@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
+  edgeConfigState,
   profileBlocklists,
   profileRules,
   profileSourceIps,
@@ -17,6 +18,8 @@ export interface OverviewData {
   profileId: string;
   profileName: string;
   generatedAt: string;
+  configVersion: number;
+  blocklistVersion: number;
   totalQueries: number;
   blocked: number;
   blockRatio: number;
@@ -59,13 +62,14 @@ const HOUR = 3_600_000;
 export interface RulesData {
   profileId: string;
   profileName: string;
+  configVersion: number;
   rules: { domain: string; action: string; scope: string; source: string; updated: string }[];
   counts: { block: number; allow: number; zones: number; lists: number };
 }
 
 export async function loadRules(): Promise<RulesData> {
   const profile = await findProfile();
-  const [rules, zones, lists] = await Promise.all([
+  const [rules, zones, lists, configRows] = await Promise.all([
     db
       .select({ domain: profileRules.domain, action: profileRules.action })
       .from(profileRules)
@@ -84,6 +88,11 @@ export async function loadRules(): Promise<RulesData> {
       .select({ url: profileBlocklists.url, format: profileBlocklists.format })
       .from(profileBlocklists)
       .where(eq(profileBlocklists.profileId, profile.id)),
+    db
+      .select({ configVersion: edgeConfigState.configVersion })
+      .from(edgeConfigState)
+      .where(eq(edgeConfigState.id, true))
+      .limit(1),
   ]);
 
   const rows = [
@@ -115,7 +124,7 @@ export async function loadRules(): Promise<RulesData> {
     zones: zones.length,
     lists: lists.length,
   };
-  return { profileId: profile.id, profileName: profile.name, rules: rows, counts };
+  return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };
 }
 
 async function findProfile(): Promise<{ id: string; name: string }> {
@@ -160,7 +169,8 @@ export async function loadOverview(): Promise<OverviewData> {
   const since = new Date(now.getTime() - 24 * HOUR);
   const profile = await findProfile();
 
-  const rows = await db
+  const [rows, configRows] = await Promise.all([
+    db
     .select({
       hour: statsHourly.hour,
       totalQueries: statsHourly.totalQueries,
@@ -174,7 +184,13 @@ export async function loadOverview(): Promise<OverviewData> {
     })
     .from(statsHourly)
     .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, since)))
-    .orderBy(asc(statsHourly.hour));
+    .orderBy(asc(statsHourly.hour)),
+    db
+      .select({ configVersion: edgeConfigState.configVersion, blocklistVersion: edgeConfigState.blocklistVersion })
+      .from(edgeConfigState)
+      .where(eq(edgeConfigState.id, true))
+      .limit(1),
+  ]);
 
   let totalQueries = 0;
   let blocked = 0;
@@ -216,6 +232,8 @@ export async function loadOverview(): Promise<OverviewData> {
     profileId: profile.id,
     profileName: profile.name,
     generatedAt: new Date().toISOString(),
+    configVersion: configRows[0]?.configVersion ?? 0,
+    blocklistVersion: configRows[0]?.blocklistVersion ?? 0,
     totalQueries,
     blocked,
     blockRatio: totalQueries > 0 ? Number((blocked / totalQueries).toFixed(4)) : 0,

@@ -103,7 +103,7 @@ function Overview() {
           <div className="relative mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--line)] pt-4 text-[11px] text-[var(--muted)]">
             <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-[#2e9b55]" /> UDP + TCP 53 healthy</span>
             <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-[#2e9b55]" /> DoH healthy</span>
-            <span className="flex items-center gap-2"><CircleCheck size={12} /> Config v59</span>
+            <span className="flex items-center gap-2"><CircleCheck size={12} /> Config v{data.configVersion}</span>
           </div>
         </div>
 
@@ -236,7 +236,7 @@ function Overview() {
                 <span className="relative mt-1.5 size-[11px] shrink-0 rounded-full border-2 border-[var(--paper)] bg-[var(--ink)] ring-1 ring-[var(--line)]" />
                 <div className="min-w-0">
                   <p className="text-[12px] font-medium">{change.title}</p>
-                  <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--muted)]">{change.detail}</p>
+                  <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--muted)]">{change.title === 'Config rolled out' ? `fra + lhr · version ${data.configVersion}` : change.detail}</p>
                   <p className="mt-1 text-[10px] text-[var(--muted)]">{change.time}</p>
                 </div>
               </div>

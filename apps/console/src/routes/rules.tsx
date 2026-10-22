@@ -105,7 +105,7 @@ function Rules() {
         </div>
         <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-3 text-[11px] text-[var(--muted)]">
           <span>{visibleRules.length} {activeTab.toLowerCase()}</span>
-          <span className="font-mono">synced · v59</span>
+          <span className="font-mono">synced · v{data.configVersion}</span>
         </div>
       </div>
     </div>
