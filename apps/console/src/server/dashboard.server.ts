@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
   profileBlocklists,
@@ -119,12 +119,37 @@ export async function loadRules(): Promise<RulesData> {
 
 async function findProfile(): Promise<{ id: string; name: string }> {
   const configuredProfile = process.env.DASHBOARD_PROFILE_ID;
-  const rows = await db
+  if (configuredProfile) {
+    const configured = await db
+      .select({ id: profiles.id, name: profiles.name })
+      .from(profiles)
+      .where(eq(profiles.id, configuredProfile))
+      .limit(1);
+    if (configured[0]) return configured[0];
+  }
+
+  // Prefer the profile with the most recent rollup. Picking an arbitrary
+  // "first profile" makes the dashboard look empty when a different profile
+  // is the one actually sending queries.
+  const latest = await db
+    .select({ profileId: statsHourly.profileId })
+    .from(statsHourly)
+    .orderBy(desc(statsHourly.hour))
+    .limit(1);
+  if (latest[0]) {
+    const active = await db
+      .select({ id: profiles.id, name: profiles.name })
+      .from(profiles)
+      .where(eq(profiles.id, latest[0].profileId))
+      .limit(1);
+    if (active[0]) return active[0];
+  }
+
+  const fallback = await db
     .select({ id: profiles.id, name: profiles.name })
     .from(profiles)
-    .where(configuredProfile ? eq(profiles.id, configuredProfile) : undefined)
     .limit(1);
-  const profile = rows[0];
+  const profile = fallback[0];
   if (!profile) throw new Error("no profile found");
   return profile;
 }
