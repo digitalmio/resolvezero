@@ -5,11 +5,14 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p apps/edge --noEmit && tsc -p apps/control --noEmit && tsc -p packages/db --noEmit",
+    "typecheck": "tsc -p apps/edge --noEmit && tsc -p apps/control --noEmit && tsc -p apps/agent --noEmit && tsc -p packages/db --noEmit",
     "db:generate": "pnpm --filter '@resolvezero/db' db:generate",
     "db:migrate": "pnpm --filter '@resolvezero/db' db:migrate",
     "db:push": "pnpm --filter '@resolvezero/db' db:push",
-    "db:studio": "pnpm --filter '@resolvezero/db' db:studio"
+    "db:studio": "pnpm --filter '@resolvezero/db' db:studio",
+    "typecheck:agent": "pnpm --filter @resolvezero/agent typecheck",
+    "test:agent": "pnpm --filter @resolvezero/agent test",
+    "build:agent": "pnpm --filter @resolvezero/agent build"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
