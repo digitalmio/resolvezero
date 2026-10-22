@@ -1,4 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { getOverview } from '../server/dashboard'
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -15,10 +17,10 @@ import {
 
 export const Route = createFileRoute('/')({ component: Overview })
 
-const querySeries = [38, 44, 41, 52, 49, 57, 54, 63, 58, 66, 61, 69, 65, 74, 70, 77, 72, 80, 75, 83, 79, 86, 82, 88]
-const blockedSeries = [10, 12, 9, 15, 13, 17, 14, 19, 16, 20, 18, 22, 19, 24, 21, 26, 22, 27, 24, 29, 26, 30, 27, 32]
+const DEMO_QUERY = [38, 44, 41, 52, 49, 57, 54, 63, 58, 66, 61, 69, 65, 74, 70, 77, 72, 80, 75, 83, 79, 86, 82, 88]
+const DEMO_BLOCKED = [10, 12, 9, 15, 13, 17, 14, 19, 16, 20, 18, 22, 19, 24, 21, 26, 22, 27, 24, 29, 26, 30, 27, 32]
 
-const topBlocked = [
+const demoTopBlocked = [
   { domain: 'doubleclick.net', count: '2,418', share: 82 },
   { domain: 'googletagmanager.com', count: '1,204', share: 61 },
   { domain: 'facebook.net', count: '978', share: 49 },
@@ -26,7 +28,7 @@ const topBlocked = [
   { domain: 'adservice.google.com', count: '511', share: 26 },
 ]
 
-const devices = [
+const demoDevices = [
   { name: 'MacBook Pro', detail: 'DoH · macbook', queries: '18.2k', status: 'online' },
   { name: 'iPhone 16 Pro', detail: 'DoH · iphone', queries: '12.6k', status: 'online' },
   { name: 'Living room router', detail: 'UDP · 82.14.22.8', queries: '9.8k', status: 'online' },
@@ -40,16 +42,40 @@ const changes = [
 ]
 
 function Overview() {
+  const { data, isError } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  const querySeries = data?.series.map((p) => p.total) ?? DEMO_QUERY
+  const blockedSeries = data?.series.map((p) => p.blocked) ?? DEMO_BLOCKED
+  const topBlocked = data?.topBlocked.length
+    ? (() => {
+        const max = Math.max(...data.topBlocked.map((d) => d.count), 1)
+        return data.topBlocked.map((d) => ({ domain: d.domain, count: formatNumber(d.count), share: Math.round((d.count / max) * 100) }))
+      })()
+    : demoTopBlocked
+  const devices = data?.topDevices.length
+    ? data.topDevices.map((d, index) => ({
+        name: d.device,
+        detail: 'DoH device tag',
+        queries: formatNumber(d.count),
+        status: index < 4 ? 'online' : 'unknown',
+      }))
+    : demoDevices
+  const totalQueries = data?.totalQueries ?? 42_861
+  const blocked = data?.blocked ?? 7_804
+  const activeDevices = data?.activeDevices ?? 14
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
             <span className="size-1.5 rounded-full bg-[var(--accent)]" />
-            Tuesday, 21 October
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
           <h1 className="text-[30px] font-semibold tracking-[-0.045em] sm:text-[36px]">Good evening, Maciej.</h1>
-          <p className="mt-2 text-[13px] text-[var(--muted)]">Your network is quiet. Everything that matters is protected.</p>
+          <p className="mt-2 text-[13px] text-[var(--muted)]">
+            {data ? `${data.profileName} · live from Postgres` : 'Your network is quiet. Everything that matters is protected.'}
+          </p>
+          {isError ? <p className="mt-2 text-[11px] text-[#a64b22]">Live data unavailable — showing the design preview.</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <button className="rz-button-secondary">View public status</button>
@@ -121,10 +147,10 @@ function Overview() {
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi icon={<Globe2 size={16} />} label="Queries today" value="42,861" delta="+12.4%" positive />
-        <Kpi icon={<Ban size={16} />} label="Blocked" value="7,804" delta="18.2% of total" />
-        <Kpi icon={<Clock3 size={16} />} label="p95 latency" value="21 ms" delta="-3 ms" positive />
-        <Kpi icon={<Monitor size={16} />} label="Active devices" value="14" delta="2 new this week" />
+        <Kpi icon={<Globe2 size={16} />} label="Queries today" value={formatNumber(totalQueries)} delta={data ? 'last 24h' : '+12.4%'} positive />
+        <Kpi icon={<Ban size={16} />} label="Blocked" value={formatNumber(blocked)} delta={`${((data?.blockRatio ?? 0.182) * 100).toFixed(1)}% of total`} />
+        <Kpi icon={<Clock3 size={16} />} label="Avg upstream" value={data?.avgRttMs != null ? `${data.avgRttMs} ms` : '21 ms'} delta="forwarded queries" positive />
+        <Kpi icon={<Monitor size={16} />} label="Active devices" value={String(activeDevices)} delta={data ? 'DoH tags in window' : '2 new this week'} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
@@ -144,7 +170,7 @@ function Overview() {
             <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--ink)]" /> Forwarded</span>
             <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--accent)]" /> Blocked</span>
           </div>
-          <QueryChart />
+          <QueryChart querySeries={querySeries} blockedSeries={blockedSeries} />
           <div className="mt-3 flex justify-between font-mono text-[10px] text-[var(--muted)]">
             <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
           </div>
@@ -254,12 +280,16 @@ function Kpi({ icon, label, value, delta, positive = false }: { icon: React.Reac
   )
 }
 
-function QueryChart() {
+function formatNumber(n: number): string {
+  return new Intl.NumberFormat('en-GB').format(n)
+}
+
+function QueryChart({ querySeries, blockedSeries }: { querySeries: number[]; blockedSeries: number[] }) {
   const width = 760
   const height = 220
   const padX = 4
   const padY = 14
-  const max = Math.max(...querySeries)
+  const max = Math.max(...querySeries, 1)
   const toPoints = (values: number[]) =>
     values.map((value, index) => {
       const x = padX + (index / (values.length - 1)) * (width - padX * 2)

@@ -25,21 +25,25 @@ Implemented:
 - Route placeholders for Blocklists, Logs, Analytics, Settings
 - Responsive layout foundation
 - TanStack Query provider
+- Server-side `getOverview` querying Postgres `stats_hourly` (with a design-preview fallback)
 
 Not implemented yet:
 
 - better-auth / login
 - oRPC router
 - public API
-- real data
 - favicon/app icon variants
 
 ## Run
 
+The overview reads real Postgres rollups. Set `DATABASE_URL` (and optionally
+`DASHBOARD_PROFILE_ID`) before starting:
+
 ```bash
-pnpm install
-pnpm --filter @resolvezero/console dev
+DATABASE_URL=postgres://... pnpm --filter @resolvezero/console dev
 ```
+
+Without a database, the UI falls back to the design-preview data and shows a warning.
 
 Build:
 
@@ -65,5 +69,5 @@ pnpm --filter @resolvezero/console typecheck
 1. Wire better-auth into TanStack Start.
 2. Add oRPC v1 contracts + internal `/rpc` endpoint.
 3. Add public `/v1` OpenAPI surface and API keys.
-4. Replace static data with Postgres rollups and edge stats/logs.
-5. Build the Rules, Devices, and Logs screens for real.
+4. Replace the remaining static Rules/Devices/Logs data with real edge/DB queries.
+5. Add authentication before exposing server functions publicly.
