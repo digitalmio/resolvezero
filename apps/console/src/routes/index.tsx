@@ -46,13 +46,13 @@ function Overview() {
   const isPreview = !data
   const querySeries = data?.series.map((p) => p.total) ?? DEMO_QUERY
   const blockedSeries = data?.series.map((p) => p.blocked) ?? DEMO_BLOCKED
-  const topBlocked = data?.topBlocked.length
+  const topBlocked = data
     ? (() => {
         const max = Math.max(...data.topBlocked.map((d) => d.count), 1)
         return data.topBlocked.map((d) => ({ domain: d.domain, count: formatNumber(d.count), share: Math.round((d.count / max) * 100) }))
       })()
     : demoTopBlocked
-  const devices = data?.topDevices.length
+  const devices = data
     ? data.topDevices.map((d, index) => ({
         name: d.device,
         detail: 'DoH device tag',
@@ -63,6 +63,11 @@ function Overview() {
   const totalQueries = data?.totalQueries ?? 42_861
   const blocked = data?.blocked ?? 7_804
   const activeDevices = data?.activeDevices ?? 14
+  const forwarded = Math.max(totalQueries - blocked, 0)
+  const qps = data ? totalQueries / 86_400 : 1_284
+  const qpsLabel = data ? (qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)) : formatNumber(1_284)
+  const forwardedPct = totalQueries > 0 ? Math.round((forwarded / totalQueries) * 100) : 0
+  const blockedPct = totalQueries > 0 ? Math.round((blocked / totalQueries) * 100) : 0
 
   return (
     <div className="space-y-6">
@@ -125,7 +130,7 @@ function Overview() {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Live traffic</p>
-              <p className="mt-2 font-mono text-[34px] font-medium tracking-[-0.06em]">1,284<span className="ml-2 font-sans text-[12px] tracking-normal text-[var(--muted)]">qps</span></p>
+              <p className="mt-2 font-mono text-[34px] font-medium tracking-[-0.06em]">{qpsLabel}<span className="ml-2 font-sans text-[12px] tracking-normal text-[var(--muted)]">qps avg</span></p>
             </div>
             <span className="flex items-center gap-1.5 rounded-full bg-[#edf8f0] px-2.5 py-1 text-[11px] font-medium text-[#247440]">
               <ArrowUpRight size={12} /> 8.4%
@@ -133,17 +138,17 @@ function Overview() {
           </div>
           <div className="mt-6 space-y-4">
             <div>
-              <div className="mb-2 flex justify-between text-[11px] text-[var(--muted)]"><span>Forwarded</span><span className="font-mono text-[var(--ink)]">1,049</span></div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--paper-2)]"><div className="h-full w-[82%] rounded-full bg-[var(--ink)]" /></div>
+              <div className="mb-2 flex justify-between text-[11px] text-[var(--muted)]"><span>Forwarded</span><span className="font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span></div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--paper-2)]"><div className="h-full rounded-full bg-[var(--ink)]" style={{ width: `${forwardedPct}%` }} /></div>
             </div>
             <div>
-              <div className="mb-2 flex justify-between text-[11px] text-[var(--muted)]"><span>Blocked</span><span className="font-mono text-[var(--ink)]">235</span></div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--paper-2)]"><div className="h-full w-[18%] rounded-full bg-[var(--accent)]" /></div>
+              <div className="mb-2 flex justify-between text-[11px] text-[var(--muted)]"><span>Blocked</span><span className="font-mono text-[var(--ink)]">{formatNumber(blocked)}</span></div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--paper-2)]"><div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${blockedPct}%` }} /></div>
             </div>
           </div>
           <div className="mt-6 flex items-center gap-2 border-t border-[var(--line)] pt-4 text-[11px] text-[var(--muted)]">
             <Zap size={12} className="text-[var(--accent)]" />
-            Cache hit rate <span className="font-mono text-[var(--ink)]">98.6%</span>
+            Window <span className="font-mono text-[var(--ink)]">{isPreview ? 'preview' : 'last 24h'}</span>
           </div>
         </div>
       </section>
