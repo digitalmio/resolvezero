@@ -1,40 +1,26 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { getRulesData } from '../server/dashboard'
+import { PageError, PageLoading } from '../components/data-state'
 import { Ban, Check, Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
 
 export const Route = createFileRoute('/rules')({ component: Rules })
 
-const demoTabs = [
-  { label: 'Block', count: 32 },
-  { label: 'Allow', count: 8 },
-  { label: 'Zones', count: 2 },
-  { label: 'Blocklists', count: 4 },
-]
-
-const demoRules = [
-  { domain: 'doubleclick.net', action: 'block', scope: 'Blocklist', source: 'KADhosts', updated: '2m ago' },
-  { domain: 'googletagmanager.com', action: 'block', scope: 'Blocklist', source: 'AdGuard DNS', updated: '2m ago' },
-  { domain: 'analytics.resolvezero.com', action: 'allow', scope: 'Custom', source: 'Explicit rule', updated: '18m ago' },
-  { domain: 'nas.lan', action: 'zone', scope: 'Zone record', source: 'A · 192.168.1.24', updated: '1h ago' },
-  { domain: 'tracking.example.net', action: 'block', scope: 'Custom', source: 'Explicit rule', updated: '3h ago' },
-  { domain: 'printer.home', action: 'zone', scope: 'Zone record', source: 'A · 192.168.1.40', updated: '1d ago' },
-]
-
 function Rules() {
-  const { data } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
-  const rules = data?.rules.length ? data.rules : demoRules
-  const tabs = data
-    ? [
-        { label: 'Block', count: data.counts.block },
-        { label: 'Allow', count: data.counts.allow },
-        { label: 'Zones', count: data.counts.zones },
-        { label: 'Blocklists', count: data.counts.lists },
-      ]
-    : demoTabs
-  const blockCount = data?.counts.block ?? 32
-  const allowCount = data?.counts.allow ?? 8
-  const zoneCount = data?.counts.zones ?? 2
+  const { data, isPending, isError, refetch } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
+  if (isPending) return <PageLoading label="Loading rules…" />
+  if (isError || !data) return <PageError title="Could not load rules." onRetry={() => void refetch()} />
+
+  const rules = data.rules
+  const tabs = [
+    { label: 'Block', count: data.counts.block },
+    { label: 'Allow', count: data.counts.allow },
+    { label: 'Zones', count: data.counts.zones },
+    { label: 'Blocklists', count: data.counts.lists },
+  ]
+  const blockCount = data.counts.block
+  const allowCount = data.counts.allow
+  const zoneCount = data.counts.zones
 
   return (
     <div className="space-y-6">
@@ -95,6 +81,7 @@ function Rules() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--line)]">
+              {rules.length === 0 ? <tr><td colSpan={6} className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No rules yet.</td></tr> : null}
               {rules.map((rule) => (
                 <tr key={`${rule.domain}-${rule.action}`} className="group hover:bg-white/60">
                   <td className="px-5 py-3.5 font-mono text-[12px]">{rule.domain}</td>

@@ -22,7 +22,10 @@ Implemented:
 - Overview screen with status hero, live traffic, KPIs, query chart, top blocked domains, devices, recent changes
 - Rules screen backed by Postgres rules/zones/blocklists, with action tabs and summary cards
 - Devices screen backed by stats rollups: DoH tags and UDP source-IP counts
-- Route placeholders for Blocklists, Logs, Analytics, Settings
+- Blocklists screen backed by `profile_blocklists`
+- Analytics screen backed by 24h/7d/30d `stats_hourly` rollups
+- Logs screen backed by the edge log archive (latest 100 entries)
+- Settings screen backed by profile, upstream, linked IPs, and capacity counts
 - Responsive layout foundation
 - TanStack Query provider
 - Server-side `getOverview` querying Postgres `stats_hourly`

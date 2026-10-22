@@ -1,29 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { getOverview } from '../server/dashboard'
+import { PageError, PageLoading } from '../components/data-state'
 import { Info, Monitor, Plus, Router, Search, Smartphone } from 'lucide-react'
 
 export const Route = createFileRoute('/devices')({ component: Devices })
 
-const demoDohDevices = [
-  { name: 'MacBook Pro', tag: 'macbook', queries: '18.2k', lastSeen: 'now', kind: 'DoH' },
-  { name: 'iPhone 16 Pro', tag: 'iphone', queries: '12.6k', lastSeen: '2m ago', kind: 'DoH' },
-  { name: 'Work laptop', tag: 'work-laptop', queries: '4.1k', lastSeen: '18m ago', kind: 'DoH' },
-]
-
-const demoUdpSources = [
-  { name: 'Living room router', ip: '82.14.22.8', queries: '9.8k', lastSeen: 'now', kind: 'UDP' },
-  { name: 'Unknown device', ip: '82.14.22.8', queries: '2.2k', lastSeen: 'now', kind: 'UDP' },
-]
-
 function Devices() {
-  const { data } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
-  const dohDevices = data?.topDevices.length
-    ? data.topDevices.map((d, index) => ({ name: d.device, tag: d.device, queries: String(d.count), lastSeen: 'last 24h', kind: 'DoH', status: index < 4 ? 'online' : 'unknown' }))
-    : demoDohDevices
-  const udpSources = data?.topClients.length
-    ? data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: String(c.count), lastSeen: 'last 24h', kind: 'UDP' }))
-    : demoUdpSources
+  const { data, isPending, isError, refetch } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  if (isPending) return <PageLoading label="Loading devices…" />
+  if (isError || !data) return <PageError title="Could not load devices." onRetry={() => void refetch()} />
+
+  const dohDevices = data.topDevices.map((d, index) => ({ name: d.device, tag: d.device, queries: String(d.count), lastSeen: 'last 24h', kind: 'DoH', status: index < 4 ? 'online' : 'unknown' }))
+  const udpSources = data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: String(c.count), lastSeen: 'last 24h', kind: 'UDP' }))
 
   return (
     <div className="space-y-6">
@@ -53,9 +42,10 @@ function Devices() {
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">DoH devices</h2>
               <p className="mt-1 text-[12px] text-[var(--muted)]">Identified by device tag in the DoH URL</p>
             </div>
-            <span className="rounded-full bg-[#edf8f0] px-2.5 py-1 text-[10px] font-medium text-[#247440]">3 active</span>
+            <span className="rounded-full bg-[#edf8f0] px-2.5 py-1 text-[10px] font-medium text-[#247440]">{dohDevices.length} active</span>
           </div>
           <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+            {dohDevices.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No DoH device tags in the last 24h.</p> : null}
             {dohDevices.map((device) => (
               <div key={device.tag} className="flex items-center gap-3 px-5 py-4">
                 <span className="flex size-9 items-center justify-center rounded-xl bg-[var(--paper-2)] text-[var(--muted)]">
@@ -84,6 +74,7 @@ function Devices() {
             <Router size={17} className="text-[var(--muted)]" />
           </div>
           <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+            {udpSources.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No UDP sources in the last 24h.</p> : null}
             {udpSources.map((source) => (
               <div key={source.name} className="flex items-center gap-3 px-5 py-4">
                 <span className="flex size-9 items-center justify-center rounded-xl bg-[var(--paper-2)] text-[var(--muted)]"><Router size={16} /></span>
@@ -108,12 +99,12 @@ function Devices() {
             <Search size={14} />
             <span>Search devices or source IPs</span>
           </div>
-          <span className="text-[11px] text-[var(--muted)]">14 devices · 2 regions</span>
+          <span className="text-[11px] text-[var(--muted)]">{dohDevices.length + udpSources.length} devices/sources · last 24h</span>
         </div>
         <div className="grid gap-px bg-[var(--line)] sm:grid-cols-3">
-          <DeviceStat label="DoH devices" value="11" detail="Attributed" />
-          <DeviceStat label="UDP sources" value="3" detail="IP-only" />
-          <DeviceStat label="Queries today" value="42.8k" detail="Across all devices" />
+          <DeviceStat label="DoH devices" value={String(dohDevices.length)} detail="Attributed" />
+          <DeviceStat label="UDP sources" value={String(udpSources.length)} detail="IP-only" />
+          <DeviceStat label="Queries today" value={new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(data.totalQueries)} detail="Across all devices" />
         </div>
       </div>
     </div>

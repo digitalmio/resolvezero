@@ -6,6 +6,7 @@ import { db } from "@resolvezero/db/client";
 import {
   profileBlocklists,
   profileRules,
+  profileSourceIps,
   profileZones,
   profiles,
   statsHourly,
@@ -237,4 +238,222 @@ function merge(map: Map<string, number>, entries: StatsTopEntry[] | null): void 
 
 function top(map: Map<string, number>, limit: number): [string, number][] {
   return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
+}
+
+export interface BlocklistsData {
+  profileId: string;
+  profileName: string;
+  lists: {
+    id: string;
+    url: string;
+    format: string;
+    enabled: boolean;
+    entries: number;
+    lastSyncedAt: string | null;
+    lastStatus: string | null;
+  }[];
+}
+
+export async function loadBlocklists(): Promise<BlocklistsData> {
+  const profile = await findProfile();
+  const lists = await db
+    .select({
+      id: profileBlocklists.id,
+      url: profileBlocklists.url,
+      format: profileBlocklists.format,
+      enabled: profileBlocklists.enabled,
+      entries: profileBlocklists.entryCount,
+      lastSyncedAt: profileBlocklists.lastSyncedAt,
+      lastStatus: profileBlocklists.lastStatus,
+    })
+    .from(profileBlocklists)
+    .where(eq(profileBlocklists.profileId, profile.id))
+    .orderBy(asc(profileBlocklists.url));
+
+  return {
+    profileId: profile.id,
+    profileName: profile.name,
+    lists: lists.map((list) => ({
+      ...list,
+      lastSyncedAt: list.lastSyncedAt ? list.lastSyncedAt.toISOString() : null,
+    })),
+  };
+}
+
+export interface AnalyticsData {
+  profileId: string;
+  profileName: string;
+  total30d: number;
+  blocked30d: number;
+  series: {
+    "24h": { label: string; total: number; blocked: number }[];
+    "7d": { label: string; total: number; blocked: number }[];
+    "30d": { label: string; total: number; blocked: number }[];
+  };
+  topBlocked: { domain: string; count: number }[];
+  topDomains: { domain: string; count: number }[];
+}
+
+export async function loadAnalytics(): Promise<AnalyticsData> {
+  const profile = await findProfile();
+  const now = new Date();
+  const since = new Date(now.getTime() - 30 * 24 * HOUR);
+  const rows = await db
+    .select({
+      hour: statsHourly.hour,
+      total: statsHourly.totalQueries,
+      blocked: statsHourly.blocked,
+      topDomains: statsHourly.topDomains,
+      topBlocked: statsHourly.topBlocked,
+    })
+    .from(statsHourly)
+    .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, since)))
+    .orderBy(asc(statsHourly.hour));
+
+  const dayMap = new Map<string, { total: number; blocked: number }>();
+  const hourMap = new Map<number, { total: number; blocked: number }>();
+  const domains = new Map<string, number>();
+  const blockedDomains = new Map<string, number>();
+  let total30d = 0;
+  let blocked30d = 0;
+
+  for (const row of rows) {
+    total30d += row.total;
+    blocked30d += row.blocked;
+    merge(domains, row.topDomains);
+    merge(blockedDomains, row.topBlocked);
+    const day = row.hour.toISOString().slice(0, 10);
+    const d = dayMap.get(day) ?? { total: 0, blocked: 0 };
+    d.total += row.total;
+    d.blocked += row.blocked;
+    dayMap.set(day, d);
+    const h = Math.floor(row.hour.getTime() / HOUR) * HOUR;
+    const hv = hourMap.get(h) ?? { total: 0, blocked: 0 };
+    hv.total += row.total;
+    hv.blocked += row.blocked;
+    hourMap.set(h, hv);
+  }
+
+  const hourSeries: AnalyticsData["series"]["24h"] = [];
+  const hourStart = Math.floor((now.getTime() - 24 * HOUR) / HOUR) * HOUR;
+  for (let t = hourStart; t <= Math.floor(now.getTime() / HOUR) * HOUR; t += HOUR) {
+    const v = hourMap.get(t) ?? { total: 0, blocked: 0 };
+    hourSeries.push({ label: new Date(t).toISOString().slice(11, 16), ...v });
+  }
+
+  const days = (count: number) => {
+    const out: AnalyticsData["series"]["7d"] = [];
+    for (let i = count - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(d.getUTCDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      out.push({ label: key.slice(5), ...(dayMap.get(key) ?? { total: 0, blocked: 0 }) });
+    }
+    return out;
+  };
+
+  return {
+    profileId: profile.id,
+    profileName: profile.name,
+    total30d,
+    blocked30d,
+    series: { "24h": hourSeries, "7d": days(7), "30d": days(30) },
+    topBlocked: top(blockedDomains, 8).map(([domain, count]) => ({ domain, count })),
+    topDomains: top(domains, 8).map(([domain, count]) => ({ domain, count })),
+  };
+}
+
+export interface SettingsData {
+  profileId: string;
+  profileName: string;
+  hasDohToken: boolean;
+  upstream: string | null;
+  upstreamUrl: string | null;
+  logQueries: boolean;
+  logRetentionDays: number;
+  createdAt: string;
+  sourceIps: string[];
+  counts: { rules: number; zones: number; lists: number };
+}
+
+export async function loadSettings(): Promise<SettingsData> {
+  const profile = await findProfile();
+  const [full, sourceIps, rules, zones, lists] = await Promise.all([
+    db
+      .select({
+        dohToken: profiles.dohToken,
+        upstream: profiles.upstream,
+        upstreamUrl: profiles.upstreamUrl,
+        logQueries: profiles.logQueries,
+        logRetentionDays: profiles.logRetentionDays,
+        createdAt: profiles.createdAt,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, profile.id))
+      .limit(1),
+    db.select({ ip: profileSourceIps.ipAddress }).from(profileSourceIps).where(eq(profileSourceIps.profileId, profile.id)),
+    db.select({ domain: profileRules.domain }).from(profileRules).where(eq(profileRules.profileId, profile.id)),
+    db.select({ domain: profileZones.domain }).from(profileZones).where(eq(profileZones.profileId, profile.id)),
+    db.select({ id: profileBlocklists.id }).from(profileBlocklists).where(eq(profileBlocklists.profileId, profile.id)),
+  ]);
+  const p = full[0];
+  if (!p) throw new Error("profile disappeared");
+  return {
+    profileId: profile.id,
+    profileName: profile.name,
+    hasDohToken: Boolean(p.dohToken),
+    upstream: p.upstream,
+    upstreamUrl: p.upstreamUrl,
+    logQueries: p.logQueries,
+    logRetentionDays: p.logRetentionDays,
+    createdAt: p.createdAt.toISOString(),
+    sourceIps: sourceIps.map((row) => row.ip),
+    counts: { rules: rules.length, zones: zones.length, lists: lists.length },
+  };
+}
+
+export interface LogEntry {
+  time: string;
+  domain: string;
+  action: string;
+  clientIp: string | null;
+  rttMs: number | null;
+}
+
+export async function loadLogs(): Promise<{ profileId: string; profileName: string; entries: LogEntry[] }> {
+  const profile = await findProfile();
+  const token = await db
+    .select({ token: profiles.dohToken })
+    .from(profiles)
+    .where(eq(profiles.id, profile.id))
+    .limit(1)
+    .then((rows) => rows[0]?.token);
+  if (!token) throw new Error("profile has no DoH token; cannot read logs");
+
+  const edge = (process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev").replace(/\/+$/, "");
+  const res = await fetch(`${edge}/v1/${encodeURIComponent(profile.id)}/logs?limit=100&format=jsonl`, {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`edge logs returned HTTP ${res.status}`);
+  const text = await res.text();
+  const entries: LogEntry[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      if (row.warning) continue;
+      entries.push({
+        time: String(row.time ?? ""),
+        domain: String(row.domain ?? ""),
+        action: String(row.action ?? ""),
+        clientIp: row.clientIp == null ? null : String(row.clientIp),
+        rttMs: row.rttMs == null ? null : Number(row.rttMs),
+      });
+    } catch {
+      // ignore malformed/archive warning lines
+    }
+  }
+  return { profileId: profile.id, profileName: profile.name, entries };
 }

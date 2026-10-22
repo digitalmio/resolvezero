@@ -11,3 +11,23 @@ export const getRulesData = createServerFn({ method: "GET" }).handler(async () =
   const { loadRules } = await import("./dashboard.server");
   return loadRules();
 });
+
+export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async () => {
+  const { loadBlocklists } = await import("./dashboard.server");
+  return loadBlocklists();
+});
+
+export const getAnalyticsData = createServerFn({ method: "GET" }).handler(async () => {
+  const { loadAnalytics } = await import("./dashboard.server");
+  return loadAnalytics();
+});
+
+export const getSettingsData = createServerFn({ method: "GET" }).handler(async () => {
+  const { loadSettings } = await import("./dashboard.server");
+  return loadSettings();
+});
+
+export const getLogsData = createServerFn({ method: "GET" }).handler(async () => {
+  const { loadLogs } = await import("./dashboard.server");
+  return loadLogs();
+});
