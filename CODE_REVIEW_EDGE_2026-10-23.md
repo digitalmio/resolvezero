@@ -14,6 +14,7 @@ Implemented on `control-v2`:
 - **§2 TCP 53:** 64 KB receive-buffer cap, zero-length frame closes the socket, 30s idle timeout, 512-connection cap, and write-backpressure guard. Configurable via `TCP_MAX_BUFFER_BYTES`, `TCP_IDLE_TIMEOUT_MS`, `TCP_MAX_CONNECTIONS`.
 - **§3 token-free profiles:** hosted edge exits at boot if any profile has `dohToken = null`, unless `ALLOW_TOKENLESS_PROFILES=1` is explicitly set.
 - **§4 bounded reads:** blocklist and upstream bodies are streamed into memory with a hard cap; DoH POST bodies are also bounded before allocation.
+- **§6 SSRF TOCTOU:** list/upstream fetches now resolve once, validate the address, and connect to the pinned IP through a Node http/https transport while preserving TLS SNI and Host. Redirects are revalidated and repinned. No global `fetch()` re-resolution on the request path.
 - **§5 device amplification:** hard cap of 200 device slugs per profile; new slugs are ignored after the cap rather than evicting old rows.
 - **§7 readiness leakage:** `/readyz` now exposes `failedBlocklists` as a count and `configPollError`/`blocklistError` as booleans. Smoke script updated.
 - **§8 log export:** export/delete rate limits; object cap of 500 without `date`, 2,000 with `date`; `x-rz-objects` header.
@@ -23,14 +24,15 @@ Implemented on `control-v2`:
 Verification:
 
 - `pnpm typecheck` clean
-- `pnpm test` **149 passing**
+- `pnpm test` **152 passing**
 - New bounded-body tests
 - Device-cap regression test
 - Token-free list helper test
+- Pinned HTTP/HTTPS transport + redirect test
+- Live HTTPS + Cloudflare DoH check
 
 Intentionally deferred:
 
-- **§6 SSRF TOCTOU:** DNS is still validated before `fetch()` re-resolves. Needs connect-by-validated-IP or an egress proxy; higher-effort network change.
 - **§9 query-string tokens:** still accepted for NextDNS parity. Prefer Bearer-only in hosted docs.
 - **§10 PROXY v1 trust:** still trusts the Fly proxy invariant; documented, not peer-pinned.
 - **§11 0x20 question-case on single-flight:** only txid is patched; clients self-heal.
@@ -39,7 +41,7 @@ Intentionally deferred:
 - **§16 S3 staging line cap:** not yet added.
 - **§17/§18:** accepted xxhash risk; dev-only audit advisories.
 
-Residual risk: the hot path is meaningfully hardened, but §6 (SSRF TOCTOU) and §16 (archive staging memory) are the next two substantive items.
+Residual risk: the hot path is meaningfully hardened. §16 (archive staging memory) is the next substantive item; §9–§12 are documented compatibility/hardening tradeoffs.
 
 ---
 
