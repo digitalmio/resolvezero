@@ -479,7 +479,7 @@ export async function loadLogs(): Promise<{ profileId: string; profileName: stri
   if (!token) throw new Error("profile has no DoH token; cannot read logs");
 
   const edge = (process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev").replace(/\/+$/, "");
-  const res = await fetch(`${edge}/v1/${encodeURIComponent(profile.id)}/logs?limit=100&format=jsonl`, {
+  const res = await fetch(`${edge}/v1/${encodeURIComponent(profile.id)}/logs?limit=100&format=jsonl&order=desc`, {
     headers: { authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(10_000),
   });

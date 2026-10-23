@@ -99,10 +99,13 @@ export function createLogsApp(deps: LogsDeps) {
     const newestFirst = c.req.query("order") === "desc";
 
     const { keys, truncated } = await listAllKeys(deps.client, objectPrefix);
-    const orderedKeys = newestFirst ? [...keys].reverse() : keys;
     const objectCap = date ? MAX_DATE_EXPORT_OBJECTS : MAX_EXPORT_OBJECTS;
-    const cappedKeys = orderedKeys.slice(-objectCap);
-    const capped = truncated || cappedKeys.length !== orderedKeys.length;
+    // `keys` is ascending. Always keep the newest N objects, then reverse
+    // only when the caller wants newest-first output. (Reversing before
+    // slicing used to keep the OLDEST N when there were >N objects.)
+    const cappedKeys = keys.slice(-objectCap);
+    const orderedKeys = newestFirst ? [...cappedKeys].reverse() : cappedKeys;
+    const capped = truncated || cappedKeys.length !== keys.length;
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
@@ -115,7 +118,7 @@ export function createLogsApp(deps: LogsDeps) {
         if (format === "csv") controller.enqueue(encoder.encode(CSV_HEADER));
         let emitted = 0;
         try {
-          outer: for (const key of cappedKeys) {
+          outer: for (const key of orderedKeys) {
             const compressed = new Uint8Array(await deps.client!.file(key).arrayBuffer());
             if (compressed.length > MAX_INFLATED_BYTES) {
               log.warn({ key }, "log object too large, skipped");

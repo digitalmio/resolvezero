@@ -60,6 +60,41 @@ describe("logs router", () => {
     expect(lines[2].domain).toBe("c.com");
   });
 
+  test("order=desc reverses object and line order", async () => {
+    const res = await app(fixtureClient()).request(`/v1/${P1}/logs?format=jsonl&order=desc`);
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines.map((line) => line.domain)).toEqual(["c.com", "b.com", "a.com"]);
+  });
+
+  test("latest-first limit uses the newest objects, not the oldest of the cap", async () => {
+    const client = fixtureClient();
+    const enc = new TextEncoder();
+    const start = Date.UTC(2026, 9, 9, 0, 0, 0);
+    for (let i = 0; i <= 500; i++) {
+      const d = new Date(start + i * 60_000);
+      const key = `logs/${P1}/${d.toISOString().slice(0, 10)}/${String(d.getUTCHours()).padStart(2, "0")}${String(d.getUTCMinutes()).padStart(2, "0")}.bulk.jsonl.gz`;
+      client.objects.set(
+        key,
+        gzipSync(enc.encode(JSON.stringify({
+          kind: "query",
+          time: d.toISOString(),
+          domain: `d${i}.example`,
+          action: "forward",
+          rttMs: null,
+          clientIp: "9.9.9.9",
+        }))),
+      );
+    }
+
+    const res = await app(client).request(`/v1/${P1}/logs?format=jsonl&order=desc&limit=1`);
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    const entries = lines.filter((line) => !line.warning);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].domain).toBe("d500.example");
+  });
+
   test("csv download streams header + rows", async () => {
     const res = await app(fixtureClient()).request(`/v1/${P1}/logs?date=2026-10-08&format=csv`);
     expect(res.status).toBe(200);

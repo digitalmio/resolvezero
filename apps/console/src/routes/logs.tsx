@@ -61,7 +61,17 @@ function Logs() {
               {filtered.length === 0 ? <tr><td colSpan={5} className="px-5 py-12 text-center text-[12px] text-[var(--muted)]">No log entries found.</td></tr> : null}
               {filtered.map((entry, index) => (
                 <tr key={`${entry.time}-${entry.domain}-${index}`} className="hover:bg-white/60">
-                  <td className="px-5 py-3.5 font-mono text-[10px] text-[var(--muted)]">{entry.time ? new Date(entry.time).toLocaleTimeString('en-GB') : '—'}</td>
+                  <td className="px-5 py-3.5 font-mono text-[10px] text-[var(--muted)]" title={entry.time ? new Date(entry.time).toISOString() : undefined}>
+                    {entry.time
+                      ? new Date(entry.time).toLocaleString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })
+                      : '—'}
+                  </td>
                   <td className="max-w-[360px] truncate px-4 py-3.5 font-mono text-[12px]">{entry.domain}</td>
                   <td className="px-4 py-3.5">
                     <span className={['rounded-md px-2 py-1 text-[10px] font-semibold uppercase', entry.action === 'block' ? 'bg-[#fff0e9] text-[#c64012]' : 'bg-[#edf8f0] text-[#247440]'].join(' ')}>{entry.action}</span>
