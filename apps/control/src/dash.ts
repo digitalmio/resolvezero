@@ -421,16 +421,26 @@ ${copyScript}
       c.req.header("fly-client-ip") ||
       c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
       "";
-    const params = new URLSearchParams();
-    if (callerIp) params.set("ip", callerIp);
-    try {
-      const res = await edgeFetch(`/v1/${current.id}/update-ip?${params}`, current.dohToken, {
-        method: "POST",
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) return c.html("IP link failed (edge rejected it).", 502);
-    } catch {
-      return c.html("IP link failed (edge unreachable).", 502);
+    const ip = callerIp.replace(/^\[|\]$/g, "").split("%")[0]!.trim();
+    if (!ip || isIP(ip) === 0) return c.html("IP link failed: invalid IP.", 400);
+
+    // The control plane owns the session and profile ownership check, so it
+    // can write the link directly. This avoids passing a browser-controlled
+    // ?ip= value through the public edge admin endpoint.
+    const inserted = await db
+      .insert(profileSourceIps)
+      .values({ ipAddress: ip, profileId: current.id })
+      .onConflictDoNothing({ target: profileSourceIps.ipAddress })
+      .returning({ profileId: profileSourceIps.profileId });
+    if (inserted.length === 0) {
+      const existing = await db
+        .select({ profileId: profileSourceIps.profileId })
+        .from(profileSourceIps)
+        .where(eq(profileSourceIps.ipAddress, ip))
+        .limit(1);
+      if (existing[0] && existing[0].profileId !== current.id) {
+        return c.html("IP link failed: that IP is linked to another profile.", 409);
+      }
     }
     return c.redirect(`/setup?p=${current.id}`);
   });
