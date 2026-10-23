@@ -8,7 +8,7 @@
 
 ## Remediation status (2026-10-23)
 
-Implemented on `control-v2`:
+Implemented on `control-v2`, merged to `main` (`58d212c`), and deployed to staging + production on 2026-10-23.
 
 - **§1 update-ip ownership:** callers can link only their `fly-client-ip` by default. Explicit `?ip=` is disabled unless `ALLOW_EXPLICIT_IP_LINK=1` for self-host/dev. Cross-profile IP moves now return `409` instead of silently transferring ownership. Hosted profiles must have a token.
 - **§2 TCP 53:** 64 KB receive-buffer cap, zero-length frame closes the socket, 30s idle timeout, 512-connection cap, and write-backpressure guard. Configurable via `TCP_MAX_BUFFER_BYTES`, `TCP_IDLE_TIMEOUT_MS`, `TCP_MAX_CONNECTIONS`.
@@ -40,6 +40,14 @@ Intentionally deferred:
 - **§15 REFUSED behavior:** default remains configurable; silent mode available.
 - **§16 S3 staging line cap:** not yet added.
 - **§17/§18:** accepted xxhash risk; dev-only audit advisories.
+
+Deployment verification:
+
+- Staging `resolvezero-edge-node`: both fra/lhr machines healthy; smoke passed.
+- Production `resolvezero-edge`: image `deployment-01M5M6JB12DCK8ZV4FA8GSYS2Z`, machine version 60, both regions 3/3 checks passing.
+- Production `/readyz`: 405,079 rules, 4 tables, `configPollError:false`, `failedBlocklists:0`.
+- Production UDP `.24` and edge-served `.lan` verified.
+- CI run `39942630834` green.
 
 Residual risk: the hot path is meaningfully hardened. §16 (archive staging memory) is the next substantive item; §9–§12 are documented compatibility/hardening tradeoffs.
 
