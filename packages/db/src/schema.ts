@@ -155,6 +155,23 @@ export const profileZones = pgTable(
 );
 
 /**
+ * Short-lived resolver-presence canaries (dashboard "this device uses
+ * ResolveZero DNS" check). The edge records a random nonce only after the
+ * caller is authorized for a profile; the console polls for it. The daily
+ * retention job removes rows older than 15 minutes.
+ */
+export const dnsProbes = pgTable(
+  "dns_probes",
+  {
+    nonce: varchar("nonce", { length: 64 }).primaryKey(),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+    region: varchar("region", { length: 32 }),
+    transport: varchar("transport", { length: 8 }).notNull(),
+  },
+  (t) => [index("dns_probes_seen_at_idx").on(t.seenAt)],
+);
+
+/**
  * Devices seen per profile (lazy-created on first device-tagged DoH query).
  * The edge inserts on first sight; the dashboard later reads/renames.
  * slug stays the raw client-provided tag (≤64 chars, url-safe charset).

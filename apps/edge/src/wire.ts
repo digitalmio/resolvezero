@@ -67,6 +67,16 @@ export function wireEncode(packet: object): WireBytes {
   return new Uint8Array(out);
 }
 
+/** NXDOMAIN: used for the resolver-presence canary (and other absent names). */
+export function nxdomainResponse(question: QuestionInfo): WireBytes {
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    flags: RESPONSE | AUTHORITATIVE_ANSWER | RECURSION_DESIRED | RECURSION_AVAILABLE | 0x0003,
+    questions: [{ name: question.name, type: question.type }],
+  });
+}
+
 /** SERVFAIL: upstream unavailable — the client stub resolver will retry. */
 export function servfailResponse(question: QuestionInfo): WireBytes {
   return wireEncode({

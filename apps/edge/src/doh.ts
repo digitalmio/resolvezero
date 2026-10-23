@@ -4,11 +4,13 @@ import {
   RESPONSE,
   SINKHOLE_TTL,
   decodeQuestion,
+  nxdomainResponse,
   sinkholeResponse,
   servfailResponse,
   wireEncode,
   zoneAnswer,
 } from "./wire";
+import { matchProbeNonce } from "./probe";
 import type { RuleAction } from "./ruleStore";
 import type { RuleStore, ZoneAnswer } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
@@ -46,6 +48,10 @@ export interface DohAppDeps {
   localDomains?: readonly string[];
   localTtl?: number;
   allowPublicIpEncoding?: boolean;
+  /** Resolver-presence canary suffix; no public record should exist for it. */
+  probeDomain?: string | null;
+  /** Called for a valid probe lookup, after profile auth. */
+  onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp"): void;
 }
 
 /** Device tag charset: NextDNS-style url-safe short names. */
@@ -133,6 +139,18 @@ export function createDohApp(deps: DohAppDeps) {
     }
 
     const clientAddr = clientIp(c);
+
+    // ---- Resolver-presence canary ----
+    // A random subdomain of PROBE_DOMAIN is only resolvable by this edge.
+    // Record the nonce and answer NXDOMAIN; the console polls the DB for it.
+    const probeNonce = matchProbeNonce(question.name, deps.probeDomain ?? null);
+    if (probeNonce) {
+      deps.onProbeSeen?.(probeNonce, "doh");
+      return c.body(nxdomainResponse(question), 200, {
+        "content-type": "application/dns-message",
+        "cache-control": "no-store",
+      });
+    }
 
     // ---- Local zone overrides (split-horizon answers; user config wins) ----
     // Checked BEFORE policy: an explicitly authored override answers even

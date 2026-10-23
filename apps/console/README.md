@@ -31,6 +31,10 @@ Implemented:
 - Server-side `getOverview` querying Postgres `stats_hourly`
 - Loading and error states for the overview instead of dummy data flashes
 - Server-side `getRulesData` for explicit rules, zones, and blocklist subscriptions
+- "This device is using ResolveZero DNS" probe in the topbar. The browser
+  looks up a random `<nonce>.probe.resolvezero.com` name (no public record);
+  the edge records it only after profile/source-IP auth. No wildcard TLS
+  certificate is needed because the lookup itself is the signal.
 
 Not implemented yet:
 

@@ -9,6 +9,7 @@ import {
   UDP_MAX_PAYLOAD,
   decodeQuestion,
   normalizeIp,
+  nxdomainResponse,
   sinkholeResponse,
   servfailResponse,
   refusedResponse,
@@ -17,6 +18,7 @@ import {
 } from "./wire";
 import { moduleLogger } from "./logger";
 import { localNameAnswer } from "@resolvezero/shared";
+import { matchProbeNonce } from "./probe";
 
 const log = moduleLogger("dns53");
 
@@ -44,6 +46,10 @@ export interface Dns53Deps {
   localDomains?: readonly string[];
   localTtl?: number;
   allowPublicIpEncoding?: boolean;
+  /** Resolver-presence canary suffix; no public record should exist for it. */
+  probeDomain?: string | null;
+  /** Called for a valid probe lookup, after source-IP auth. */
+  onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp"): void;
 }
 
 export interface Dns53Handle {
@@ -290,7 +296,16 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       return null;
     }
 
-    // 3. Zone override (split-horizon; user config wins, AAA/CNAME/etc.)
+    // 3. Resolver-presence canary. The random hostname has no public record;
+    //    only clients using this resolver reach this point. Record it and
+    //    answer NXDOMAIN so no wildcard certificate is needed.
+    const probeNonce = matchProbeNonce(question.name, deps.probeDomain ?? null);
+    if (probeNonce) {
+      deps.onProbeSeen?.(probeNonce, transport);
+      return nxdomainResponse(question);
+    }
+
+    // 4. Zone override (split-horizon; user config wins, AAA/CNAME/etc.)
     const zone = deps.store.resolveZone(profileId, question.name, question.type as never);
     if (zone) {
       deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp, device: null });

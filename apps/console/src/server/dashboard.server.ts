@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
+  dnsProbes,
   edgeConfigState,
   profileBlocklists,
   profileRules,
@@ -428,6 +429,34 @@ export async function loadSettings(): Promise<SettingsData> {
     createdAt: p.createdAt.toISOString(),
     sourceIps: sourceIps.map((row) => row.ip),
     counts: { rules: rules.length, zones: zones.length, lists: lists.length },
+  };
+}
+
+export interface DnsProbeStatus {
+  seen: boolean;
+  seenAt: string | null;
+  region: string | null;
+}
+
+/**
+ * Did this browser's probe query reach the edge? The edge only writes these
+ * rows after profile/source-IP authentication, so this is not a public
+ * resolver checker.
+ */
+export async function loadDnsProbe(nonce: string): Promise<DnsProbeStatus> {
+  const rows = await db
+    .select({
+      seenAt: dnsProbes.seenAt,
+      region: dnsProbes.region,
+    })
+    .from(dnsProbes)
+    .where(eq(dnsProbes.nonce, nonce))
+    .limit(1);
+  const row = rows[0];
+  return {
+    seen: Boolean(row),
+    seenAt: row?.seenAt.toISOString() ?? null,
+    region: row?.region ?? null,
   };
 }
 

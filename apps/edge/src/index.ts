@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { db } from "@resolvezero/db/client";
-import { profileDevices } from "@resolvezero/db/schema";
+import { dnsProbes, profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
 import { dropPrivileges, parseLocalDomains } from "@resolvezero/shared";
 import { QueryLogBatcher } from "./batcher";
@@ -19,6 +19,7 @@ import { createAdminApp } from "./admin";
 import { startBlocklistSync } from "./blocklists";
 import { createDns53Service, type Dns53Handle } from "./dns53";
 import { S3ArchiveSink, createS3ClientFromEnv } from "./sinks/s3";
+import { normalizeProbeDomain } from "./probe";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const METRICS_PORT = Number(process.env.METRICS_PORT ?? 9091);
@@ -46,6 +47,9 @@ const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 15) || 15;
 const LOCAL_DOMAINS = parseLocalDomains(process.env.LOCAL_DOMAINS ?? "lan,home.arpa");
 const LOCAL_TTL = Number(process.env.LOCAL_TTL ?? 60) || 60;
 const ALLOW_PUBLIC_IP_ENCODING = process.env.ALLOW_PUBLIC_IP_ENCODING === "1";
+// No public DNS record should exist for PROBE_DOMAIN. A client only reaches
+// this edge for `<nonce>.<PROBE_DOMAIN>` when it is using our resolver.
+const PROBE_DOMAIN = normalizeProbeDomain(process.env.PROBE_DOMAIN ?? "probe.resolvezero.com");
 const archive = s3Client
   ? new S3ArchiveSink({ client: s3Client, prefix: LOG_PREFIX, flushMinutes: FLUSH_MINUTES })
   : null;
@@ -60,6 +64,20 @@ batcher.start();
 
 if (!archive && !stdoutQueryLog) {
   log.warn("raw query logging disabled: set S3_* or QUERY_LOG_STDOUT=1 (stats still recorded)");
+}
+
+// Record resolver-presence canaries. This is intentionally write-behind and
+// best-effort: a DB hiccup must never affect DNS answers or the query path.
+function recordProbe(nonce: string, transport: "doh" | "udp" | "tcp"): void {
+  void db
+    .insert(dnsProbes)
+    .values({
+      nonce,
+      transport,
+      region: process.env.FLY_REGION ?? "local",
+    })
+    .onConflictDoNothing()
+    .catch((err) => log.warn({ err }, "probe insert failed"));
 }
 
 // Enqueue only when the profile hasn't opted out of logging.
@@ -172,6 +190,8 @@ const app = new Hono()
       localDomains: LOCAL_DOMAINS,
       localTtl: LOCAL_TTL,
       allowPublicIpEncoding: ALLOW_PUBLIC_IP_ENCODING,
+      probeDomain: PROBE_DOMAIN,
+      onProbeSeen: recordProbe,
       onNewDevice(profileId, slug) {
         // lazy device registration — one insert per new (profile, device)
         void db
@@ -201,6 +221,8 @@ if (process.env.DNS53_ENABLED !== "0") {
     localDomains: LOCAL_DOMAINS,
     localTtl: LOCAL_TTL,
     allowPublicIpEncoding: ALLOW_PUBLIC_IP_ENCODING,
+    probeDomain: PROBE_DOMAIN,
+    onProbeSeen: recordProbe,
   });
   if (!dns53Handle) {
     log.error("port-53 DNS ingress not started (bind failed)");

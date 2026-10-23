@@ -270,6 +270,28 @@ describe("dns53 over real sockets", () => {
     await svc!.stop();
   });
 
+  test("resolver probe records nonce and returns NXDOMAIN", async () => {
+    const deps = fakeDeps();
+    const seen: string[] = [];
+    const svc = await createDns53Service({
+      ...deps,
+      host: "127.0.0.1",
+      port: PORT,
+      tcp: false,
+      probeDomain: "probe.resolvezero.com",
+      onProbeSeen: (nonce) => seen.push(nonce),
+    });
+    const c = await client(PORT);
+    const nonce = "0123456789abcdef0123456789abcdef";
+    const reply = await c.ask(wireQuery(`${nonce}.probe.resolvezero.com`));
+    const packet = decode(Buffer.from(reply!)) as { flags: number };
+    expect(packet.flags & 0x000f).toBe(3);
+    expect(seen).toEqual([nonce]);
+    expect(deps.calls).toHaveLength(0);
+    await c.close();
+    await svc!.stop();
+  });
+
   test("UDP_MAX_PAYLOAD", () => {
     expect(UDP_MAX_PAYLOAD).toBe(1232);
   });

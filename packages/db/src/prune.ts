@@ -22,13 +22,22 @@ export async function pruneExpiredStats(): Promise<number> {
       WHERE s.profile_id = p.id
         AND s.hour < now() - (GREATEST(p.log_retention_days, 1) * interval '1 day')
       RETURNING 1
+    ), deleted_probes AS (
+      DELETE FROM dns_probes
+      WHERE seen_at < now() - interval '15 minutes'
+      RETURNING 1
     )
     SELECT
       (SELECT count(*)::int FROM deleted) AS minute_pruned,
-      (SELECT count(*)::int FROM deleted_hourly) AS hourly_pruned
-  `)) as unknown as Array<{ minute_pruned: number; hourly_pruned: number }>;
+      (SELECT count(*)::int FROM deleted_hourly) AS hourly_pruned,
+      (SELECT count(*)::int FROM deleted_probes) AS probe_pruned
+  `)) as unknown as Array<{ minute_pruned: number; hourly_pruned: number; probe_pruned: number }>;
 
-  return (res[0]?.minute_pruned ?? 0) + (res[0]?.hourly_pruned ?? 0);
+  return (
+    (res[0]?.minute_pruned ?? 0) +
+    (res[0]?.hourly_pruned ?? 0) +
+    (res[0]?.probe_pruned ?? 0)
+  );
 }
 
 /** Interval loop for long-running processes. Returns a stop function. */

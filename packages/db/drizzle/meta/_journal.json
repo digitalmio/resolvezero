@@ -50,6 +50,13 @@
       "when": 1792509395736,
       "tag": "0006_drop_legacy_notify_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792771941355,
+      "tag": "0007_odd_katie_power",
+      "breakpoints": true
     }
   ]
 }

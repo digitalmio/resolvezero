@@ -18,6 +18,7 @@ import {
 import type { ReactNode } from 'react'
 
 import logo from '../assets/logo-square.svg'
+import { DnsProbeBadge } from './dns-probe-badge'
 import { getOverview } from '../server/dashboard'
 
 type NavItem = {
@@ -122,10 +123,7 @@ export function AppShell() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden items-center gap-2 rounded-full border border-[#cfe6d7] bg-[#edf8f0] px-3 py-1.5 text-[11px] font-medium text-[#247440] sm:flex">
-              <span className="size-1.5 rounded-full bg-[#2e9b55]" />
-              Protected
-            </span>
+            <DnsProbeBadge />
             <span className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)] md:flex">
               <Activity size={12} className="text-[var(--accent)]" />
               1,284 qps

@@ -31,3 +31,13 @@ export const getLogsData = createServerFn({ method: "GET" }).handler(async () =>
   const { loadLogs } = await import("./dashboard.server");
   return loadLogs();
 });
+
+export const checkDnsProbe = createServerFn({ method: "POST" })
+  .validator((nonce: string) => {
+    if (!/^[a-z0-9]{16,64}$/.test(nonce)) throw new Error("invalid probe nonce");
+    return nonce;
+  })
+  .handler(async ({ data }) => {
+    const { loadDnsProbe } = await import("./dashboard.server");
+    return loadDnsProbe(data);
+  });

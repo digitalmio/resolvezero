@@ -146,6 +146,31 @@ describe("DoH endpoint", () => {
     expect((await req(`${base}/s3cret`)).status).toBe(200); // correct
   });
 
+  test("resolver probe records nonce and returns NXDOMAIN without upstream", async () => {
+    const mock = mockUpstream({});
+    const seen: string[] = [];
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mock.upstream,
+      logQuery: () => undefined,
+      probeDomain: "probe.resolvezero.com",
+      onProbeSeen: (nonce) => seen.push(nonce),
+    });
+    const nonce = "0123456789abcdef0123456789abcdef";
+    const res = await api.request(`/v1/${PROFILE}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery(`${nonce}.probe.resolvezero.com`),
+    });
+
+    expect(res.status).toBe(200);
+    const packet = decode(Buffer.from(await (res as Response).arrayBuffer())) as { flags: number };
+    expect(packet.flags & 0x000f).toBe(3); // NXDOMAIN
+    expect(seen).toEqual([nonce]);
+    expect(mock.calls).toHaveLength(0);
+  });
+
   test("GET ?dns= base64url accepted (RFC 8484 GET)", async () => {
     mockUpstream({});
     const wire = wireQuery("example.com");
