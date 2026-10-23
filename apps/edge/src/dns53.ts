@@ -16,8 +16,13 @@ import {
   zoneAnswer,
 } from "./wire";
 import { moduleLogger } from "./logger";
+import { localNameAnswer } from "@resolvezero/shared";
 
 const log = moduleLogger("dns53");
+
+const TCP_MAX_BUFFER_BYTES = Math.max(4096, Number(process.env.TCP_MAX_BUFFER_BYTES ?? 65_536) || 65_536);
+const TCP_IDLE_TIMEOUT_MS = Math.max(5_000, Number(process.env.TCP_IDLE_TIMEOUT_MS ?? 30_000) || 30_000);
+const TCP_MAX_CONNECTIONS = Math.max(1, Number(process.env.TCP_MAX_CONNECTIONS ?? 512) || 512);
 
 interface TcpState {
   buffer: Uint8Array;
@@ -35,6 +40,10 @@ export interface Dns53Deps {
   host?: string;
   port?: number;
   tcp?: boolean;
+  /** Local suffixes for IP-encoded names (default: lan). */
+  localDomains?: readonly string[];
+  localTtl?: number;
+  allowPublicIpEncoding?: boolean;
 }
 
 export interface Dns53Handle {
@@ -130,9 +139,15 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     const tcpHost = process.env.TCP_HOST ?? (host === "fly-global-services" ? "0.0.0.0" : host);
     try {
       tcp = net.createServer((socket) => {
+        socket.setTimeout(TCP_IDLE_TIMEOUT_MS, () => {
+          log.warn({ timeoutMs: TCP_IDLE_TIMEOUT_MS }, "closing idle TCP DNS connection");
+          socket.destroy();
+        });
         socket.on("data", (chunk) => tcpData(socket, new Uint8Array(chunk)));
         socket.on("error", (err) => log.warn({ err }, "tcp socket error"));
+        socket.on("close", () => tcpStates.delete(socket));
       });
+      tcp.maxConnections = TCP_MAX_CONNECTIONS;
       await new Promise<void>((resolve, reject) => {
         const onError = (err: Error) => reject(err);
         tcp!.once("error", onError);
@@ -189,6 +204,11 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       };
       tcpStates.set(socket, state);
     }
+    if (state.buffer.length + chunk.length > TCP_MAX_BUFFER_BYTES) {
+      log.warn({ bytes: state.buffer.length + chunk.length }, "closing oversized TCP DNS buffer");
+      socket.destroy();
+      return;
+    }
     state.buffer = concatBytes(state.buffer, chunk);
 
     if (!state.headerParsed) {
@@ -212,7 +232,12 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     for (;;) {
       if (state.buffer.length < 2) return;
       const expected = (state.buffer[0]! << 8) | state.buffer[1]!;
-      if (expected === 0 || state.buffer.length < expected + 2) return;
+      if (expected === 0) {
+        log.warn("closing TCP DNS connection with zero-length frame");
+        socket.destroy();
+        return;
+      }
+      if (state.buffer.length < expected + 2) return;
       const wire = state.buffer.slice(2, 2 + expected);
       state.buffer = state.buffer.slice(2 + expected);
       const sourceIp = state.sourceIp;
@@ -224,6 +249,11 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
           frame[0] = reply.length >> 8;
           frame[1] = reply.length & 0xff;
           frame.set(reply, 2);
+          if (socket.writableLength > TCP_MAX_BUFFER_BYTES) {
+            log.warn({ pending: socket.writableLength }, "closing TCP DNS connection with backed-up writes");
+            socket.destroy();
+            return;
+          }
           socket.write(frame);
         })
         .catch((err) => log.error({ err }, "tcp handler failed"))
@@ -286,7 +316,19 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       return sinkholeResponse(question);
     }
 
-    // 5. Cache (keyed by question + upstream)
+    // 5. Synthetic local names (nip.io-style, scoped to .lan/.home.arpa)
+    const local = localNameAnswer(wire, {
+      localDomains: deps.localDomains ?? ["lan"],
+      localTtl: deps.localTtl ?? 60,
+      allowPublicIpEncoding: deps.allowPublicIpEncoding === true,
+    });
+    if (local) {
+      deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp, device: null });
+      deps.recorder?.recordQuery("forward");
+      return local;
+    }
+
+    // 6. Cache (keyed by question + upstream)
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
     const cached = deps.dnsCache.get(wire, upstreamUrl, () => refresh(wire, upstreamUrl));
     if (cached) {

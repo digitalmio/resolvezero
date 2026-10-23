@@ -1,5 +1,8 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import http from "node:http";
+import https from "node:https";
+import { isIP, type LookupFunction } from "node:net";
+import { Readable } from "node:stream";
 
 /**
  * SSRF guard for server-side fetches whose URL can be influenced by a user
@@ -25,9 +28,9 @@ export interface SafeUrlOptions {
   /** Allow RFC1918/loopback/link-local targets (self-host only). */
   allowPrivate?: boolean;
   /**
-   * Hosts whose DNS resolution can be skipped because they are built-in,
-   * hard-coded endpoints (upstream presets). Syntax, credentials, metadata,
-   * and redirect-hop checks still apply.
+   * Hosts whose DNS private-range check can be skipped because they are
+   * built-in, hard-coded endpoints (upstream presets). The address is still
+   * resolved and pinned for the actual connection.
    */
   trustedHosts?: readonly string[];
   /** Human label used in error messages ("list URL", "upstream"). */
@@ -36,14 +39,30 @@ export interface SafeUrlOptions {
 
 const DEFAULT_PROTOCOLS = ["http:", "https:"];
 const DNS_CACHE_TTL_MS = 60_000;
-const dnsCache = new Map<string, { expiresAt: number; private: boolean }>();
+
+interface ResolvedAddress {
+  address: string;
+  family: 4 | 6;
+}
+
+const dnsCache = new Map<string, { expiresAt: number; addresses: ResolvedAddress[] }>();
+
+export interface SafeTarget {
+  url: URL;
+  address: string;
+  family: 4 | 6;
+}
 
 export function allowPrivateTargets(): boolean {
   return process.env.ALLOW_PRIVATE_TARGETS === "1";
 }
 
-/** Rejects unsafe URLs and, unless private targets are opted in, unsafe DNS. */
-export async function assertSafeRemoteUrl(raw: string, opts: SafeUrlOptions = {}): Promise<URL> {
+/**
+ * Resolve and validate a URL, returning the exact address the caller must
+ * connect to. This closes the DNS-rebinding TOCTOU window: callers must not
+ * re-resolve the hostname after this check.
+ */
+export async function resolveSafeTarget(raw: string, opts: SafeUrlOptions = {}): Promise<SafeTarget> {
   const label = opts.label ?? "URL";
   let u: URL;
   try {
@@ -69,17 +88,25 @@ export async function assertSafeRemoteUrl(raw: string, opts: SafeUrlOptions = {}
     if (isPrivateIp(host) && !opts.allowPrivate) {
       throw new Error(`${label}: private/loopback address blocked`);
     }
-    return u;
+    return { url: u, address: host, family: literal as 4 | 6 };
   }
 
-  if (opts.allowPrivate || opts.trustedHosts?.includes(host)) return u;
-
-  const resolved = await resolvePrivate(host);
-  if (resolved) throw new Error(`${label}: host resolves to a private address`);
-  return u;
+  const addresses = await resolveAddresses(host);
+  if (addresses.length === 0) throw new Error(`${label}: host could not be resolved`);
+  const trusted = opts.allowPrivate || opts.trustedHosts?.includes(host);
+  if (!trusted && addresses.some((a) => isPrivateIp(a.address))) {
+    throw new Error(`${label}: host resolves to a private address`);
+  }
+  // Pin the first validated address. Never pass the hostname to the socket.
+  return { url: u, address: addresses[0]!.address, family: addresses[0]!.family };
 }
 
-/** Fetch with manual redirect handling; every hop is re-validated. */
+/** Backwards-compatible URL-only validation for callers that do not fetch. */
+export async function assertSafeRemoteUrl(raw: string, opts: SafeUrlOptions = {}): Promise<URL> {
+  return (await resolveSafeTarget(raw, opts)).url;
+}
+
+/** Fetch with manual redirect handling; every hop is re-validated and pinned. */
 export async function fetchWithSafeRedirects(
   raw: string,
   init: RequestInit,
@@ -88,19 +115,89 @@ export async function fetchWithSafeRedirects(
 ): Promise<{ response: Response; finalUrl: string }> {
   let current = raw;
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    const safe = await assertSafeRemoteUrl(current, opts);
-    const response = await fetch(safe, { ...init, redirect: "manual" });
+    const target = await resolveSafeTarget(current, opts);
+    const response = await pinnedRequest(target, init);
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error(`${opts.label ?? "URL"}: redirect without Location`);
-      current = new URL(location, safe).toString();
-      // Drain the redirect body so the connection can be reused.
+      current = new URL(location, target.url).toString();
       await response.body?.cancel().catch(() => undefined);
       continue;
     }
-    return { response, finalUrl: safe.toString() };
+    return { response, finalUrl: target.url.toString() };
   }
   throw new Error(`${opts.label ?? "URL"}: too many redirects`);
+}
+
+/**
+ * Minimal http/https request with a pinned lookup. We keep the original
+ * hostname for SNI and Host, but the socket can only connect to `target.address`.
+ */
+async function pinnedRequest(target: SafeTarget, init: RequestInit): Promise<Response> {
+  const u = target.url;
+  const isHttps = u.protocol === "https:";
+  const transport = isHttps ? https : http;
+  const headers = new Headers(init.headers);
+  // Avoid implicit gzip/deflate responses that the pinned transport would
+  // otherwise leave compressed (and break existing size checks).
+  if (!headers.has("accept-encoding")) headers.set("accept-encoding", "identity");
+  headers.set("host", u.host);
+
+  const lookupPinned: LookupFunction = (_hostname, options, callback) => {
+    const all = typeof options === "object" && options !== null && "all" in options && options.all === true;
+    if (all) {
+      (callback as (err: NodeJS.ErrnoException | null, addresses: ResolvedAddress[]) => void)(null, [
+        { address: target.address, family: target.family },
+      ]);
+      return;
+    }
+    callback(null, target.address, target.family);
+  };
+
+  return await new Promise<Response>((resolve, reject) => {
+    const req = transport.request(
+      {
+        protocol: u.protocol,
+        hostname: stripBrackets(u.hostname),
+        port: u.port || undefined,
+        path: `${u.pathname}${u.search}`,
+        method: init.method ?? "GET",
+        headers: Object.fromEntries(headers.entries()),
+        lookup: lookupPinned,
+        ...(isHttps ? { servername: stripBrackets(u.hostname) } : {}),
+        signal: init.signal ?? undefined,
+      },
+      (res) => {
+        try {
+          const responseHeaders = new Headers();
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (value == null) continue;
+            if (Array.isArray(value)) responseHeaders.set(key, value.join(", "));
+            else responseHeaders.set(key, String(value));
+          }
+          const body = Readable.toWeb(res) as ReadableStream<Uint8Array>;
+          resolve(new Response(body, {
+            status: res.statusCode ?? 502,
+            statusText: res.statusMessage,
+            headers: responseHeaders,
+          }));
+        } catch (err) {
+          reject(err);
+        }
+      },
+    );
+    req.on("error", reject);
+    const body = init.body;
+    if (body == null) {
+      req.end();
+    } else if (typeof body === "string") {
+      req.end(body);
+    } else if (body instanceof Uint8Array) {
+      req.end(Buffer.from(body));
+    } else {
+      req.destroy(new Error("unsupported request body type for pinned transport"));
+    }
+  });
 }
 
 function stripBrackets(host: string): string {
@@ -162,20 +259,22 @@ function isPrivateIpv6(ip: string): boolean {
   return false;
 }
 
-/** Resolves a hostname; returns true when any address is private (fail closed). */
-async function resolvePrivate(host: string): Promise<boolean> {
+/** Resolve and cache all addresses; validation remains the caller's job. */
+async function resolveAddresses(host: string): Promise<ResolvedAddress[]> {
   const now = Date.now();
   const cached = dnsCache.get(host);
-  if (cached && cached.expiresAt > now) return cached.private;
+  if (cached && cached.expiresAt > now) return cached.addresses;
 
-  let addresses: { address: string }[];
+  let rows: { address: string; family: number }[];
   try {
-    addresses = await lookup(host, { all: true, verbatim: true });
+    rows = await lookup(host, { all: true, verbatim: true });
   } catch {
     // Fail closed: an unresolvable host cannot be safely fetched.
     throw new Error("host could not be resolved");
   }
-  const isPrivate = addresses.length === 0 || addresses.some((a) => isPrivateIp(a.address));
-  dnsCache.set(host, { expiresAt: now + DNS_CACHE_TTL_MS, private: isPrivate });
-  return isPrivate;
+  const addresses: ResolvedAddress[] = rows
+    .filter((row) => row.family === 4 || row.family === 6)
+    .map((row) => ({ address: row.address, family: row.family as 4 | 6 }));
+  dnsCache.set(host, { expiresAt: now + DNS_CACHE_TTL_MS, addresses });
+  return addresses;
 }

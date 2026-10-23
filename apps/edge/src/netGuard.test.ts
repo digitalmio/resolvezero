@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { assertSafeRemoteUrl, isPrivateIp } from "./netGuard";
+import http from "node:http";
+import { assertSafeRemoteUrl, fetchWithSafeRedirects, isPrivateIp, resolveSafeTarget } from "./netGuard";
 
 describe("isPrivateIp", () => {
   test("blocks loopback/private/link-local/CGNAT/reserved (v4)", () => {
@@ -68,7 +69,57 @@ describe("assertSafeRemoteUrl", () => {
     ).rejects.toThrow(/metadata/);
   });
 
-  test("trustedHosts skips resolution but not metadata checks", async () => {
+  test("resolves and pins an explicit address", async () => {
+    const target = await resolveSafeTarget("http://127.0.0.1:8080/list", { allowPrivate: true });
+    expect(target.address).toBe("127.0.0.1");
+    expect(target.family).toBe(4);
+  });
+
+  test("pinned fetch works while preserving Host", async () => {
+    const server = http.createServer((req, res) => {
+      res.end(req.headers.host ?? "missing-host");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("no test port");
+      const { response } = await fetchWithSafeRedirects(
+        `http://127.0.0.1:${address.port}/list`,
+        {},
+        { allowPrivate: true },
+      );
+      expect(await response.text()).toBe(`127.0.0.1:${address.port}`);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("follows redirects through the pinned transport", async () => {
+    const server = http.createServer((req, res) => {
+      if (req.url === "/start") {
+        res.writeHead(302, { location: "/final" });
+        res.end();
+        return;
+      }
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("no test port");
+      const { response } = await fetchWithSafeRedirects(
+        `http://127.0.0.1:${address.port}/start`,
+        {},
+        { allowPrivate: true },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("ok");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("trustedHosts skips the private-range check but still pins", async () => {
     await expect(
       assertSafeRemoteUrl("https://localhost/", { trustedHosts: ["localhost"] }),
     ).resolves.toBeInstanceOf(URL);

@@ -1,0 +1,39 @@
+{
+  "name": "@resolvezero/console",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env node_modules/vite/bin/vite.js dev --port 3000",
+    "generate-routes": "tsr generate",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "preview": "node --env-file-if-exists=../../.env node_modules/vite/bin/vite.js preview"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/react-devtools": "0.10.13",
+    "@tanstack/react-query": "^5.104.5",
+    "@tanstack/react-router": "1.170.45",
+    "@tanstack/react-router-devtools": "1.167.2",
+    "@tanstack/react-start": "1.169.3",
+    "lucide-react": "^1.61.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^4.1.18",
+    "@resolvezero/db": "workspace:*",
+    "drizzle-orm": "^0.45.3"
+  },
+  "devDependencies": {
+    "@tanstack/devtools-vite": "0.8.5",
+    "@tanstack/router-cli": "^1.132.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0"
+  }
+}

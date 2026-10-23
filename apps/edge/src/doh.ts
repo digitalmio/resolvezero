@@ -13,7 +13,8 @@ import type { RuleAction } from "./ruleStore";
 import type { RuleStore, ZoneAnswer } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 import type { Recorder } from "./metrics";
-import type { ZoneRecordType } from "@resolvezero/shared";
+import { localNameAnswer, type ZoneRecordType } from "@resolvezero/shared";
+import { readBytesBounded } from "./body";
 
 export interface QueryLogEntry {
   profileId: string;
@@ -41,6 +42,10 @@ export interface DohAppDeps {
   onNewDevice?(profileId: string, device: string): void;
   /** Optional Prometheus recorder (wired by index.ts when metrics are on). */
   recorder?: Recorder;
+  /** Local suffixes for IP-encoded names (default: lan). */
+  localDomains?: readonly string[];
+  localTtl?: number;
+  allowPublicIpEncoding?: boolean;
 }
 
 /** Device tag charset: NextDNS-style url-safe short names. */
@@ -110,8 +115,8 @@ export function createDohApp(deps: DohAppDeps) {
       } else if (c.req.header("content-type") === "application/dns-message") {
         const len = Number(c.req.header("content-length") ?? "0");
         if (len > 65535) return c.body(null, 400);
-        queryWire = new Uint8Array(await c.req.arrayBuffer());
-        if (queryWire.length > 65535) return c.body(null, 400);
+        queryWire = await readBytesBounded(c.req.raw.body, 65535, len);
+        if (queryWire.length === 0) return c.body(null, 400);
       }
     } catch {
       return c.body(null, 400);
@@ -193,6 +198,25 @@ export function createDohApp(deps: DohAppDeps) {
         "content-type": "application/dns-message",
         "cache-control": `max-age=${SINKHOLE_TTL}`,
       });
+    }
+
+    // ---- Synthetic local names (nip.io-style, scoped to .lan/.home.arpa) ----
+    const local = localNameAnswer(queryWire, {
+      localDomains: deps.localDomains ?? ["lan"],
+      localTtl: deps.localTtl ?? 60,
+      allowPublicIpEncoding: deps.allowPublicIpEncoding === true,
+    });
+    if (local) {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: clientAddr,
+        device,
+      });
+      deps.recorder?.recordQuery("forward");
+      return c.body(local, 200, { "content-type": "application/dns-message" });
     }
 
     // ---- DNS response LRU cache (keyed by question + upstream) ----

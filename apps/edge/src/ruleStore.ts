@@ -380,7 +380,14 @@ export class RuleStore {
     return stored !== undefined && stored !== null;
   }
 
-  /** Device-seen registry: dedupes lazy device row inserts (bounded per profile). */
+  /** Profiles that still rely on the dev-only token-free mode. */
+  tokenlessProfileIds(): string[] {
+    return [...this.profileTokens.entries()]
+      .filter(([, token]) => token === null)
+      .map(([id]) => id);
+  }
+
+  /** Device-seen registry: dedupes lazy device row inserts (hard cap per profile). */
   applyDeviceSeen(profileId: string, device: string): boolean {
     let set = this.seenDevices.get(profileId);
     if (!set) {
@@ -388,11 +395,9 @@ export class RuleStore {
       this.seenDevices.set(profileId, set);
     }
     if (set.has(device)) return false;
-    // Bound attacker-controlled cardinality: evict oldest past the cap.
-    if (set.size >= 200) {
-      const oldest = set.values().next().value;
-      if (oldest !== undefined) set.delete(oldest);
-    }
+    // Hard cap: never evict-and-continue, or an attacker can generate
+    // unlimited device rows one slug at a time.
+    if (set.size >= 200) return false;
     set.add(device);
     return true;
   }

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { isIP } from "node:net";
+import { eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import { profileSourceIps } from "@resolvezero/db/schema";
 import type { RuleStore } from "./ruleStore";
@@ -44,9 +45,9 @@ export interface AdminDeps {
  * Router-side account maintenance (NextDNS "linked IP" mechanic, readme §4):
  *   POST /v1/:profileId/update-ip[?token=][&ip=1.2.3.4]
  *
- * Links the calling IP (or explicit ?ip=) to the profile's UDP whitelist.
- * Profiles WITH a token require it here; token-free profile ids are open
- * (dev-friendly) — flip on tokens before hosted launch.
+ * Links the calling Fly client IP to the profile's UDP whitelist. Explicit
+ * ?ip= is disabled unless ALLOW_EXPLICIT_IP_LINK=1 (self-host/dev). IPs owned
+ * by another profile return 409; ownership is never silently transferred.
  * The ip_update_trigger NOTIFY keeps already-running edges live.
  */
 export function createAdminApp(deps: AdminDeps) {
@@ -60,22 +61,50 @@ export function createAdminApp(deps: AdminDeps) {
       return c.body(null, 404);
     }
 
-    const caller = c.req.header("fly-client-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    // Hosted profiles must use a token. The boot guard already refuses
+    // token-free profiles in production, but keep the endpoint safe if that
+    // guard is ever bypassed.
+    if (process.env.FLY_REGION && !deps.store.hasToken(profileId)) {
+      return c.body(null, 404);
+    }
+
+    const flyClientIp = c.req.header("fly-client-ip")?.trim();
+    const xff = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+    const caller = flyClientIp || (process.env.ALLOW_UNTRUSTED_IP_HEADERS === "1" ? xff : undefined) || "";
+    if (!caller) return c.json({ error: "caller IP unavailable" }, 400);
     if (!updateIpLimiter(`${caller}:${profileId}`)) {
       return c.json({ error: "rate limited" }, 429);
     }
 
-    const rawIp = c.req.query("ip")?.trim() ?? c.req.header("fly-client-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+    const explicit = c.req.query("ip")?.trim();
+    if (explicit && process.env.ALLOW_EXPLICIT_IP_LINK !== "1") {
+      return c.json({ error: "explicit IP linking is disabled" }, 400);
+    }
+    const rawIp = explicit || caller;
     const ip = rawIp ? normalizeIp(rawIp) : "";
     if (!ip || isIP(ip) === 0) {
-      return c.json({ error: "no valid IP supplied (use ?ip= or call via the edge)" }, 400);
+      return c.json({ error: "no valid caller IP" }, 400);
     }
 
-    // Allow moves between profiles: IP PK is global, so upsert the owner.
-    await db
+    // Never steal an IP from another profile. onConflictDoNothing closes the
+    // insert race; the follow-up owner check makes cross-profile moves a 409
+    // instead of a silent ownership transfer.
+    const inserted = await db
       .insert(profileSourceIps)
       .values({ ipAddress: ip, profileId })
-      .onConflictDoUpdate({ target: profileSourceIps.ipAddress, set: { profileId } });
+      .onConflictDoNothing({ target: profileSourceIps.ipAddress })
+      .returning({ profileId: profileSourceIps.profileId });
+
+    if (inserted.length === 0) {
+      const existing = await db
+        .select({ profileId: profileSourceIps.profileId })
+        .from(profileSourceIps)
+        .where(eq(profileSourceIps.ipAddress, ip))
+        .limit(1);
+      if (existing[0] && existing[0].profileId !== profileId) {
+        return c.json({ error: "IP is linked to another profile" }, 409);
+      }
+    }
 
     log.info({ profileId, ip }, "source IP linked");
     return c.json({ ok: true, ip, profileId });

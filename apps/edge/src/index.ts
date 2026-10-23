@@ -3,7 +3,7 @@ import { serve } from "@hono/node-server";
 import { db } from "@resolvezero/db/client";
 import { profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
-import { dropPrivileges } from "@resolvezero/shared";
+import { dropPrivileges, parseLocalDomains } from "@resolvezero/shared";
 import { QueryLogBatcher } from "./batcher";
 import { createDohApp, type QueryLogEntry } from "./doh";
 import { DnsCache } from "./dnsCache";
@@ -43,6 +43,9 @@ const stdoutQueryLog = process.env.QUERY_LOG_STDOUT === "1";
 
 const s3Client = createS3ClientFromEnv();
 const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 15) || 15;
+const LOCAL_DOMAINS = parseLocalDomains(process.env.LOCAL_DOMAINS ?? "lan,home.arpa");
+const LOCAL_TTL = Number(process.env.LOCAL_TTL ?? 60) || 60;
+const ALLOW_PUBLIC_IP_ENCODING = process.env.ALLOW_PUBLIC_IP_ENCODING === "1";
 const archive = s3Client
   ? new S3ArchiveSink({ client: s3Client, prefix: LOG_PREFIX, flushMinutes: FLUSH_MINUTES })
   : null;
@@ -106,6 +109,16 @@ const ruleSync = await startRuleSync(store, () => {
 });
 readiness.rulesLoaded = true;
 
+// Hosted profiles must not rely on the dev-only token-free auth mode. Leaving
+// one tokenless profile in production exposes logs/stats/update-ip by ID alone.
+if (process.env.FLY_REGION && process.env.ALLOW_TOKENLESS_PROFILES !== "1") {
+  const tokenless = store.tokenlessProfileIds();
+  if (tokenless.length > 0) {
+    log.error({ profiles: tokenless }, "hosted edge refuses token-free profiles; set a DoH token");
+    process.exit(1);
+  }
+}
+
 try {
   await blocklists.initialSync();
 } catch (err) {
@@ -133,10 +146,12 @@ const { app: healthApp, metricsApp, recorder } = createHealthApp({
         remoteListTables: store.stats.remoteListTables,
         profiles: store.stats.profiles,
         configPollAgeMs: rs.lastPollAt == null ? null : Date.now() - rs.lastPollAt,
-        configPollError: rs.lastPollError,
+        // Public readiness must not expose URLs/errors that may contain
+        // credentials or database details.
+        configPollError: rs.lastPollError != null,
         blocklistLastSyncAt: bs.lastSyncAt,
-        blocklistError: bs.lastError,
-        failedBlocklists: bs.failedUrls,
+        blocklistError: bs.lastError != null,
+        failedBlocklists: bs.failedUrls.length,
       },
     };
   },
@@ -154,6 +169,9 @@ const app = new Hono()
       upstream: { resolveWire },
       logQuery,
       recorder,
+      localDomains: LOCAL_DOMAINS,
+      localTtl: LOCAL_TTL,
+      allowPublicIpEncoding: ALLOW_PUBLIC_IP_ENCODING,
       onNewDevice(profileId, slug) {
         // lazy device registration — one insert per new (profile, device)
         void db
@@ -180,6 +198,9 @@ if (process.env.DNS53_ENABLED !== "0") {
       if (store.shouldLog(entry.profileId)) batcher.add(entry);
     },
     recorder,
+    localDomains: LOCAL_DOMAINS,
+    localTtl: LOCAL_TTL,
+    allowPublicIpEncoding: ALLOW_PUBLIC_IP_ENCODING,
   });
   if (!dns53Handle) {
     log.error("port-53 DNS ingress not started (bind failed)");

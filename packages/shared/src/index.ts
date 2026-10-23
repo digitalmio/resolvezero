@@ -1,3 +1,5 @@
+export * from "./localNames";
+
 // Shape of the `profile_updates` NOTIFY payload emitted by the
 // notify_rule_change() trigger (see readme.md §5).
 export type RuleOp = "INSERT" | "UPDATE" | "DELETE";

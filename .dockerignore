@@ -9,3 +9,6 @@ coverage
 **/*.test.ts
 **/*.spec.ts
 docs
+
+# Dev-only edge scripts (session dumping, probes, benchmarks) are never runtime.
+apps/edge/scripts

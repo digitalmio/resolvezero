@@ -38,8 +38,8 @@ async function checkReady(): Promise<void> {
   if (body.blocklistsLoaded !== true) fail("/readyz blocklistsLoaded false");
   const age = Number(body.configPollAgeMs ?? 0);
   if (age > 300_000) fail(`config poll age ${age}ms > 300s`);
-  const failed = (body.failedBlocklists as string[] | undefined) ?? [];
-  if (failed.length > 0) console.warn(`WARN blocklists failed on boot: ${failed.join(", ")}`);
+  const failed = Number(body.failedBlocklists ?? 0);
+  if (failed > 0) console.warn(`WARN ${failed} blocklist(s) failed on boot`);
   pass(`/readyz (${body.region ?? "?"})`);
 }
 
