@@ -109,6 +109,16 @@ const ruleSync = await startRuleSync(store, () => {
 });
 readiness.rulesLoaded = true;
 
+// Hosted profiles must not rely on the dev-only token-free auth mode. Leaving
+// one tokenless profile in production exposes logs/stats/update-ip by ID alone.
+if (process.env.FLY_REGION && process.env.ALLOW_TOKENLESS_PROFILES !== "1") {
+  const tokenless = store.tokenlessProfileIds();
+  if (tokenless.length > 0) {
+    log.error({ profiles: tokenless }, "hosted edge refuses token-free profiles; set a DoH token");
+    process.exit(1);
+  }
+}
+
 try {
   await blocklists.initialSync();
 } catch (err) {
@@ -136,10 +146,12 @@ const { app: healthApp, metricsApp, recorder } = createHealthApp({
         remoteListTables: store.stats.remoteListTables,
         profiles: store.stats.profiles,
         configPollAgeMs: rs.lastPollAt == null ? null : Date.now() - rs.lastPollAt,
-        configPollError: rs.lastPollError,
+        // Public readiness must not expose URLs/errors that may contain
+        // credentials or database details.
+        configPollError: rs.lastPollError != null,
         blocklistLastSyncAt: bs.lastSyncAt,
-        blocklistError: bs.lastError,
-        failedBlocklists: bs.failedUrls,
+        blocklistError: bs.lastError != null,
+        failedBlocklists: bs.failedUrls.length,
       },
     };
   },

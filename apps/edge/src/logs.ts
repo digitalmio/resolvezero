@@ -9,6 +9,26 @@ const CSV_HEADER = "time,domain,action,client_ip,rtt_ms\n";
 // Cap inflated log objects at 32 MB — a poisoned/oversized archive object
 // must not OOM the 256 MB edge during download.
 const MAX_INFLATED_BYTES = 32 * 1024 * 1024;
+const MAX_EXPORT_OBJECTS = 500;
+const MAX_DATE_EXPORT_OBJECTS = 2_000;
+
+/** Small per-key fixed-window limiter; keeps S3 exports from being a free loop. */
+function createRateLimiter(limit: number, windowMs: number) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+  return (key: string): boolean => {
+    const now = Date.now();
+    const cur = hits.get(key);
+    if (!cur || now > cur.resetAt) {
+      hits.set(key, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+    cur.count += 1;
+    return cur.count <= limit;
+  };
+}
+
+const exportLimiter = createRateLimiter(10, 60_000);
+const deleteLimiter = createRateLimiter(5, 60_000);
 
 function bearerOrQuery(c: { req: { query(k: string): string | undefined; header(n: string): string | undefined } }): string | undefined {
   const q = c.req.query("token");
@@ -55,6 +75,11 @@ export function createLogsApp(deps: LogsDeps) {
       return c.json({ error: "raw log archive not configured" }, 503);
     }
 
+    const caller = c.req.header("fly-client-ip") ?? "unknown";
+    if (!exportLimiter(`${caller}:${profileId}`)) {
+      return c.json({ error: "rate limited" }, 429);
+    }
+
     const format = c.req.query("format") ?? "jsonl";
     if (format !== "jsonl" && format !== "csv") {
       return c.json({ error: "format must be jsonl|csv" }, 400);
@@ -75,19 +100,22 @@ export function createLogsApp(deps: LogsDeps) {
 
     const { keys, truncated } = await listAllKeys(deps.client, objectPrefix);
     const orderedKeys = newestFirst ? [...keys].reverse() : keys;
+    const objectCap = date ? MAX_DATE_EXPORT_OBJECTS : MAX_EXPORT_OBJECTS;
+    const cappedKeys = orderedKeys.slice(-objectCap);
+    const capped = truncated || cappedKeys.length !== orderedKeys.length;
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        if (truncated) {
+        if (capped) {
           controller.enqueue(
-            encoder.encode(format === "jsonl" ? `{"warning":"truncated at ${keys.length} objects"}\n` : `# warning: truncated at ${keys.length} objects\n`),
+            encoder.encode(format === "jsonl" ? `{"warning":"truncated at ${cappedKeys.length} objects"}\n` : `# warning: truncated at ${cappedKeys.length} objects\n`),
           );
         }
         if (format === "csv") controller.enqueue(encoder.encode(CSV_HEADER));
         let emitted = 0;
         try {
-          outer: for (const key of orderedKeys) {
+          outer: for (const key of cappedKeys) {
             const compressed = new Uint8Array(await deps.client!.file(key).arrayBuffer());
             if (compressed.length > MAX_INFLATED_BYTES) {
               log.warn({ key }, "log object too large, skipped");
@@ -142,8 +170,9 @@ export function createLogsApp(deps: LogsDeps) {
       headers: {
         "content-type": format === "csv" ? "text/csv" : "application/x-ndjson",
         "content-disposition": `attachment; filename="rz-logs-${profileId}${date ? "-" + date : ""}.${format}"`,
-        ...(truncated ? { "x-rz-truncated": "true" } : {}),
+        ...(capped ? { "x-rz-truncated": "true" } : {}),
         ...(limit ? { "x-rz-limited": String(limit) } : {}),
+        "x-rz-objects": String(cappedKeys.length),
       },
     });
   });
@@ -152,6 +181,10 @@ export function createLogsApp(deps: LogsDeps) {
     const profileId = c.req.param("profileId");
     if (!deps.store.hasProfile(profileId, bearerOrQuery(c))) {
       return c.body(null, 404);
+    }
+    const caller = c.req.header("fly-client-ip") ?? "unknown";
+    if (!deleteLimiter(`${caller}:${profileId}`)) {
+      return c.json({ error: "rate limited" }, 429);
     }
     if (!deps.client) {
       return c.json({ error: "raw log archive not configured" }, 503);

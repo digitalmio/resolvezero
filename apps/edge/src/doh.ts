@@ -14,6 +14,7 @@ import type { RuleStore, ZoneAnswer } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 import type { Recorder } from "./metrics";
 import { localNameAnswer, type ZoneRecordType } from "@resolvezero/shared";
+import { readBytesBounded } from "./body";
 
 export interface QueryLogEntry {
   profileId: string;
@@ -114,8 +115,8 @@ export function createDohApp(deps: DohAppDeps) {
       } else if (c.req.header("content-type") === "application/dns-message") {
         const len = Number(c.req.header("content-length") ?? "0");
         if (len > 65535) return c.body(null, 400);
-        queryWire = new Uint8Array(await c.req.arrayBuffer());
-        if (queryWire.length > 65535) return c.body(null, 400);
+        queryWire = await readBytesBounded(c.req.raw.body, 65535, len);
+        if (queryWire.length === 0) return c.body(null, 400);
       }
     } catch {
       return c.body(null, 400);

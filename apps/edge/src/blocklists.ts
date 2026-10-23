@@ -6,6 +6,7 @@ import { SuffixFingerprintBuilder } from "./fingerprint";
 import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 import { fetchWithSafeRedirects } from "./netGuard";
+import { readTextBounded } from "./body";
 
 const log = moduleLogger("blocklists");
 
@@ -231,10 +232,7 @@ export async function fetchListText(url: string): Promise<string> {
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const len = Number(res.headers.get("content-length") ?? 0);
-  if (len > MAX_LIST_BYTES) throw new Error(`too large: ${len}B`);
-  const text = await res.text();
-  if (text.length > MAX_LIST_BYTES) throw new Error(`too large: ${text.length}B`);
-  return text;
+  return readTextBounded(res.body, MAX_LIST_BYTES, len);
 }
 
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\.?$/;

@@ -1,5 +1,6 @@
 import { decode, type Packet } from "dns-packet";
 import { allowPrivateTargets, fetchWithSafeRedirects } from "./netGuard";
+import { readBytesBounded } from "./body";
 
 /**
  * Upstream DoH presets (readme §2). Verified against Bun's fetch:
@@ -90,9 +91,9 @@ async function fetchUpstream(wire: Uint8Array, finalUrl: string): Promise<Upstre
     },
   );
   if (!response.ok) throw new Error(`upstream HTTP ${response.status}`);
-  const body = new Uint8Array(await response.arrayBuffer());
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  const body = await readBytesBounded(response.body, MAX_UPSTREAM_BYTES, declared);
   if (body.length === 0) throw new Error("empty upstream response");
-  if (body.length > MAX_UPSTREAM_BYTES) throw new Error("upstream response too large");
 
   validateUpstreamResponse(wire, body);
   const rttMs = Math.round(performance.now() - startedAt);

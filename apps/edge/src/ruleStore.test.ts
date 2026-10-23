@@ -188,5 +188,14 @@ describe("zone overrides", () => {
     expect(store.hasToken("11111111-1111-1111-1111-111111111111")).toBe(true);
     expect(store.hasToken("22222222-2222-2222-2222-222222222222")).toBe(false);
     expect(store.hasToken("unknown-profile")).toBe(false);
+    expect(store.tokenlessProfileIds()).toEqual(["22222222-2222-2222-2222-222222222222"]);
+  });
+
+  test("applyDeviceSeen: hard cap prevents unlimited device rows", () => {
+    const store = new RuleStore();
+    for (let i = 0; i < 200; i++) expect(store.applyDeviceSeen("p1", `device-${i}`)).toBe(true);
+    expect(store.applyDeviceSeen("p1", "device-overflow")).toBe(false);
+    expect(store.applyDeviceSeen("p1", "device-0")).toBe(false);
+    expect(store.applyDeviceSeen("p2", "device-0")).toBe(true);
   });
 });
