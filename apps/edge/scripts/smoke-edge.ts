@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -77,31 +78,67 @@ async function main(): Promise<void> {
   const { and, eq } = await import("drizzle-orm");
   const { decode, encode } = await import("dns-packet");
 
-  const profileRows = await db
-    .select({ id: profiles.id, token: profiles.dohToken })
+  // Smoke checks must never pollute a customer's logs or rollups. Use a
+  // dedicated log-disabled profile with its own block rule and zone. It is
+  // created once, then reused by later deploys.
+  const smokeName = process.env.SMOKE_PROFILE_NAME ?? "ci-smoke";
+  const smokeDomain = "smoke-block.example";
+  const smokeZone = "smoke-zone.lan";
+  let [profile] = await db
+    .select({ id: profiles.id, token: profiles.dohToken, logQueries: profiles.logQueries })
     .from(profiles)
-    .limit(20);
-  const [blockOwner] = await db
-    .select({ id: profileRules.profileId })
-    .from(profileRules)
-    .where(eq(profileRules.action, "block"))
+    .where(eq(profiles.name, smokeName))
     .limit(1);
-  const [zoneOwner] = await db
-    .select({ id: profileZones.profileId })
-    .from(profileZones)
-    .limit(1);
-  const preferredId = blockOwner?.id ?? zoneOwner?.id;
-  const profile =
-    profileRows.find((p) => p.id === preferredId) ??
-    profileRows.find((p) => p.token) ??
-    profileRows[0];
+
+  let configChanged = false;
   if (!profile) {
-    fail("no profile in DB for DoH checks");
+    const token = randomBytes(24).toString("hex");
+    [profile] = await db
+      .insert(profiles)
+      .values({ name: smokeName, dohToken: token, logQueries: false, logRetentionDays: 1 })
+      .returning({ id: profiles.id, token: profiles.dohToken, logQueries: profiles.logQueries });
+    configChanged = true;
+  } else if (!profile.token || profile.logQueries) {
+    const token = profile.token ?? randomBytes(24).toString("hex");
+    await db
+      .update(profiles)
+      .set({ dohToken: token, logQueries: false })
+      .where(eq(profiles.id, profile.id));
+    profile = { ...profile, token, logQueries: false };
+    configChanged = true;
+  }
+
+  if (!profile?.token) {
+    fail("could not create a smoke profile with a DoH token");
     return;
   }
-  const dohPath = `${DOH_BASE}/v1/${encodeURIComponent(profile.id)}${
-    profile.token ? `/${encodeURIComponent(profile.token)}` : ""
-  }`;
+
+  const insertedRule = await db
+    .insert(profileRules)
+    .values({ profileId: profile.id, domain: smokeDomain, action: "block" })
+    .onConflictDoNothing()
+    .returning({ profileId: profileRules.profileId });
+  const insertedZone = await db
+    .insert(profileZones)
+    .values({
+      profileId: profile.id,
+      domain: smokeZone,
+      recordType: "A",
+      values: ["192.0.2.1"],
+      ttl: 60,
+    })
+    .onConflictDoNothing()
+    .returning({ profileId: profileZones.profileId });
+  configChanged ||= insertedRule.length > 0 || insertedZone.length > 0;
+
+  if (configChanged) {
+    // Edges poll the watermark every 5s; wait for this profile/rules/zone to
+    // land before sending DoH checks, otherwise the first request can 404.
+    console.log("smoke profile changed; waiting for edge config propagation…");
+    await new Promise((resolve) => setTimeout(resolve, 7_000));
+  }
+
+  const dohPath = `${DOH_BASE}/v1/${encodeURIComponent(profile.id)}/${encodeURIComponent(profile.token)}`;
 
   async function dohQuery(name: string, type = "A"): Promise<Record<string, unknown>> {
     const wire = new Uint8Array(

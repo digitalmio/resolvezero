@@ -12,7 +12,7 @@ function Devices() {
   if (isError || !data) return <PageError title="Could not load devices." onRetry={() => void refetch()} />
 
   const dohDevices = data.topDevices.map((d, index) => ({ name: d.device, tag: d.device, queries: String(d.count), lastSeen: 'last 24h', kind: 'DoH', status: index < 4 ? 'online' : 'unknown' }))
-  const udpSources = data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: String(c.count), lastSeen: 'last 24h', kind: 'UDP' }))
+  const clientIps = data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: String(c.count), lastSeen: 'last 24h' }))
 
   return (
     <div className="space-y-6">
@@ -31,7 +31,7 @@ function Devices() {
       <div className="rz-card flex items-start gap-3 border-[#f0dfb8] bg-[#fffaf0] p-4">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-[#f7e9ca] text-[#8a691d]"><Info size={14} /></span>
         <p className="text-[12px] leading-5 text-[#6e5a2c]">
-          UDP DNS carries no device identity. Queries from the same public IP are shown as one source. Use the device-tagged DoH URL for per-device attribution.
+          Client IPs are shared by UDP and DoH traffic. Downstream devices are opaque, so queries from the same public IP are grouped together. Use the device-tagged DoH URL for per-device attribution.
         </p>
       </div>
 
@@ -68,14 +68,14 @@ function Devices() {
         <div className="rz-card overflow-hidden">
           <div className="flex items-center justify-between p-5 pb-4">
             <div>
-              <h2 className="text-[15px] font-semibold tracking-[-0.02em]">UDP sources</h2>
-              <p className="mt-1 text-[12px] text-[var(--muted)]">Public IP only — downstream devices are opaque</p>
+              <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Client IPs</h2>
+              <p className="mt-1 text-[12px] text-[var(--muted)]">UDP + DoH sources — downstream devices are opaque</p>
             </div>
             <Router size={17} className="text-[var(--muted)]" />
           </div>
           <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
-            {udpSources.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No UDP sources in the last 24h.</p> : null}
-            {udpSources.map((source) => (
+            {clientIps.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No client IPs in the last 24h.</p> : null}
+            {clientIps.map((source) => (
               <div key={source.name} className="flex items-center gap-3 px-5 py-4">
                 <span className="flex size-9 items-center justify-center rounded-xl bg-[var(--paper-2)] text-[var(--muted)]"><Router size={16} /></span>
                 <div className="min-w-0">
@@ -99,11 +99,11 @@ function Devices() {
             <Search size={14} />
             <span>Search devices or source IPs</span>
           </div>
-          <span className="text-[11px] text-[var(--muted)]">{dohDevices.length + udpSources.length} devices/sources · last 24h</span>
+          <span className="text-[11px] text-[var(--muted)]">{dohDevices.length + clientIps.length} devices/sources · last 24h</span>
         </div>
         <div className="grid gap-px bg-[var(--line)] sm:grid-cols-3">
           <DeviceStat label="DoH devices" value={String(dohDevices.length)} detail="Attributed" />
-          <DeviceStat label="UDP sources" value={String(udpSources.length)} detail="IP-only" />
+          <DeviceStat label="Client IPs" value={String(clientIps.length)} detail="UDP + DoH" />
           <DeviceStat label="Queries today" value={new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(data.totalQueries)} detail="Across all devices" />
         </div>
       </div>
