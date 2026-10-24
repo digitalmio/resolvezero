@@ -16,7 +16,7 @@ ResolveZero is a personal DNS & DoH (DNS-over-HTTPS) resolver you fully control.
 * **Edge Runtime:** Node 24 LTS (TypeScript via `tsx`). UDP/TCP 53 use `node:dgram` / `node:net` for legacy device support.
 * **Infrastructure (hosted option):** Fly.io. Edge compute + BGP Anycast + one shared dedicated IPv4 (UDP requires it; all profiles share it).
 * **Database:** PlanetScale Postgres (Metal) — profiles, rules, query logs, and the central source of truth.
-    * Managed PgBouncer runs in transaction-pooling mode. Config propagation is **watermark polling** (below), so it works through the pool; no `LISTEN`/dedicated connection is required.
+    * Managed PgBouncer runs in transaction-pooling mode. Runtime `DATABASE_URL` uses the **PgBouncer port `6432`**; direct `5432` is reserved for `DATABASE_URL_ADMIN` migrations. Config propagation is **watermark polling** (below), so it works through the pool; no `LISTEN`/dedicated connection is required.
 * **ORM / Migrations:** Drizzle (package `packages/db`) + custom SQL migrations for triggers.
 * **Config Propagation:** `edge_config_state` single-row watermark (`config_version`, `blocklist_version`) bumped by statement-level triggers in the same transaction as writes; each edge POP polls every ~5 s (`CONFIG_POLL_MS`) and re-snapshots/re-syncs when it moves. No `LISTEN`/`NOTIFY` on the hot path.
 * **Policy Cache:** A plain in-memory `Map` of ALL profiles' policies. Bounded set — NEVER evict (LRU is reserved for the resolver cache only).
