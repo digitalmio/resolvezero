@@ -3,10 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { getOverview } from '../server/dashboard'
 import {
-  ArrowDownRight,
   ArrowUpRight,
   Ban,
-  CircleCheck,
   Clock3,
   Globe2,
   Monitor,
@@ -18,11 +16,27 @@ import {
 
 export const Route = createFileRoute('/')({ component: Overview })
 
-const changes = [
-  { time: '2 min ago', title: 'Blocklist synced', detail: 'KADhosts · 39,885 entries' },
-  { time: '18 min ago', title: 'Rule added', detail: 'allow analytics.resolvezero.com' },
-  { time: '1h ago', title: 'Config rolled out', detail: 'fra + lhr · version 59' },
-]
+const REGION_NAMES: Record<string, string> = {
+  fra: 'Frankfurt',
+  lhr: 'London',
+  iad: 'Ashburn',
+  sjc: 'San José',
+  nrt: 'Tokyo',
+  syd: 'Sydney',
+  gru: 'São Paulo',
+}
+
+function regionLabel(region: string | null): string {
+  if (!region) return '—'
+  return region.toUpperCase()
+}
+
+function ageLabel(ms: number | null): string {
+  if (ms == null) return '—'
+  const seconds = Math.max(0, Math.round(ms / 1_000))
+  if (seconds < 60) return `${seconds}s`
+  return `${Math.round(seconds / 60)}m`
+}
 
 function greetingForHour(hour: number): string {
   if (hour < 12) return 'Good morning'
@@ -67,6 +81,9 @@ function Overview() {
   const qpsLabel = qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)
   const forwardedPct = totalQueries > 0 ? Math.round((forwarded / totalQueries) * 100) : 0
   const blockedPct = totalQueries > 0 ? Math.round((blocked / totalQueries) * 100) : 0
+  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+  const region = regionLabel(data.edge.region)
+  const updateAge = ageLabel(data.edge.configPollAgeMs)
 
   return (
     <div className="space-y-6">
@@ -78,7 +95,7 @@ function Overview() {
           </p>
           <h1 className="text-[30px] font-semibold tracking-[-0.045em] sm:text-[36px]">{greeting}, Maciej.</h1>
           <p className="mt-2 flex items-center gap-2 text-[13px] text-[var(--muted)]">
-            {data.profileName} · live from Postgres
+            {profileLabel} · last 24 hours
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -101,25 +118,26 @@ function Overview() {
                 </span>
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Network posture</p>
-                  <p className="mt-0.5 text-[17px] font-semibold tracking-[-0.02em]">Protected</p>
+                  <p className="mt-0.5 text-[17px] font-semibold tracking-[-0.02em]">{data.edge.ok ? 'Protected' : 'Attention needed'}</p>
                 </div>
               </div>
               <p className="mt-5 max-w-[430px] text-[13px] leading-6 text-[var(--muted)]">
-                All resolvers are responding. Your rules are synced across <span className="font-mono text-[var(--ink)]">fra</span> and{' '}
-                <span className="font-mono text-[var(--ink)]">lhr</span>. No action is required.
+                {data.edge.ok
+                  ? `The DNS edge is healthy${data.edge.region ? ` in ${REGION_NAMES[data.edge.region] ?? region}` : ''}. Your latest configuration is live.`
+                  : 'The DNS edge health check is unavailable. Queries may still be flowing.'}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:min-w-[210px]">
-              <MiniStat label="Uptime" value="99.99%" />
-              <MiniStat label="Active rules" value="42" />
-              <MiniStat label="Last sync" value="4s" accent />
-              <MiniStat label="Region" value="EU" />
+              <MiniStat label="Custom rules" value={String(data.ruleCount)} />
+              <MiniStat label="Active devices" value={String(activeDevices)} />
+              <MiniStat label="Updated" value={updateAge} accent />
+              <MiniStat label="Region" value={region} />
             </div>
           </div>
           <div className="relative mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--line)] pt-4 text-[11px] text-[var(--muted)]">
-            <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-[#2e9b55]" /> UDP + TCP 53 healthy</span>
-            <span className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-[#2e9b55]" /> DoH healthy</span>
-            <span className="flex items-center gap-2"><CircleCheck size={12} /> Config v{data.configVersion}</span>
+            <span className="flex items-center gap-2"><span className={['size-1.5 rounded-full', data.edge.dns53Bound ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> UDP + TCP 53 {data.edge.dns53Bound ? 'healthy' : 'unavailable'}</span>
+            <span className="flex items-center gap-2"><span className={['size-1.5 rounded-full', data.edge.blocklistsLoaded ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Blocklists {data.edge.blocklistsLoaded ? 'loaded' : 'unavailable'}</span>
+            <span className="flex items-center gap-2"><span className={['size-1.5 rounded-full', data.edge.ok ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Edge {data.edge.ok ? 'healthy' : 'unreachable'}</span>
           </div>
         </div>
 
@@ -151,10 +169,10 @@ function Overview() {
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi icon={<Globe2 size={16} />} label="Queries today" value={formatNumber(totalQueries)} delta={data ? 'last 24h' : '+12.4%'} positive />
-        <Kpi icon={<Ban size={16} />} label="Blocked" value={formatNumber(blocked)} delta={`${((data?.blockRatio ?? 0.182) * 100).toFixed(1)}% of total`} />
-        <Kpi icon={<Clock3 size={16} />} label="Avg upstream" value={data?.avgRttMs != null ? `${data.avgRttMs} ms` : '21 ms'} delta="forwarded queries" positive />
-        <Kpi icon={<Monitor size={16} />} label="Active devices" value={String(activeDevices)} delta={data ? 'DoH tags in window' : '2 new this week'} />
+        <Kpi icon={<Globe2 size={16} />} label="Queries / 24h" value={formatNumber(totalQueries)} delta="last 24 hours" />
+        <Kpi icon={<Ban size={16} />} label="Blocked" value={formatNumber(blocked)} delta={`${(data.blockRatio * 100).toFixed(1)}% of total`} />
+        <Kpi icon={<Clock3 size={16} />} label="Avg upstream" value={data.avgRttMs != null ? `${data.avgRttMs} ms` : '—'} delta="forwarded queries" positive />
+        <Kpi icon={<Monitor size={16} />} label="Active devices" value={String(activeDevices)} delta="DoH tags in window" />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
@@ -238,28 +256,31 @@ function Overview() {
         <div className="rz-card p-6">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Recent changes</h2>
-              <p className="mt-1 text-[12px] text-[var(--muted)]">Config is up to date across all regions</p>
+              <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Edge status</h2>
+              <p className="mt-1 text-[12px] text-[var(--muted)]">Live from the resolver</p>
             </div>
-            <span className="flex items-center gap-1.5 rounded-full bg-[#edf8f0] px-2.5 py-1 text-[10px] font-medium text-[#247440]">
-              <ArrowDownRight size={11} /> 0 pending
+            <span className={['flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium', data.edge.ok ? 'bg-[#edf8f0] text-[#247440]' : 'bg-[#fff4e6] text-[#a96500]'].join(' ')}>
+              <span className={['size-1.5 rounded-full', data.edge.ok ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} />
+              {data.edge.ok ? 'Healthy' : 'Degraded'}
             </span>
           </div>
-          <div className="mt-5 space-y-0">
-            {changes.map((change, index) => (
-              <div key={change.title} className="relative flex gap-3 pb-5 last:pb-0">
-                {index < changes.length - 1 ? <span className="absolute left-[5px] top-3 h-full w-px bg-[var(--line)]" /> : null}
-                <span className="relative mt-1.5 size-[11px] shrink-0 rounded-full border-2 border-[var(--paper)] bg-[var(--ink)] ring-1 ring-[var(--line)]" />
-                <div className="min-w-0">
-                  <p className="text-[12px] font-medium">{change.title}</p>
-                  <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--muted)]">{change.title === 'Config rolled out' ? `fra + lhr · version ${data.configVersion}` : change.detail}</p>
-                  <p className="mt-1 text-[10px] text-[var(--muted)]">{change.time}</p>
-                </div>
-              </div>
-            ))}
+          <div className="mt-5 space-y-3">
+            <StatusRow label="Region" value={data.edge.region ? `${region} · ${REGION_NAMES[data.edge.region] ?? 'Unknown'}` : '—'} />
+            <StatusRow label="Config age" value={updateAge} />
+            <StatusRow label="Blocklists" value={data.edge.blocklistsLoaded ? 'Loaded' : 'Unavailable'} />
+            <StatusRow label="Failed lists" value={String(data.edge.failedBlocklists)} />
           </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+function StatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-[var(--line)] pb-3 last:border-0 last:pb-0">
+      <span className="text-[11px] text-[var(--muted)]">{label}</span>
+      <span className="font-mono text-[11px] text-[var(--ink)]">{value}</span>
     </div>
   )
 }

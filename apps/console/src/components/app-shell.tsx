@@ -46,6 +46,11 @@ export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { data } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
   const deviceCount = data ? Math.max(data.activeDevices, data.topClients.length) : 0
+  const queriesLabel = data
+    ? new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(data.totalQueries)
+    : '—'
+  const blockRate = data ? (data.blockRatio * 100).toFixed(1) : '—'
+  const edgeHealthy = data?.edge.ok
   const nav = primaryNav.map((item) =>
     item.label === 'Devices' && deviceCount > 0 ? { ...item, badge: String(deviceCount) } : item,
   )
@@ -84,14 +89,14 @@ export function AppShell() {
         <div className="m-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
           <div className="flex items-center gap-2 text-[12px] font-medium text-white/85">
             <ShieldCheck size={15} className="text-[var(--accent)]" />
-            Protection active
+            {edgeHealthy === false ? 'Edge unavailable' : 'Protection active'}
           </div>
           <p className="mt-1.5 text-[11px] leading-5 text-white/45">
-            All resolvers are healthy. Last config sync 4s ago.
+            {data ? `${queriesLabel} DNS queries in the last 24 hours.` : 'Loading live DNS data…'}
           </p>
           <div className="mt-3 flex items-center justify-between text-[11px] text-white/40">
-            <span className="font-mono">fra / lhr</span>
-            <span className="text-[var(--accent)]">99.99%</span>
+            <span>{deviceCount} devices</span>
+            <span className="text-[var(--accent)]">{blockRate}% blocked</span>
           </div>
         </div>
 
@@ -126,7 +131,7 @@ export function AppShell() {
             <DnsProbeBadge />
             <span className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)] md:flex">
               <Activity size={12} className="text-[var(--accent)]" />
-              1,284 qps
+              {queriesLabel} queries / 24h
             </span>
             <button className="flex size-9 items-center justify-center rounded-full bg-[var(--ink)] text-[11px] font-semibold text-white">
               MK

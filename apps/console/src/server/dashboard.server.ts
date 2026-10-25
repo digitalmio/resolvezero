@@ -15,12 +15,24 @@ import {
   type StatsTopEntry,
 } from "@resolvezero/db/schema";
 
+export interface EdgeHealth {
+  ok: boolean;
+  region: string | null;
+  rulesLoaded: boolean;
+  blocklistsLoaded: boolean;
+  dns53Bound: boolean;
+  configPollAgeMs: number | null;
+  failedBlocklists: number;
+}
+
 export interface OverviewData {
   profileId: string;
   profileName: string;
   generatedAt: string;
   configVersion: number;
   blocklistVersion: number;
+  ruleCount: number;
+  edge: EdgeHealth;
   totalQueries: number;
   blocked: number;
   blockRatio: number;
@@ -128,6 +140,34 @@ export async function loadRules(): Promise<RulesData> {
   return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };
 }
 
+async function loadEdgeHealth(): Promise<EdgeHealth> {
+  const edge = (process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev").replace(/\/+$/, "");
+  try {
+    const res = await fetch(`${edge}/readyz`, { signal: AbortSignal.timeout(2_500) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json()) as Record<string, unknown>;
+    return {
+      ok: body.ok === true,
+      region: typeof body.region === "string" ? body.region : null,
+      rulesLoaded: body.rulesLoaded === true,
+      blocklistsLoaded: body.blocklistsLoaded === true,
+      dns53Bound: body.dns53Bound === true,
+      configPollAgeMs: typeof body.configPollAgeMs === "number" ? body.configPollAgeMs : null,
+      failedBlocklists: typeof body.failedBlocklists === "number" ? body.failedBlocklists : 0,
+    };
+  } catch {
+    return {
+      ok: false,
+      region: null,
+      rulesLoaded: false,
+      blocklistsLoaded: false,
+      dns53Bound: false,
+      configPollAgeMs: null,
+      failedBlocklists: 0,
+    };
+  }
+}
+
 async function findProfile(): Promise<{ id: string; name: string }> {
   const configuredProfile = process.env.DASHBOARD_PROFILE_ID;
   if (configuredProfile) {
@@ -170,27 +210,32 @@ export async function loadOverview(): Promise<OverviewData> {
   const since = new Date(now.getTime() - 24 * HOUR);
   const profile = await findProfile();
 
-  const [rows, configRows] = await Promise.all([
+  const [rows, configRows, rules, edge] = await Promise.all([
     db
-    .select({
-      hour: statsHourly.hour,
-      totalQueries: statsHourly.totalQueries,
-      blocked: statsHourly.blocked,
-      rttSumMs: statsHourly.rttSumMs,
-      rttCount: statsHourly.rttCount,
-      topDomains: statsHourly.topDomains,
-      topBlocked: statsHourly.topBlocked,
-      topDevices: statsHourly.topDevices,
-      topClients: statsHourly.topClients,
-    })
-    .from(statsHourly)
-    .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, since)))
-    .orderBy(asc(statsHourly.hour)),
+      .select({
+        hour: statsHourly.hour,
+        totalQueries: statsHourly.totalQueries,
+        blocked: statsHourly.blocked,
+        rttSumMs: statsHourly.rttSumMs,
+        rttCount: statsHourly.rttCount,
+        topDomains: statsHourly.topDomains,
+        topBlocked: statsHourly.topBlocked,
+        topDevices: statsHourly.topDevices,
+        topClients: statsHourly.topClients,
+      })
+      .from(statsHourly)
+      .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, since)))
+      .orderBy(asc(statsHourly.hour)),
     db
       .select({ configVersion: edgeConfigState.configVersion, blocklistVersion: edgeConfigState.blocklistVersion })
       .from(edgeConfigState)
       .where(eq(edgeConfigState.id, true))
       .limit(1),
+    db
+      .select({ domain: profileRules.domain })
+      .from(profileRules)
+      .where(eq(profileRules.profileId, profile.id)),
+    loadEdgeHealth(),
   ]);
 
   let totalQueries = 0;
@@ -235,6 +280,8 @@ export async function loadOverview(): Promise<OverviewData> {
     generatedAt: new Date().toISOString(),
     configVersion: configRows[0]?.configVersion ?? 0,
     blocklistVersion: configRows[0]?.blocklistVersion ?? 0,
+    ruleCount: rules.length,
+    edge,
     totalQueries,
     blocked,
     blockRatio: totalQueries > 0 ? Number((blocked / totalQueries).toFixed(4)) : 0,
