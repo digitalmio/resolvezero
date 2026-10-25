@@ -479,6 +479,38 @@ export async function loadSettings(): Promise<SettingsData> {
   };
 }
 
+export interface CachePurgeResult {
+  ok: boolean;
+  name: string;
+  type: string | null;
+}
+
+/** Queue an edge-cache purge. Upstream resolver caches remain TTL-bound. */
+export async function purgeCache(domain: string, type?: string): Promise<CachePurgeResult> {
+  const profile = await findProfile();
+  const token = await db
+    .select({ token: profiles.dohToken })
+    .from(profiles)
+    .where(eq(profiles.id, profile.id))
+    .limit(1)
+    .then((rows) => rows[0]?.token);
+  if (!token) throw new Error("profile has no DoH token; cannot purge cache");
+
+  const edge = (process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev").replace(/\/+$/, "");
+  const res = await fetch(`${edge}/v1/${encodeURIComponent(profile.id)}/cache/purge`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ name: domain, ...(type ? { type } : {}) }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const body = (await res.json().catch(() => ({}))) as { name?: string; type?: string | null; error?: string };
+  if (!res.ok) throw new Error(body.error ?? `edge returned HTTP ${res.status}`);
+  return { ok: true, name: body.name ?? domain, type: body.type ?? null };
+}
+
 export interface DnsProbeStatus {
   seen: boolean;
   seenAt: string | null;

@@ -13,9 +13,9 @@ kill_timeout = 30
   dockerfile = "Dockerfile"
 
 [deploy]
-  # Never replace every PoP at once.
-  strategy = "rolling"
-  max_unavailable = 1
+  # Fly starts a new set, waits for health, then cuts over; CI rolls back the
+  # previous image if the post-deploy smoke checks fail.
+  strategy = "bluegreen"
 
 # Node runtime needs 512 MB for the 397k-rule blocklist build (256 MB stalls
 # during boot). Bun ran comfortably in 256 MB.
@@ -27,6 +27,8 @@ kill_timeout = 30
 [env]
   PORT = "8080"
   LOG_LEVEL = "info"
+  # Archive objects are exposed by the logs API; keep console lag near 5 min.
+  S3_FLUSH_MINUTES = "5"
   # Raw-log persistence is the in-process S3 sink (S3_* secrets in Fly).
   # Flip to QUERY_LOG_STDOUT=1 + Fly Log Shipper instead if ever preferred.
   # Secrets (set once, shared by all regions):

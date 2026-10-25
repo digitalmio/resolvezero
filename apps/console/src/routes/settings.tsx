@@ -1,8 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
-import { CheckCircle2, Copy, KeyRound, Network, Settings, ShieldCheck } from 'lucide-react'
-import { getSettingsData } from '../server/dashboard'
+import { CheckCircle2, Copy, KeyRound, Network, Settings, ShieldCheck, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
@@ -11,6 +12,11 @@ function SettingsPage() {
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ['settings'],
     queryFn: () => getSettingsData(),
+  })
+  const [domain, setDomain] = useState('')
+  const [recordType, setRecordType] = useState('')
+  const purge = useMutation({
+    mutationFn: () => purgeCache({ data: { domain, type: recordType || undefined } }),
   })
 
   if (isPending) return <PageLoading label="Loading settings…" />
@@ -43,6 +49,50 @@ function SettingsPage() {
           <Row label="Log queries" value={data.logQueries ? 'enabled' : 'disabled'} />
           <Row label="Log retention" value={`${data.logRetentionDays} days`} />
         </Section>
+      </div>
+
+      <div className="rz-card p-5">
+        <div className="flex items-center gap-2">
+          <Trash2 size={16} className="text-[var(--muted)]" />
+          <div>
+            <h2 className="text-[14px] font-semibold">Purge cache</h2>
+            <p className="mt-0.5 text-[11px] text-[var(--muted)]">Evict one name from the ResolveZero edge cache.</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <input
+            value={domain}
+            onChange={(event) => setDomain(event.target.value)}
+            placeholder="example.com"
+            className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--accent)]"
+          />
+          <select
+            value={recordType}
+            onChange={(event) => setRecordType(event.target.value)}
+            className="rounded-md border border-[var(--line)] bg-white px-3 py-2 text-[11px] outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">All types</option>
+            <option value="A">A</option>
+            <option value="AAAA">AAAA</option>
+            <option value="CNAME">CNAME</option>
+            <option value="TXT">TXT</option>
+            <option value="MX">MX</option>
+            <option value="NS">NS</option>
+            <option value="HTTPS">HTTPS</option>
+          </select>
+          <button
+            className="rz-button-primary disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!domain.trim() || purge.isPending}
+            onClick={() => purge.mutate()}
+          >
+            {purge.isPending ? 'Purging…' : 'Purge'}
+          </button>
+        </div>
+        {purge.isError ? <p className="mt-2 text-[11px] text-[#b83c14]">{purge.error.message}</p> : null}
+        {purge.isSuccess ? <p className="mt-2 text-[11px] text-[#247440]">Queued for {purge.data.name}{purge.data.type ? ` (${purge.data.type})` : ''}.</p> : null}
+        <p className="mt-2 text-[10px] text-[var(--muted)]">
+          Edge caches are purged within a few seconds. Upstream resolvers may still serve cached records until their TTL expires.
+        </p>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">

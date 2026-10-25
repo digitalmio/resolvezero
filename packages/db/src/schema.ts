@@ -172,6 +172,28 @@ export const dnsProbes = pgTable(
 );
 
 /**
+ * Per-POP DNS-cache purge requests. Edges poll this table (~5s), remove
+ * matching entries from their local LRU, and leave the row for audit/prune.
+ * The cache itself is global (not profile-scoped), so a purge may evict the
+ * same upstream answer for other profiles; that is safe because rules/zones
+ * are evaluated before the cache.
+ */
+export const dnsCachePurges = pgTable(
+  "dns_cache_purges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    domain: varchar("domain", { length: 255 }).notNull(),
+    /** NULL = purge every record type for the name. */
+    recordType: varchar("record_type", { length: 10 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("dns_cache_purges_created_at_idx").on(t.createdAt)],
+);
+
+/**
  * Devices seen per profile (lazy-created on first device-tagged DoH query).
  * The edge inserts on first sight; the dashboard later reads/renames.
  * slug stays the raw client-provided tag (≤64 chars, url-safe charset).

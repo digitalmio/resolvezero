@@ -2,10 +2,11 @@ import { Hono } from "hono";
 import { isIP } from "node:net";
 import { eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
-import { profileSourceIps } from "@resolvezero/db/schema";
+import { dnsCachePurges, profileSourceIps } from "@resolvezero/db/schema";
 import type { RuleStore } from "./ruleStore";
 import { moduleLogger } from "./logger";
 import { normalizeIp } from "./wire";
+import { readTextBounded } from "./body";
 
 const log = moduleLogger("admin");
 
@@ -26,6 +27,11 @@ function createRateLimiter(limit: number, windowMs: number) {
 
 const updateIpLimiter = createRateLimiter(30, 60_000);
 const syncLimiter = createRateLimiter(10, 60_000);
+const purgeLimiter = createRateLimiter(10, 60_000);
+
+const PURGE_TYPES = new Set([
+  "A", "AAAA", "CNAME", "TXT", "MX", "NS", "SOA", "SRV", "CAA", "HTTPS", "SVCB",
+]);
 
 function bearerOrQuery(c: { req: { query(k: string): string | undefined; header(n: string): string | undefined } }): string | undefined {
   const q = c.req.query("token");
@@ -108,6 +114,61 @@ export function createAdminApp(deps: AdminDeps) {
 
     log.info({ profileId, ip }, "source IP linked");
     return c.json({ ok: true, ip, profileId });
+  });
+
+  /**
+   * Queue a cache purge for this profile. Edges poll `dns_cache_purges` every
+   * ~5s and evict locally; upstream resolver caches remain TTL-bound.
+   */
+  app.post(":profileId/cache/purge", async (c) => {
+    const profileId = c.req.param("profileId");
+    if (!deps.store.hasProfile(profileId, bearerOrQuery(c))) {
+      return c.body(null, 404);
+    }
+    if (process.env.FLY_REGION && !deps.store.hasToken(profileId)) {
+      return c.body(null, 404);
+    }
+
+    const caller = c.req.header("fly-client-ip") ?? "unknown";
+    if (!purgeLimiter(`${caller}:${profileId}`)) {
+      return c.json({ error: "rate limited" }, 429);
+    }
+
+    let name = c.req.query("name")?.trim() ?? "";
+    let type = c.req.query("type")?.trim() ?? "";
+    if (!name) {
+      const declared = Number(c.req.header("content-length") ?? "0");
+      try {
+        const text = await readTextBounded(c.req.raw.body, 4096, declared);
+        if (text) {
+          const body = JSON.parse(text) as Record<string, unknown>;
+          name = String(body.name ?? "").trim();
+          type = String(body.type ?? "").trim();
+        }
+      } catch {
+        return c.json({ error: "invalid JSON body" }, 400);
+      }
+    }
+
+    const domain = name.toLowerCase().replace(/\.+$/, "");
+    if (
+      !domain ||
+      domain.length > 253 ||
+      domain.includes("..") ||
+      !/^[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?(?:\.[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?)+$/.test(domain)
+    ) {
+      return c.json({ error: "invalid domain" }, 400);
+    }
+
+    const normalizedType = type ? type.toUpperCase() : "";
+    if (normalizedType && normalizedType !== "ANY" && !PURGE_TYPES.has(normalizedType)) {
+      return c.json({ error: "invalid record type" }, 400);
+    }
+    const recordType = normalizedType && normalizedType !== "ANY" ? normalizedType : null;
+
+    await db.insert(dnsCachePurges).values({ profileId, domain, recordType });
+    log.info({ profileId, domain, recordType }, "cache purge queued");
+    return c.json({ ok: true, status: "queued", name: domain, type: recordType, profileId }, 202);
   });
 
   app.post(":profileId/blocklists/sync", async (c) => {

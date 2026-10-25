@@ -50,7 +50,7 @@ Config writes bump `edge_config_state.config_version` (or `.blocklist_version`) 
 
 **Raw logs live in S3-compatible object storage — Postgres never touches raw logs.**
 
-1. **Raw events →** batcher flush → one compressed NDJSON object per profile per 15-min window (`{S3_FLUSH_MINUTES}`): `s3://…/logs/{profile_id}/{date}/{HHmm}.{seq}.jsonl.gz` (`@aws-sdk/client-s3`, works with iDrive E2 / R2 / Tigris / AWS). Event shape: `{kind:"query", time, profile, domain, action, rttMs, clientIp}`. Cost at household scale: ~90 MB compressed/month → **pennies for two years of history**.
+1. **Raw events →** batcher flush → one compressed NDJSON object per profile per 5-min window (`{S3_FLUSH_MINUTES}`): `s3://…/logs/{profile_id}/{date}/{HHmm}.{seq}.jsonl.gz` (`@aws-sdk/client-s3`, works with iDrive E2 / R2 / Tigris / AWS). Event shape: `{kind:"query", time, profile, domain, action, reason, listId, rttMs, clientIp, transport, upstream, region, machine}`. Cost at household scale: ~90 MB compressed/month → **pennies for two years of history**.
 2. **Stats →** the same flush updates **rollup rows** in Postgres:
     * `stats_minute` (totals only, PK profile+minute) — powers the live charts; hard-pruned after 6 h.
     * `stats_hourly` (totals, blocked, RTT mean, top-200 domains, top-100 blocked, top-50 clients — all bounded) — powers dashboard tiles + long ranges; pruned by `log_retention_days`.
@@ -170,7 +170,7 @@ FOR EACH STATEMENT EXECUTE FUNCTION bump_edge_config_version();
 4. **UDP ingress (legacy devices):**
     * Single `dgram` UDP socket bound to `fly-global-services:53` (mandatory on Fly; same port in/out).
     * Silent-drop unauthenticated; rate-limit permitted sources; TC flag fallback for oversized responses.
-5. **Query log batching:** async ring-buffer flushes (2 s / 500 rows): raw events → S3 object per 15-min window (or stdout → Fly Log Shipper), rollup upserts → `stats_minute` + `stats_hourly`; flush failure = retain + exponential backoff, DNS resolution never blocked; respects `log_queries = false`; daily prune of rollups by `log_retention_days`.
+5. **Query log batching:** async ring-buffer flushes (2 s / 500 rows): raw events → S3 object per 5-min window (or stdout → Fly Log Shipper), rollup upserts → `stats_minute` + `stats_hourly`; flush failure = retain + exponential backoff, DNS resolution never blocked; respects `log_queries = false`; daily prune of rollups by `log_retention_days`.
 6. **Log manager + stats endpoints** (NextDNS parity): `GET /v1/:p/logs?format=csv|jsonl[&date=]` (streamed download), `DELETE /v1/:p/logs` (prefix clear), `GET /v1/:p/stats?range=30m|6h|24h|7d|30d|90d` (adaptive ~30-pt chart ladder + aggregates).
 7. **Profile config API + dashboard** (CRUD rules, fetch stats) — the "API-based from ground up" surface.
 
@@ -186,12 +186,12 @@ push main → test (tsc edge/db/control + Vitest) → migrate (drizzle+triggers,
 
 * Secrets: `DATABASE_URL_ADMIN` (migrations only, never runtime) + `FLY_API_TOKEN` (app-scoped). Runtime secrets (`DATABASE_URL`, `S3_*`) stay in Fly.
 * `concurrency: deploy` — no overlapping deploys; migrate runs BEFORE deploy so additive migrations exist before the new edge boots.
-* `scripts/deploy.sh` auto-detects `fly` (local) vs `flyctl` (CI binary name).
+* `scripts/deploy.sh` auto-detects `fly` (local) vs `flyctl` (CI binary name) and defaults to **blue-green**. CI captures the current image before deployment; if post-deploy smoke/parity checks fail it redeploys that image automatically. Manual rollback: `./scripts/rollback.sh`.
 * Prod sweep from the first green run: healthz 204; DoH forward/sinkhole/zone answers green; `top_devices` rollups writing; check-lists 41k remote entries ok.
 * **Productionalization checklist (pipe-related):**
     * [ ] Flip to MR-only: require PRs + `enforce_admins` in branch protection (GitHub Pro needed for required-checks on a private repo — free tier rejected our `PUT /branches/main/protection`; unlock by GitHub Pro or making the repo public).
     * [ ] Add `apps/control` + dashboard deploy jobs to the same workflow.
-    * [ ] Smoke test job (post-deploy DoH probe) auto-rollback on failure (currently manual re-run only).
+    * [x] Smoke test job (post-deploy DoH probe) auto-rollback on failure.
     * [ ] Post-deploy machine-image parity check: `fly machines list` must show ALL machines on the same deployment tag + `app` process group. Drift happened when manual `fly machine start/restart` ops ran during an OOM incident (Fly advisory "running multiple images"; lhr machine was even detached from the app group). Rule: after manual machine surgery, ALWAYS recreate the affected region via `fly scale count N --region X` (never resurrect a drifted machine).
     * [ ] Release notes/bot on tags if/when releasing versions.
 

@@ -147,7 +147,7 @@ export interface S3SinkOptions {
   client: S3ClientLike;
   /** Object key root. Default "logs". */
   prefix?: string;
-  /** Flush window in minutes — one object per window per profile. Default 15. */
+  /** Flush window in minutes — one object per window per profile. Default 5. */
   flushMinutes?: number;
   /** Unique per running edge instance (region+machine+boot nonce). */
   instanceId?: string;
@@ -209,7 +209,10 @@ export class S3ArchiveSink {
   }
 
   private start(): void {
-    const intervalMs = (this.opts.flushMinutes ?? 15) * 60_000;
+    // Check completed windows more often than the window size itself. S3
+    // object granularity stays at flushMinutes, but a completed window is
+    // uploaded within ~1 minute instead of waiting for the next full window.
+    const intervalMs = Math.min(60_000, this.windowMs());
     this.timer = setInterval(() => void this.flushCompleted(), intervalMs);
     this.timer.unref?.();
   }
@@ -271,7 +274,7 @@ export class S3ArchiveSink {
   }
 
   private windowMs(): number {
-    return (this.opts.flushMinutes ?? 15) * 60_000;
+    return (this.opts.flushMinutes ?? 5) * 60_000;
   }
 
   private objectKey(startsAt: number, profileId: string): string {
@@ -306,7 +309,7 @@ export class S3ArchiveSink {
       try {
         await this.opts.client.write(p.key, p.payload);
       } catch {
-        if (++p.attempts > 48) { // 12h worth of 15-min retries
+        if (++p.attempts > 48) { // bounded retry budget; keeps failed objects from growing forever
           this.log.error({ key: p.key }, "archive upload abandoned after max attempts");
           continue;
         }

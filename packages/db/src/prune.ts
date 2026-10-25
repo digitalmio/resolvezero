@@ -26,17 +26,23 @@ export async function pruneExpiredStats(): Promise<number> {
       DELETE FROM dns_probes
       WHERE seen_at < now() - interval '15 minutes'
       RETURNING 1
+    ), deleted_purges AS (
+      DELETE FROM dns_cache_purges
+      WHERE created_at < now() - interval '1 hour'
+      RETURNING 1
     )
     SELECT
       (SELECT count(*)::int FROM deleted) AS minute_pruned,
       (SELECT count(*)::int FROM deleted_hourly) AS hourly_pruned,
-      (SELECT count(*)::int FROM deleted_probes) AS probe_pruned
-  `)) as unknown as Array<{ minute_pruned: number; hourly_pruned: number; probe_pruned: number }>;
+      (SELECT count(*)::int FROM deleted_probes) AS probe_pruned,
+      (SELECT count(*)::int FROM deleted_purges) AS purge_pruned
+  `)) as unknown as Array<{ minute_pruned: number; hourly_pruned: number; probe_pruned: number; purge_pruned: number }>;
 
   return (
     (res[0]?.minute_pruned ?? 0) +
     (res[0]?.hourly_pruned ?? 0) +
-    (res[0]?.probe_pruned ?? 0)
+    (res[0]?.probe_pruned ?? 0) +
+    (res[0]?.purge_pruned ?? 0)
   );
 }
 

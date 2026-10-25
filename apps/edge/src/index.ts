@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { asc, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
-import { dnsProbes, profileDevices } from "@resolvezero/db/schema";
+import { dnsCachePurges, dnsProbes, profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
 import { dropPrivileges, parseLocalDomains } from "@resolvezero/shared";
 import { QueryLogBatcher } from "./batcher";
@@ -38,12 +39,12 @@ const dnsCache = new DnsCache();
 // ---- Raw-log persistence: exactly one of two paths ----
 // 1. QUERY_LOG_STDOUT=1        → pino lines (kind:"query") → Fly Log Shipper
 //                               (Vector) can route them to the same key layout.
-// 2. S3_BUCKET + creds set     → in-process S3ArchiveSink (15-min objects).
+// 2. S3_BUCKET + creds set     → in-process S3ArchiveSink (S3_FLUSH_MINUTES objects).
 // 3. Neither                   → stats rollups only, raw logs not persisted.
 const stdoutQueryLog = process.env.QUERY_LOG_STDOUT === "1";
 
 const s3Client = createS3ClientFromEnv();
-const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 15) || 15;
+const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 5) || 5;
 const LOCAL_DOMAINS = parseLocalDomains(process.env.LOCAL_DOMAINS ?? "lan,home.arpa");
 const LOCAL_TTL = Number(process.env.LOCAL_TTL ?? 60) || 60;
 const ALLOW_PUBLIC_IP_ENCODING = process.env.ALLOW_PUBLIC_IP_ENCODING === "1";
@@ -79,6 +80,48 @@ function recordProbe(nonce: string, transport: "doh" | "udp" | "tcp"): void {
     .onConflictDoNothing()
     .catch((err) => log.warn({ err }, "probe insert failed"));
 }
+
+// Cache purges are per-POP in-memory state, so every edge polls a small
+// request table and evicts locally. Upstream resolver caches remain TTL-bound.
+const PURGE_POLL_MS = Math.max(1_000, Number(process.env.CACHE_PURGE_POLL_MS ?? 5_000) || 5_000);
+let lastPurgeAt = new Date(Date.now() - 10 * 60_000);
+const processedPurges = new Set<string>();
+
+async function pollCachePurges(): Promise<void> {
+  const rows = await db
+    .select({
+      id: dnsCachePurges.id,
+      domain: dnsCachePurges.domain,
+      recordType: dnsCachePurges.recordType,
+      createdAt: dnsCachePurges.createdAt,
+    })
+    .from(dnsCachePurges)
+    .where(gte(dnsCachePurges.createdAt, lastPurgeAt))
+    .orderBy(asc(dnsCachePurges.createdAt))
+    .limit(500);
+
+  for (const row of rows) {
+    if (processedPurges.has(row.id)) continue;
+    processedPurges.add(row.id);
+    const removed = dnsCache.purge(row.domain, row.recordType);
+    if (removed > 0) {
+      log.info(
+        { domain: row.domain, recordType: row.recordType, removed },
+        "cache entries purged",
+      );
+    }
+    if (row.createdAt > lastPurgeAt) lastPurgeAt = row.createdAt;
+  }
+
+  // Purges are rare; keep the dedupe set bounded during pathological use.
+  if (processedPurges.size > 5_000) processedPurges.clear();
+}
+
+const purgeTimer = setInterval(() => {
+  void pollCachePurges().catch((err) => log.warn({ err }, "cache purge poll failed"));
+}, PURGE_POLL_MS);
+purgeTimer.unref?.();
+void pollCachePurges().catch((err) => log.warn({ err }, "initial cache purge poll failed"));
 
 // Enqueue only when the profile hasn't opted out of logging.
 function logQuery(entry: QueryLogEntry): void {

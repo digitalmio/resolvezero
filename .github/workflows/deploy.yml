@@ -8,6 +8,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy
   cancel-in-progress: false
@@ -66,12 +69,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: capture current edge image (rollback target)
+        run: |
+          FLYBIN=flyctl
+          command -v flyctl >/dev/null 2>&1 || FLYBIN=fly
+          image=$($FLYBIN releases --image -a resolvezero-edge --json \
+            | jq -r '[.[] | select(.Status == "complete" and .ImageRef != "")][0].ImageRef // empty')
+          echo "PREVIOUS_EDGE_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "rollback target: ${image:-<none>}"
       - name: deploy (fra + lhr, warm machines)
         run: ./scripts/deploy.sh
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_REGIONS: fra lhr
           FLY_SCALE: 1
+          FLY_STRATEGY: bluegreen
       - name: smoke — post-deploy healthz gate
         run: |
           sleep 20
@@ -120,6 +132,21 @@ jobs:
             exit 1
           fi
 
+      - name: rollback edge on failure
+        if: failure() && env.PREVIOUS_EDGE_IMAGE != ''
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "::warning::post-deploy checks failed; rolling back edge to $PREVIOUS_EDGE_IMAGE"
+          flyctl deploy --config fly.toml --image "$PREVIOUS_EDGE_IMAGE" --strategy bluegreen --yes
+          sleep 10
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 https://resolvezero-edge.fly.dev/healthz || echo 000)
+          echo "rollback healthz: $code"
+          if [ "$code" != "204" ]; then
+            echo "::error::edge rollback also failed (healthz $code)"
+            exit 1
+          fi
+
   deploy-control:
     name: deploy-control
     runs-on: ubuntu-latest
@@ -128,6 +155,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: capture current control image (rollback target)
+        run: |
+          FLYBIN=flyctl
+          command -v flyctl >/dev/null 2>&1 || FLYBIN=fly
+          image=$($FLYBIN releases --image -a resolvezero-control --json \
+            | jq -r '[.[] | select(.Status == "complete" and .ImageRef != "")][0].ImageRef // empty')
+          echo "PREVIOUS_CONTROL_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "rollback target: ${image:-<none>}"
       - name: deploy control (fra)
         run: ./scripts/deploy.sh
         env:
@@ -135,6 +170,7 @@ jobs:
           FLY_REGIONS: fra
           FLY_SCALE: 1
           FLY_CONFIG: fly.control.toml
+          FLY_STRATEGY: bluegreen
       - name: smoke — control /api/healthz gate
         run: |
           sleep 20
@@ -142,5 +178,20 @@ jobs:
           echo "healthz: $code"
           if [ "$code" != "204" ]; then
             echo "::error::control failed post-deploy health check (Code $code)"
+            exit 1
+          fi
+
+      - name: rollback control on failure
+        if: failure() && env.PREVIOUS_CONTROL_IMAGE != ''
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "::warning::control checks failed; rolling back to $PREVIOUS_CONTROL_IMAGE"
+          flyctl deploy --config fly.control.toml --image "$PREVIOUS_CONTROL_IMAGE" --strategy bluegreen --yes
+          sleep 10
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 https://resolvezero-control.fly.dev/api/healthz || echo 000)
+          echo "control rollback healthz: $code"
+          if [ "$code" != "204" ]; then
+            echo "::error::control rollback also failed (healthz $code)"
             exit 1
           fi

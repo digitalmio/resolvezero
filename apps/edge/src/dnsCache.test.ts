@@ -133,6 +133,18 @@ describe("DnsCache", () => {
     expect(cache.get(query("expire.test", 2))).toBeUndefined();
   });
 
+  test("purge evicts one name/type without touching other entries", () => {
+    const cache = new DnsCache();
+    cache.set(query("purge.test"), response("purge.test"));
+    cache.set(query("keep.test"), response("keep.test"));
+    cache.set(query("purge.test"), response("purge.test"), "https://a/dns-query");
+
+    expect(cache.purge("PURGE.test.")).toBe(2);
+    expect(cache.get(query("purge.test"))).toBeUndefined();
+    expect(cache.get(query("purge.test"), "https://a/dns-query")).toBeUndefined();
+    expect(cache.get(query("keep.test"))).toBeDefined();
+  });
+
   test("refreshes once at 80% lifetime and dedupes concurrent refreshes", async () => {
     let now = 1_000_000;
     const cache = new DnsCache(() => now);

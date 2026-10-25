@@ -130,6 +130,26 @@ export class DnsCache {
     this.cache.clear();
   }
 
+  /**
+   * Evict cached answers for one name, optionally limited to a record type.
+   * Cache keys are global (name|type|class|flags|upstream), so this may also
+   * evict the same upstream answer for other profiles — safe because policy
+   * and zones are evaluated before the cache.
+   */
+  purge(name: string, recordType?: string | null): number {
+    const normalized = name.toLowerCase().replace(/\.+$/, "");
+    const wantedType = recordType?.toUpperCase();
+    let removed = 0;
+    for (const key of this.cache.keys()) {
+      const [keyName, keyType] = key.split("|");
+      if (keyName !== normalized) continue;
+      if (wantedType && keyType !== wantedType) continue;
+      this.cache.delete(key);
+      removed++;
+    }
+    return removed;
+  }
+
   get stats() {
     return {
       entries: this.cache.size,

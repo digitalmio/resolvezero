@@ -6,9 +6,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -148,23 +145,24 @@ function Overview() {
             </div>
             <span className="rounded border border-[var(--line)] px-2 py-1 text-[10px] text-[var(--muted)]">24h window</span>
           </div>
-          <div className="mt-4 flex items-center gap-4">
-            <BlockedDonut total={totalQueries} blocked={blocked} />
-            <div className="space-y-2.5 text-[11px]">
-              <div className="flex items-center gap-2">
-                <span className="size-1.5 rounded-full bg-[var(--ink)]" />
-                <span className="text-[var(--muted)]">Forwarded</span>
-                <span className="ml-auto font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="size-1.5 rounded-full bg-[var(--accent)]" />
-                <span className="text-[var(--muted)]">Blocked</span>
-                <span className="ml-auto font-mono text-[var(--ink)]">{formatNumber(blocked)}</span>
-              </div>
-              <div className="flex items-center gap-2 border-t border-[var(--line)] pt-2.5">
-                <span className="text-[var(--muted)]">Total</span>
-                <span className="ml-auto font-mono text-[var(--ink)]">{formatNumber(totalQueries)}</span>
-              </div>
+          <div className="mt-4">
+            <div className="flex h-2 overflow-hidden rounded-sm bg-[var(--paper-2)]">
+              <div className="h-full bg-[var(--ink)]" style={{ width: `${totalQueries > 0 ? (forwarded / totalQueries) * 100 : 100}%` }} />
+              <div className="h-full bg-[var(--accent)]" style={{ width: `${totalQueries > 0 ? (blocked / totalQueries) * 100 : 0}%` }} />
+            </div>
+            <div className="mt-3 flex items-center justify-between text-[10px]">
+              <span className="flex items-center gap-1.5 text-[var(--muted)]">
+                <span className="size-1.5 rounded-full bg-[var(--ink)]" /> Forwarded
+                <span className="font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-[var(--muted)]">
+                <span className="size-1.5 rounded-full bg-[var(--accent)]" /> Blocked
+                <span className="font-mono text-[var(--ink)]">{formatNumber(blocked)}</span>
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-2.5 text-[10px] text-[var(--muted)]">
+              <span>Total</span>
+              <span className="font-mono text-[var(--ink)]">{formatNumber(totalQueries)}</span>
             </div>
           </div>
           <div className="mt-5 flex items-center gap-1.5 border-t border-[var(--line)] pt-3 text-[10px] text-[var(--muted)]">
@@ -341,54 +339,6 @@ function OverviewError({ onRetry }: { onRetry: () => void }) {
 
 function formatNumber(n: number): string {
   return new Intl.NumberFormat('en-GB').format(n)
-}
-
-function BlockedDonut({ total, blocked }: { total: number; blocked: number }) {
-  const forwarded = Math.max(total - blocked, 0)
-  const pct = total > 0 ? (blocked / total) * 100 : 0
-  const data = [
-    { name: 'Forwarded', value: forwarded },
-    { name: 'Blocked', value: blocked },
-  ]
-
-  return (
-    <div className="relative size-[124px] shrink-0">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="value"
-            nameKey="name"
-            innerRadius="68%"
-            outerRadius="90%"
-            startAngle={90}
-            endAngle={-270}
-            stroke="none"
-            isAnimationActive
-            animationDuration={250}
-          >
-            <Cell fill="var(--ink)" />
-            <Cell fill="var(--accent)" />
-          </Pie>
-          <Tooltip
-            contentStyle={{
-              background: '#fff',
-              border: '1px solid var(--line)',
-              borderRadius: 6,
-              boxShadow: 'none',
-              fontSize: 11,
-              padding: '6px 8px',
-            }}
-            formatter={(value, name) => [Number(value).toLocaleString('en-GB'), String(name)]}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-[18px] tracking-[-0.04em]">{pct.toFixed(1)}%</span>
-        <span className="text-[9px] text-[var(--muted)]">blocked</span>
-      </div>
-    </div>
-  )
 }
 
 function QueryChart({ data }: { data: { time: string; total: number; blocked: number }[] }) {
