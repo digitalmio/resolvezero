@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { format, parseISO } from 'date-fns'
 import { CheckCircle2, Copy, KeyRound, Network, Settings, ShieldCheck } from 'lucide-react'
 import { getSettingsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
@@ -32,7 +33,7 @@ function SettingsPage() {
         <Section title="Profile" icon={<ShieldCheck size={16} />}>
           <Row label="Name" value={data.profileName} />
           <Row label="Profile ID" value={data.profileId} mono />
-          <Row label="Created" value={new Date(data.createdAt).toLocaleDateString('en-GB')} />
+          <Row label="Created" value={format(parseISO(data.createdAt), 'dd MMM yyyy')} />
           <Row label="DoH token" value={data.hasDohToken ? 'configured' : 'not set'} />
         </Section>
 

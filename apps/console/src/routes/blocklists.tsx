@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { format, parseISO } from 'date-fns'
 import { AlertCircle, CheckCircle2, ExternalLink, Layers3, Plus, RefreshCw } from 'lucide-react'
 import { getBlocklistsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
@@ -71,7 +72,7 @@ function Blocklists() {
                   </td>
                   <td className="px-4 py-4 text-[11px] uppercase text-[var(--muted)]">{list.format}</td>
                   <td className="px-4 py-4 font-mono text-[12px]">{new Intl.NumberFormat('en-GB').format(list.entries)}</td>
-                  <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">{list.lastSyncedAt ? new Date(list.lastSyncedAt).toLocaleString('en-GB') : 'never'}</td>
+                  <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">{list.lastSyncedAt ? format(parseISO(list.lastSyncedAt), 'dd MMM yyyy, HH:mm') : 'never'}</td>
                   <td className="px-4 py-4">
                     <span className={['inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium', list.lastStatus === 'ok' ? 'bg-[#edf8f0] text-[#247440]' : 'bg-[#fff4ef] text-[#a64b22]'].join(' ')}>
                       {list.lastStatus === 'ok' ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}

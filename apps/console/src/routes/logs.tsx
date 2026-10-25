@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { format, formatISO, parseISO } from 'date-fns'
 import { FileText, Search } from 'lucide-react'
 import { useState } from 'react'
 import { getLogsData } from '../server/dashboard'
@@ -88,16 +89,8 @@ function Logs() {
               {filtered.length === 0 ? <tr><td colSpan={7} className="px-5 py-12 text-center text-[12px] text-[var(--muted)]">No log entries found.</td></tr> : null}
               {filtered.map((entry, index) => (
                 <tr key={`${entry.time}-${entry.domain}-${index}`} className="hover:bg-[var(--paper)]/60">
-                  <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[10px] text-[var(--muted)]" title={entry.time ? new Date(entry.time).toISOString() : undefined}>
-                    {entry.time
-                      ? new Date(entry.time).toLocaleString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })
-                      : '—'}
+                  <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[10px] text-[var(--muted)]" title={entry.time ? formatISO(parseISO(entry.time)) : undefined}>
+                    {entry.time ? format(parseISO(entry.time), 'dd MMM, HH:mm:ss') : '—'}
                   </td>
                   <td className="max-w-[360px] truncate px-4 py-2.5 font-mono text-[11px]">{entry.domain}</td>
                   <td className="px-4 py-2.5">

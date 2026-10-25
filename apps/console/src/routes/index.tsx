@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { getHours } from 'date-fns'
 import { useEffect, useState } from 'react'
 import { getOverview } from '../server/dashboard'
 import {
@@ -51,7 +52,7 @@ function Overview() {
   // not the SSR/Fly machine timezone. Starting with "Hello" avoids hydration
   // mismatches when the server and browser are in different zones.
   useEffect(() => {
-    setGreeting(greetingForHour(new Date().getHours()))
+    setGreeting(greetingForHour(getHours(new Date())))
   }, [])
 
   if (isPending) return <OverviewSkeleton />
