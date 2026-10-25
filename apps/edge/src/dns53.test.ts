@@ -123,6 +123,10 @@ const PORT = 15353;
 const PORT2 = 15354;
 const PORT_TC = 15355;
 
+function logsFor(deps: { logs: QueryLogEntry[] }, domain: string): QueryLogEntry | undefined {
+  return deps.logs.find((entry) => entry.domain === domain);
+}
+
 describe("dns53 over real sockets", () => {
   test("normalizeIp", () => {
     expect(normalizeIp("::ffff:92.239.76.43")).toBe("92.239.76.43");
@@ -208,7 +212,9 @@ describe("dns53 over real sockets", () => {
     const svc = await createDns53Service({ ...deps, host: "127.0.0.1", port: PORT, tcp: false });
     const c = await client(PORT);
     expect((((decode(Buffer.from((await c.ask(wireQuery("ads.evil.com")))!)).answers?.[0] ?? {}) as { data?: string })).data).toBe("0.0.0.0");
+    expect(logsFor(deps, "ads.evil.com")).toMatchObject({ action: "block", reason: "manual", transport: "udp" });
     expect((((decode(Buffer.from((await c.ask(wireQuery("nas.lan")))!)).answers?.[0] ?? {}) as { data?: string })).data).toBe("192.168.1.24");
+    expect(logsFor(deps, "nas.lan")).toMatchObject({ action: "override", reason: "zone", transport: "udp" });
     expect(deps.calls).not.toContain("nas.lan"); // zone never hits upstream
     await c.close();
     await svc!.stop();
