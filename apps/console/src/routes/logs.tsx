@@ -51,7 +51,7 @@ function Logs() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Network activity</p>
+        <p className="mb-1.5 text-[11px] font-medium text-[var(--muted)]">Network activity</p>
         <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Query log</h1>
         <p className="mt-1.5 text-[12px] text-[var(--muted)]">
           {data.profileName} · latest 100 archived queries · 15-minute flush
@@ -75,7 +75,7 @@ function Logs() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1040px] text-left">
             <thead>
-              <tr className="border-b border-[var(--line)] text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">
+              <tr className="border-b border-[var(--line)] text-[10px] font-medium text-[var(--muted)]">
                 <th className="px-4 py-2.5 font-medium">Time</th>
                 <th className="px-4 py-2.5 font-medium">Domain</th>
                 <th className="px-4 py-2.5 font-medium">Action</th>

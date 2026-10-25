@@ -85,12 +85,11 @@ export function AppShell() {
           </span>
           <span>
             <span className="block text-[14px] font-semibold tracking-[-0.02em]">ResolveZero</span>
-            <span className="block text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Home DNS firewall</span>
+            <span className="block text-[10px] text-[var(--muted)]">Home DNS firewall</span>
           </span>
         </Link>
 
         <div className="mx-3 mb-4 flex items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 py-2">
-          <span className="size-1.5 rounded-full bg-[var(--accent)]" />
           <span className="text-[12px] font-medium">Home network</span>
           <ChevronDown size={14} className="ml-auto text-[var(--muted)]" />
         </div>
@@ -98,7 +97,7 @@ export function AppShell() {
         <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">{group.label}</p>
+              <p className="px-2.5 pb-1.5 text-[11px] font-medium text-[var(--muted)]">{group.label}</p>
               {group.items.map((item) => (
                 <SidebarLink key={item.label} item={item} active={pathname === item.to || (item.to !== '/' && pathname.startsWith(item.to))} />
               ))}
@@ -120,7 +119,7 @@ export function AppShell() {
               <span className="font-mono text-[var(--ink)]">{blockRate}% blocked</span>
             </div>
           </div>
-          <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Account</p>
+          <p className="px-2.5 pb-1 pt-3 text-[11px] font-medium text-[var(--muted)]">Account</p>
           {accountNav.map((item) => (
             <SidebarLink key={item.label} item={item} active={pathname === item.to} />
           ))}
@@ -178,13 +177,13 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       to={item.to}
       className={[
-        'group flex items-center gap-2.5 rounded-md border-l-2 px-2.5 py-2 text-[12px] font-medium transition-colors',
+        'group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] font-medium transition-colors',
         active
-          ? 'border-[var(--accent)] bg-[#fff1e9] text-[var(--ink)]'
-          : 'border-transparent text-[var(--muted)] hover:bg-[var(--paper)] hover:text-[var(--ink)]',
+          ? 'bg-[#efeee9] text-[var(--ink)]'
+          : 'text-[var(--muted)] hover:bg-[#f1f0ec] hover:text-[var(--ink)]',
       ].join(' ')}
     >
-      <span className={active ? 'text-[var(--accent)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
+      <span className={active ? 'text-[var(--ink)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
       <span>{item.label}</span>
       {item.badge ? (
         <span className="ml-auto rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)] ring-1 ring-[var(--line)]">{item.badge}</span>

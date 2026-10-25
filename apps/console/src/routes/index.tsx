@@ -87,10 +87,7 @@ function Overview() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-            <span className="size-1.5 rounded-full bg-[var(--accent)]" />
-            {profileLabel} profile
-          </p>
+          <p className="mb-1.5 text-[11px] font-medium text-[var(--muted)]">{profileLabel} profile</p>
           <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Overview</h1>
           <p className="mt-1.5 text-[12px] text-[var(--muted)]">
             {greeting}, Maciej · last 24 hours · updated {updateAge} ago
@@ -107,7 +104,7 @@ function Overview() {
                   <ShieldCheck size={17} strokeWidth={1.8} />
                 </span>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Network posture</p>
+                  <p className="text-[10px] font-medium text-[var(--muted)]">Network posture</p>
                   <p className="text-[15px] font-semibold tracking-[-0.02em]">{data.edge.ok ? 'Protected' : 'Attention needed'}</p>
                 </div>
               </div>
@@ -134,7 +131,7 @@ function Overview() {
         <div className="rz-card flex flex-col justify-between p-5">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Live traffic</p>
+              <p className="text-[10px] font-medium text-[var(--muted)]">Live traffic</p>
               <p className="mt-1.5 font-mono text-[28px] font-medium tracking-[-0.05em]">{qpsLabel}<span className="ml-2 font-sans text-[11px] tracking-normal text-[var(--muted)]">qps avg</span></p>
             </div>
             <span className="rounded border border-[var(--line)] px-2 py-1 text-[10px] text-[var(--muted)]">24h window</span>
@@ -270,7 +267,7 @@ function StatusRow({ label, value }: { label: string; value: string }) {
 function MiniStat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-[0.13em] text-[var(--muted)]">{label}</p>
+      <p className="text-[10px] text-[var(--muted)]">{label}</p>
       <p className={['mt-1 font-mono text-[17px] tracking-[-0.04em]', accent ? 'text-[var(--accent)]' : 'text-[var(--ink)]'].join(' ')}>{value}</p>
     </div>
   )
@@ -311,7 +308,7 @@ function OverviewSkeleton() {
 function OverviewError({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="rz-card mx-auto mt-16 max-w-[520px] p-8 text-center">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Data unavailable</p>
+      <p className="text-[11px] font-medium text-[var(--muted)]">Data unavailable</p>
       <h1 className="mt-3 text-[24px] font-semibold tracking-[-0.04em]">Could not load live stats.</h1>
       <p className="mt-2 text-[13px] leading-6 text-[var(--muted)]">
         The dashboard needs a reachable Postgres connection. Check the server logs for the exact error.
