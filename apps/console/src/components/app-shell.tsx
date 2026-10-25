@@ -2,7 +2,6 @@ import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
-  BarChart3,
   ChevronDown,
   CircleHelp,
   Command,
@@ -51,7 +50,6 @@ const navGroups: NavGroup[] = [
     label: 'Observe',
     items: [
       { label: 'Logs', to: '/logs', icon: <FileText size={16} /> },
-      { label: 'Analytics', to: '/analytics', icon: <BarChart3 size={16} /> },
     ],
   },
 ]
