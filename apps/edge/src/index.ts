@@ -44,7 +44,7 @@ const dnsCache = new DnsCache();
 const stdoutQueryLog = process.env.QUERY_LOG_STDOUT === "1";
 
 const s3Client = createS3ClientFromEnv();
-const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 5) || 5;
+const FLUSH_MINUTES = Number(process.env.S3_FLUSH_MINUTES ?? 1) || 1;
 const LOCAL_DOMAINS = parseLocalDomains(process.env.LOCAL_DOMAINS ?? "lan,home.arpa");
 const LOCAL_TTL = Number(process.env.LOCAL_TTL ?? 60) || 60;
 const ALLOW_PUBLIC_IP_ENCODING = process.env.ALLOW_PUBLIC_IP_ENCODING === "1";

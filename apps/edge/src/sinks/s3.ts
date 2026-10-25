@@ -147,7 +147,7 @@ export interface S3SinkOptions {
   client: S3ClientLike;
   /** Object key root. Default "logs". */
   prefix?: string;
-  /** Flush window in minutes — one object per window per profile. Default 5. */
+  /** Flush window in minutes — one object per window per profile. Default 1. */
   flushMinutes?: number;
   /** Unique per running edge instance (region+machine+boot nonce). */
   instanceId?: string;
@@ -274,7 +274,7 @@ export class S3ArchiveSink {
   }
 
   private windowMs(): number {
-    return (this.opts.flushMinutes ?? 5) * 60_000;
+    return (this.opts.flushMinutes ?? 1) * 60_000;
   }
 
   private objectKey(startsAt: number, profileId: string): string {

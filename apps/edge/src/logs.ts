@@ -10,7 +10,7 @@ const CSV_HEADER = "time,domain,action,client_ip,rtt_ms\n";
 // must not OOM the 256 MB edge during download.
 const MAX_INFLATED_BYTES = 32 * 1024 * 1024;
 const MAX_EXPORT_OBJECTS = 500;
-const MAX_DATE_EXPORT_OBJECTS = 2_000;
+const MAX_DATE_EXPORT_OBJECTS = 5_000;
 
 /** Small per-key fixed-window limiter; keeps S3 exports from being a free loop. */
 function createRateLimiter(limit: number, windowMs: number) {
@@ -90,15 +90,16 @@ export function createLogsApp(deps: LogsDeps) {
       return c.json({ error: "date must be YYYY-MM-DD" }, 400);
     }
 
-    const objectPrefix = date
-      ? `${profilePrefix(prefix, profileId)}${date}/`
-      : profilePrefix(prefix, profileId);
+    const profileObjects = profilePrefix(prefix, profileId);
+    const objectPrefix = date ? `${profileObjects}${date}/` : profileObjects;
 
     const rawLimit = Number(c.req.query("limit") ?? 0);
     const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 10_000) : 0;
     const newestFirst = c.req.query("order") === "desc";
 
-    const { keys, truncated } = await listAllKeys(deps.client, objectPrefix);
+    const { keys, truncated } = date
+      ? await listAllKeys(deps.client, objectPrefix)
+      : await listRecentLogKeys(deps.client, profileObjects);
     const objectCap = date ? MAX_DATE_EXPORT_OBJECTS : MAX_EXPORT_OBJECTS;
     // `keys` is ascending. Always keep the newest N objects, then reverse
     // only when the caller wants newest-first output. (Reversing before
@@ -201,6 +202,29 @@ export function createLogsApp(deps: LogsDeps) {
   });
 
   return app;
+}
+
+/**
+ * The console asks for "latest" logs without a date. At 1-minute flush
+ * granularity a profile can have thousands of objects per day, so listing
+ * the entire retention prefix would be slow and would eventually hit the
+ * global 50k-key cap. Fetch the current and previous UTC day, then fall back
+ * to the full prefix for old archive-only accounts/tests.
+ */
+async function listRecentLogKeys(
+  client: S3ClientLike,
+  prefix: string,
+): Promise<{ keys: string[]; truncated: boolean }> {
+  const days: string[] = [];
+  for (let i = 0; i < 2; i++) {
+    days.push(new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10));
+  }
+
+  const results = await Promise.all(days.map((day) => listAllKeys(client, `${prefix}${day}/`)));
+  const keys = results.flatMap((result) => result.keys).sort();
+  const truncated = results.some((result) => result.truncated);
+  if (keys.length > 0 || truncated) return { keys, truncated };
+  return listAllKeys(client, prefix);
 }
 
 /** Streaming gzip inflate with a hard output cap (defeats zip bombs). */

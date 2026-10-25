@@ -54,7 +54,7 @@ function Logs() {
         <p className="mb-1.5 text-[11px] font-medium text-[var(--muted)]">Network activity</p>
         <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Query log</h1>
         <p className="mt-1.5 text-[12px] text-[var(--muted)]">
-          {data.profileName} · latest 100 archived queries · 5-minute flush
+          {data.profileName} · latest 100 archived queries · 1-minute flush
         </p>
       </div>
 
