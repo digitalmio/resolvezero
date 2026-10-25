@@ -177,10 +177,10 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       to={item.to}
       className={[
-        'group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] font-medium transition-colors',
+        'group flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[12px] font-medium transition-colors',
         active
-          ? 'bg-[#efeee9] text-[var(--ink)]'
-          : 'text-[var(--muted)] hover:bg-[#f1f0ec] hover:text-[var(--ink)]',
+          ? 'border-[var(--accent)] bg-transparent text-[var(--ink)]'
+          : 'border-transparent text-[var(--muted)] hover:bg-[#f1f0ec] hover:text-[var(--ink)]',
       ].join(' ')}
     >
       <span className={active ? 'text-[var(--ink)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
