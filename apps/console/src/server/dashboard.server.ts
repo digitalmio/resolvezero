@@ -12,8 +12,15 @@ import {
   profileZones,
   profiles,
   statsHourly,
+  user,
   type StatsTopEntry,
 } from "@resolvezero/db/schema";
+
+export interface Viewer {
+  name: string;
+  image: string | null;
+  email: string | null;
+}
 
 export interface EdgeHealth {
   ok: boolean;
@@ -32,6 +39,7 @@ export interface OverviewData {
   configVersion: number;
   blocklistVersion: number;
   ruleCount: number;
+  viewer: Viewer;
   edge: EdgeHealth;
   totalQueries: number;
   blocked: number;
@@ -140,6 +148,16 @@ export async function loadRules(): Promise<RulesData> {
   return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };
 }
 
+async function loadViewer(profileId: string): Promise<Viewer> {
+  const rows = await db
+    .select({ name: user.name, image: user.image, email: user.email })
+    .from(profiles)
+    .innerJoin(user, eq(profiles.ownerUserId, user.id))
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+  return rows[0] ?? { name: "Account", image: null, email: null };
+}
+
 async function loadEdgeHealth(): Promise<EdgeHealth> {
   const edge = (process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev").replace(/\/+$/, "");
   try {
@@ -210,7 +228,7 @@ export async function loadOverview(): Promise<OverviewData> {
   const since = new Date(now.getTime() - 24 * HOUR);
   const profile = await findProfile();
 
-  const [rows, configRows, rules, edge] = await Promise.all([
+  const [rows, configRows, rules, edge, viewer] = await Promise.all([
     db
       .select({
         hour: statsHourly.hour,
@@ -236,6 +254,7 @@ export async function loadOverview(): Promise<OverviewData> {
       .from(profileRules)
       .where(eq(profileRules.profileId, profile.id)),
     loadEdgeHealth(),
+    loadViewer(profile.id),
   ]);
 
   let totalQueries = 0;
@@ -281,6 +300,7 @@ export async function loadOverview(): Promise<OverviewData> {
     configVersion: configRows[0]?.configVersion ?? 0,
     blocklistVersion: configRows[0]?.blocklistVersion ?? 0,
     ruleCount: rules.length,
+    viewer,
     edge,
     totalQueries,
     blocked,

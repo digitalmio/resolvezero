@@ -89,6 +89,7 @@ function Overview() {
   const qps = totalQueries / 86_400
   const qpsLabel = qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)
   const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+  const firstName = data.viewer.name.split(/\s+/)[0] || 'there'
   const region = regionLabel(data.edge.region)
   const updateAge = ageLabel(data.edge.configPollAgeMs)
 
@@ -99,7 +100,7 @@ function Overview() {
           <p className="mb-1.5 text-[11px] font-medium text-[var(--muted)]">{profileLabel} profile</p>
           <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Overview</h1>
           <p className="mt-1.5 text-[12px] text-[var(--muted)]">
-            {greeting}, Maciej · last 24 hours · updated {updateAge} ago
+            {greeting}, {firstName} · last 24 hours · updated {updateAge} ago
           </p>
         </div>
       </div>

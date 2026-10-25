@@ -67,6 +67,14 @@ export function AppShell() {
     : '—'
   const blockRate = data ? (data.blockRatio * 100).toFixed(1) : '—'
   const edgeHealthy = data?.edge.ok
+  const viewerName = data?.viewer.name ?? 'Account'
+  const viewerImage = data?.viewer.image ?? null
+  const viewerInitials = viewerName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || 'RZ'
   const groups = navGroups.map((group) => ({
     ...group,
     items: group.items.map((item) =>
@@ -124,9 +132,13 @@ export function AppShell() {
         </div>
 
         <div className="flex items-center gap-2.5 border-t border-[var(--line)] px-4 py-3">
-          <span className="flex size-7 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">MK</span>
+          {viewerImage ? (
+            <img src={viewerImage} alt="" className="size-7 rounded-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="flex size-7 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">{viewerInitials}</span>
+          )}
           <span className="min-w-0">
-            <span className="block truncate text-[11px] font-medium">Maciej K.</span>
+            <span className="block truncate text-[11px] font-medium">{viewerName}</span>
             <span className="block truncate text-[10px] text-[var(--muted)]">Personal workspace</span>
           </span>
           <CircleHelp size={14} className="ml-auto text-[var(--muted)]" />
@@ -156,9 +168,13 @@ export function AppShell() {
               <Activity size={12} className="text-[var(--accent)]" />
               {queriesLabel} queries / 24h
             </span>
-            <button className="flex size-9 items-center justify-center rounded-full bg-[var(--ink)] text-[11px] font-semibold text-white">
-              MK
-            </button>
+            {viewerImage ? (
+              <img src={viewerImage} alt={viewerName} className="size-9 rounded-full object-cover ring-1 ring-[var(--line)]" referrerPolicy="no-referrer" />
+            ) : (
+              <button className="flex size-9 items-center justify-center rounded-full bg-[var(--ink)] text-[11px] font-semibold text-white">
+                {viewerInitials}
+              </button>
+            )}
           </div>
         </header>
 
