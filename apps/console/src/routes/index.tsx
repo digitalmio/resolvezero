@@ -1,7 +1,18 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { getHours } from 'date-fns'
+import { format, getHours, parseISO } from 'date-fns'
 import { useEffect, useState } from 'react'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+} from 'recharts'
 import { getOverview } from '../server/dashboard'
 import {
   ArrowUpRight,
@@ -58,8 +69,11 @@ function Overview() {
   if (isPending) return <OverviewSkeleton />
   if (isError || !data) return <OverviewError onRetry={() => void refetch()} />
 
-  const querySeries = data.series.map((p) => p.total)
-  const blockedSeries = data.series.map((p) => p.blocked)
+  const chartData = data.series.map((point) => ({
+    time: format(parseISO(point.bucket), 'HH:mm'),
+    total: point.total,
+    blocked: point.blocked,
+  }))
   const maxBlocked = Math.max(...data.topBlocked.map((d) => d.count), 1)
   const topBlocked = data.topBlocked.map((d) => ({
     domain: d.domain,
@@ -77,8 +91,6 @@ function Overview() {
   const forwarded = Math.max(totalQueries - blocked, 0)
   const qps = totalQueries / 86_400
   const qpsLabel = qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)
-  const forwardedPct = totalQueries > 0 ? Math.round((forwarded / totalQueries) * 100) : 0
-  const blockedPct = totalQueries > 0 ? Math.round((blocked / totalQueries) * 100) : 0
   const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
   const region = regionLabel(data.edge.region)
   const updateAge = ageLabel(data.edge.configPollAgeMs)
@@ -136,14 +148,23 @@ function Overview() {
             </div>
             <span className="rounded border border-[var(--line)] px-2 py-1 text-[10px] text-[var(--muted)]">24h window</span>
           </div>
-          <div className="mt-5 space-y-3">
-            <div>
-              <div className="mb-1.5 flex justify-between text-[10px] text-[var(--muted)]"><span>Forwarded</span><span className="font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span></div>
-              <div className="h-1 overflow-hidden rounded-sm bg-[var(--paper-2)]"><div className="h-full rounded-sm bg-[var(--ink)]" style={{ width: `${forwardedPct}%` }} /></div>
-            </div>
-            <div>
-              <div className="mb-1.5 flex justify-between text-[10px] text-[var(--muted)]"><span>Blocked</span><span className="font-mono text-[var(--ink)]">{formatNumber(blocked)}</span></div>
-              <div className="h-1 overflow-hidden rounded-sm bg-[var(--paper-2)]"><div className="h-full rounded-sm bg-[var(--accent)]" style={{ width: `${blockedPct}%` }} /></div>
+          <div className="mt-4 flex items-center gap-4">
+            <BlockedDonut total={totalQueries} blocked={blocked} />
+            <div className="space-y-2.5 text-[11px]">
+              <div className="flex items-center gap-2">
+                <span className="size-1.5 rounded-full bg-[var(--ink)]" />
+                <span className="text-[var(--muted)]">Forwarded</span>
+                <span className="ml-auto font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="size-1.5 rounded-full bg-[var(--accent)]" />
+                <span className="text-[var(--muted)]">Blocked</span>
+                <span className="ml-auto font-mono text-[var(--ink)]">{formatNumber(blocked)}</span>
+              </div>
+              <div className="flex items-center gap-2 border-t border-[var(--line)] pt-2.5">
+                <span className="text-[var(--muted)]">Total</span>
+                <span className="ml-auto font-mono text-[var(--ink)]">{formatNumber(totalQueries)}</span>
+              </div>
             </div>
           </div>
           <div className="mt-5 flex items-center gap-1.5 border-t border-[var(--line)] pt-3 text-[10px] text-[var(--muted)]">
@@ -173,7 +194,7 @@ function Overview() {
             <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--ink)]" /> Forwarded</span>
             <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--accent)]" /> Blocked</span>
           </div>
-          <QueryChart querySeries={querySeries} blockedSeries={blockedSeries} />
+          <QueryChart data={chartData} />
           <div className="mt-3 flex justify-between font-mono text-[10px] text-[var(--muted)]">
             <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
           </div>
@@ -322,40 +343,109 @@ function formatNumber(n: number): string {
   return new Intl.NumberFormat('en-GB').format(n)
 }
 
-function QueryChart({ querySeries, blockedSeries }: { querySeries: number[]; blockedSeries: number[] }) {
-  const width = 760
-  const height = 220
-  const padX = 4
-  const padY = 14
-  const max = Math.max(...querySeries, 1)
-  const toPoints = (values: number[]) =>
-    values.map((value, index) => {
-      const x = padX + (index / (values.length - 1)) * (width - padX * 2)
-      const y = height - padY - (value / max) * (height - padY * 2)
-      return [x, y] as const
-    })
-  const toPath = (points: readonly (readonly [number, number])[]) =>
-    points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
-  const queryPoints = toPoints(querySeries)
-  const blockedPoints = toPoints(blockedSeries)
-  const area = `${toPath(queryPoints)} L ${width - padX} ${height - padY} L ${padX} ${height - padY} Z`
+function BlockedDonut({ total, blocked }: { total: number; blocked: number }) {
+  const forwarded = Math.max(total - blocked, 0)
+  const pct = total > 0 ? (blocked / total) * 100 : 0
+  const data = [
+    { name: 'Forwarded', value: forwarded },
+    { name: 'Blocked', value: blocked },
+  ]
 
   return (
-    <div className="mt-4 h-[220px] w-full">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full overflow-visible" role="img" aria-label="Query volume over the last 24 hours">
-        <defs>
-          <linearGradient id="rz-query-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--ink)" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="var(--ink)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0.2, 0.4, 0.6, 0.8].map((fraction) => (
-          <line key={fraction} x1="0" x2={width} y1={height * fraction} y2={height * fraction} stroke="var(--line)" strokeDasharray="2 5" strokeWidth="1" />
-        ))}
-        <path d={area} fill="url(#rz-query-area)" />
-        <path d={toPath(queryPoints)} fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        <path d={toPath(blockedPoints)} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 4" />
-      </svg>
+    <div className="relative size-[124px] shrink-0">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            innerRadius="68%"
+            outerRadius="90%"
+            startAngle={90}
+            endAngle={-270}
+            stroke="none"
+            isAnimationActive
+            animationDuration={250}
+          >
+            <Cell fill="var(--ink)" />
+            <Cell fill="var(--accent)" />
+          </Pie>
+          <Tooltip
+            contentStyle={{
+              background: '#fff',
+              border: '1px solid var(--line)',
+              borderRadius: 6,
+              boxShadow: 'none',
+              fontSize: 11,
+              padding: '6px 8px',
+            }}
+            formatter={(value, name) => [Number(value).toLocaleString('en-GB'), String(name)]}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-mono text-[18px] tracking-[-0.04em]">{pct.toFixed(1)}%</span>
+        <span className="text-[9px] text-[var(--muted)]">blocked</span>
+      </div>
+    </div>
+  )
+}
+
+function QueryChart({ data }: { data: { time: string; total: number; blocked: number }[] }) {
+  return (
+    <div className="mt-4 h-[220px] w-full" role="img" aria-label="Query volume over the last 24 hours">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="rz-query-area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--ink)" stopOpacity={0.12} />
+              <stop offset="100%" stopColor="var(--ink)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 5" />
+          <XAxis
+            dataKey="time"
+            tickLine={false}
+            axisLine={false}
+            tick={{ fontSize: 10, fill: 'var(--muted)' }}
+            interval="preserveStartEnd"
+            minTickGap={32}
+          />
+          <Tooltip
+            cursor={{ stroke: 'var(--line)', strokeWidth: 1 }}
+            contentStyle={{
+              background: '#fff',
+              border: '1px solid var(--line)',
+              borderRadius: 6,
+              boxShadow: 'none',
+              fontSize: 11,
+              padding: '6px 8px',
+            }}
+            labelStyle={{ color: 'var(--muted)', marginBottom: 4 }}
+            formatter={(value, name) => [Number(value).toLocaleString('en-GB'), name === 'total' ? 'Forwarded' : 'Blocked']}
+          />
+          <Area
+            type="monotone"
+            dataKey="total"
+            stroke="var(--ink)"
+            strokeWidth={1.5}
+            fill="url(#rz-query-area)"
+            dot={false}
+            isAnimationActive
+            animationDuration={250}
+          />
+          <Area
+            type="monotone"
+            dataKey="blocked"
+            stroke="var(--accent)"
+            strokeWidth={1.4}
+            fill="transparent"
+            dot={false}
+            isAnimationActive
+            animationDuration={250}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   )
 }
