@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { getOverview } from '../server/dashboard'
 import {
   ArrowDownRight,
@@ -23,8 +24,23 @@ const changes = [
   { time: '1h ago', title: 'Config rolled out', detail: 'fra + lhr · version 59' },
 ]
 
+function greetingForHour(hour: number): string {
+  if (hour < 12) return 'Good morning'
+  if (hour < 18) return 'Good afternoon'
+  if (hour < 22) return 'Good evening'
+  return 'Good night'
+}
+
 function Overview() {
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  const [greeting, setGreeting] = useState('Hello')
+
+  // Resolve in the browser so the greeting matches the viewer's local time,
+  // not the SSR/Fly machine timezone. Starting with "Hello" avoids hydration
+  // mismatches when the server and browser are in different zones.
+  useEffect(() => {
+    setGreeting(greetingForHour(new Date().getHours()))
+  }, [])
 
   if (isPending) return <OverviewSkeleton />
   if (isError || !data) return <OverviewError onRetry={() => void refetch()} />
@@ -60,7 +76,7 @@ function Overview() {
             <span className="size-1.5 rounded-full bg-[var(--accent)]" />
             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
-          <h1 className="text-[30px] font-semibold tracking-[-0.045em] sm:text-[36px]">Good evening, Maciej.</h1>
+          <h1 className="text-[30px] font-semibold tracking-[-0.045em] sm:text-[36px]">{greeting}, Maciej.</h1>
           <p className="mt-2 flex items-center gap-2 text-[13px] text-[var(--muted)]">
             {data.profileName} · live from Postgres
           </p>
