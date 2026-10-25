@@ -308,7 +308,16 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     // 4. Zone override (split-horizon; user config wins, AAA/CNAME/etc.)
     const zone = deps.store.resolveZone(profileId, question.name, question.type as never);
     if (zone) {
-      deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp, device: null });
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        reason: "zone",
+        transport,
+      });
       deps.recorder?.recordQuery("forward");
       try {
         return zoneAnswer(question, zone);
@@ -321,12 +330,32 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     //    Explicit ALLOW must also short-circuit remote blocks — parity with DoH.
     const explicit = deps.store.resolve(profileId, question.name);
     if (explicit === "block") {
-      deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp, device: null });
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "block",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        reason: "manual",
+        transport,
+      });
       deps.recorder?.recordQuery("block");
       return sinkholeResponse(question);
     }
-    if (!explicit && deps.store.resolveRemote(profileId, question.name) === "block") {
-      deps.logQuery({ profileId, domain: question.name, action: "block", rttMs: null, clientIp: sourceIp, device: null });
+    const remote = explicit ? undefined : deps.store.resolveRemoteDetailed(profileId, question.name);
+    if (remote?.action === "block") {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "block",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        reason: "blocklist",
+        listId: remote.listId,
+        transport,
+      });
       deps.recorder?.recordQuery("block");
       return sinkholeResponse(question);
     }
@@ -338,17 +367,36 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       allowPublicIpEncoding: deps.allowPublicIpEncoding === true,
     });
     if (local) {
-      deps.logQuery({ profileId, domain: question.name, action: "override", rttMs: null, clientIp: sourceIp, device: null });
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        reason: "zone",
+        transport,
+      });
       deps.recorder?.recordQuery("forward");
       return local;
     }
 
     // 6. Cache (keyed by question + upstream)
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
+    const upstream = deps.store.profileUpstreamLabel(profileId);
     const cached = deps.dnsCache.get(wire, upstreamUrl, () => refresh(wire, upstreamUrl));
     if (cached) {
       deps.recorder?.recordCacheHit(transport);
-      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs: null, clientIp: sourceIp, device: null });
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "forward",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        transport,
+        upstream,
+      });
       deps.recorder?.recordQuery("forward");
       return cached;
     }
@@ -361,13 +409,31 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
         upstreamUrl,
       );
       deps.dnsCache.set(wire, responseWire, upstreamUrl);
-      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs, clientIp: sourceIp, device: null });
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "forward",
+        rttMs,
+        clientIp: sourceIp,
+        device: null,
+        transport,
+        upstream,
+      });
       deps.recorder?.recordQuery("forward");
       deps.recorder?.recordRtt(rttMs);
       return responseWire;
     } catch (err) {
       log.warn({ err, domain: question.name }, "upstream failed over UDP client");
-      deps.logQuery({ profileId, domain: question.name, action: "forward", rttMs: null, clientIp: sourceIp, device: null });
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "forward",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        transport,
+        upstream,
+      });
       deps.recorder?.recordQuery("forward");
       return servfailResponse(question);
     }

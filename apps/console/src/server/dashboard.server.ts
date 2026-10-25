@@ -466,18 +466,31 @@ export interface LogEntry {
   action: string;
   clientIp: string | null;
   rttMs: number | null;
+  reason: string | null;
+  listId: string | null;
+  listLabel: string | null;
+  region: string | null;
+  transport: string | null;
+  upstream: string | null;
 }
 
 export async function loadLogs(): Promise<{ profileId: string; profileName: string; entries: LogEntry[] }> {
   const profile = await findProfile();
-  const token = await db
-    .select({ token: profiles.dohToken })
-    .from(profiles)
-    .where(eq(profiles.id, profile.id))
-    .limit(1)
-    .then((rows) => rows[0]?.token);
+  const [token, lists] = await Promise.all([
+    db
+      .select({ token: profiles.dohToken })
+      .from(profiles)
+      .where(eq(profiles.id, profile.id))
+      .limit(1)
+      .then((rows) => rows[0]?.token),
+    db
+      .select({ id: profileBlocklists.id, url: profileBlocklists.url })
+      .from(profileBlocklists)
+      .where(eq(profileBlocklists.profileId, profile.id)),
+  ]);
   if (!token) throw new Error("profile has no DoH token; cannot read logs");
 
+  const listLabels = new Map(lists.map((list) => [list.id, safeListLabel(list.url)]));
   const edge = (process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev").replace(/\/+$/, "");
   const res = await fetch(`${edge}/v1/${encodeURIComponent(profile.id)}/logs?limit=100&format=jsonl&order=desc`, {
     headers: { authorization: `Bearer ${token}` },
@@ -491,16 +504,35 @@ export async function loadLogs(): Promise<{ profileId: string; profileName: stri
     try {
       const row = JSON.parse(line) as Record<string, unknown>;
       if (row.warning) continue;
+      const listId = row.listId == null ? null : String(row.listId);
       entries.push({
         time: String(row.time ?? ""),
         domain: String(row.domain ?? ""),
         action: String(row.action ?? ""),
         clientIp: row.clientIp == null ? null : String(row.clientIp),
         rttMs: row.rttMs == null ? null : Number(row.rttMs),
+        reason: row.reason == null ? null : String(row.reason),
+        listId,
+        listLabel: listId ? (listLabels.get(listId) ?? "Removed list") : null,
+        region: row.region == null ? null : String(row.region),
+        transport: row.transport == null ? null : String(row.transport),
+        upstream: row.upstream == null ? null : String(row.upstream),
       });
     } catch {
       // ignore malformed/archive warning lines
     }
   }
   return { profileId: profile.id, profileName: profile.name, entries };
+}
+
+/** Display-safe list label — strips query/hash so tokenized URLs never reach the UI. */
+function safeListLabel(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const path = url.pathname.replace(/\/+$/, "");
+    const label = `${url.hostname}${path}`;
+    return label.length > 64 ? `${label.slice(0, 61)}…` : label;
+  } catch {
+    return "Custom list";
+  }
 }

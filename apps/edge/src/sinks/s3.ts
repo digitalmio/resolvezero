@@ -324,6 +324,10 @@ export interface LoggerBaseLike {
   error(obj: object, msg?: string): void;
 }
 
+const EDGE_REGION = process.env.FLY_REGION ?? "local";
+/** Internal diagnostics only — not rendered in the customer console. */
+const EDGE_MACHINE = process.env.FLY_MACHINE_ID ?? process.env.FLY_ALLOC_ID ?? "local";
+
 /** Wire format for one archived query event (raw-log contract). */
 export function lineFor(row: QueryLogRow): Record<string, unknown> {
   return {
@@ -336,7 +340,12 @@ export function lineFor(row: QueryLogRow): Record<string, unknown> {
     clientIp: row.clientIp,
     // omit device:null — keep the raw-log schema minimal for tokenless queries
     ...(row.device ? { device: row.device } : {}),
-    region: process.env.FLY_REGION ?? "local", // which PoP served this query
+    ...(row.reason ? { reason: row.reason } : {}),
+    ...(row.listId ? { listId: row.listId } : {}),
+    ...(row.transport ? { transport: row.transport } : {}),
+    ...(row.upstream ? { upstream: row.upstream } : {}),
+    region: EDGE_REGION, // which PoP served this query
+    machine: EDGE_MACHINE, // internal diagnostics only
   };
 }
 

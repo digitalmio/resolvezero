@@ -8,6 +8,13 @@ export interface QueryLogEntry {
   rttMs: number | null;
   clientIp: string | null;
   device: string | null;
+  /** Why the policy action happened. Omitted for ordinary forwards. */
+  reason?: "manual" | "blocklist" | "zone";
+  /** profile_blocklists.id for blocklist hits (never the URL). */
+  listId?: string;
+  transport?: "doh" | "udp" | "tcp";
+  /** Safe upstream label (preset, "custom", or "edge-default"). */
+  upstream?: string;
 }
 
 export interface QueryLogRow extends QueryLogEntry {

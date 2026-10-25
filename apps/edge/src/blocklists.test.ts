@@ -71,6 +71,21 @@ describe("RuleStore shared blocklist catalog", () => {
     // syntax sanity: ```
   });
 
+  test("resolveRemoteDetailed attributes the winning list ID", () => {
+    const store = new RuleStore();
+    store.upsertList("https://lists.example/blocked", tableFrom(["doubleclick.net"]));
+    store.upsertList("https://lists.example/second", tableFrom(["doubleclick.net"]));
+    store.setSubscriptions("p1", [
+      { url: "https://lists.example/blocked", listId: "list-a" },
+      { url: "https://lists.example/second", listId: "list-b" },
+    ]);
+    expect(store.resolveRemoteDetailed("p1", "ads.doubleclick.net")).toEqual({
+      action: "block",
+      listId: "list-a",
+    });
+    expect(store.resolveRemoteDetailed("p1", "example.com")).toBeUndefined();
+  });
+
   test("catalog dedups: two profiles sharing one list parse/store once", () => {
     const store = new RuleStore();
     const t = tableFrom(["a.com", "b.com"]);

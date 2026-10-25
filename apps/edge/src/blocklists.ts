@@ -143,11 +143,12 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
       //    Defer pruning until all profiles are wired: a profile with a subset
       //    of lists must not delete tables another profile still references.
       for (const [profileId, rowsForProfile] of enabledByProfile) {
-        const urls = [...new Set(rowsForProfile.map((r) => r.url))].filter((url) =>
-          deps.store.hasList(url),
-        );
-        const changed = deps.store.setSubscriptions(profileId, urls, { prune: false });
-        if (changed && !fetchedAnyChanged) log.info({ profileId, urls: urls.length }, "subscriptions rewired");
+        const listIdByUrl = new Map(rowsForProfile.map((row) => [row.url, row.id]));
+        const subscriptions = [...new Set(rowsForProfile.map((r) => r.url))]
+          .filter((url) => deps.store.hasList(url))
+          .map((url) => ({ url, listId: listIdByUrl.get(url) }));
+        const changed = deps.store.setSubscriptions(profileId, subscriptions, { prune: false });
+        if (changed && !fetchedAnyChanged) log.info({ profileId, urls: subscriptions.length }, "subscriptions rewired");
       }
       deps.store.pruneUnreferencedLists();
       if (deps.store.consumeChanged()) {

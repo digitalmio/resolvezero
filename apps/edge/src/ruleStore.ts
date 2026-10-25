@@ -45,6 +45,19 @@ export interface ZoneAnswer {
   recordType: ZoneRecordType;
 }
 
+/** One enabled remote-list subscription for a profile. */
+export interface ListSubscription {
+  url: string;
+  /** `profile_blocklists.id` for log attribution (IDs never contain secrets). */
+  listId?: string;
+}
+
+export interface RemoteResolution {
+  action: RuleAction;
+  /** Present when the match came from a subscribed remote list. */
+  listId?: string;
+}
+
 /**
  * In-memory rule state for the edge data plane.
  *
@@ -76,8 +89,8 @@ export class RuleStore {
    * by `upsertList` + `setSubscriptions` (see blocklists.ts, readme §4a).
    */
   private listCatalog = new Map<string, { table: SuffixFingerprintTable; entryCount: number; fingerprint: string }>();
-  /** profile_id -> enabled subscription URLs (order: allow-precedence pass). */
-  private subscriptions = new Map<string, string[]>();
+  /** profile_id -> enabled subscriptions (order: allow-precedence pass). */
+  private subscriptions = new Map<string, ListSubscription[]>();
 
   /**
    * Registers a parsed table under its source URL (single copy per machine).
@@ -114,15 +127,20 @@ export class RuleStore {
     this.changedSinceConsume ||= value;
   }
 
-  /** Sets a profile's enabled subscription URLs (tables already upserted). */
+  /** Sets a profile's enabled subscriptions (tables already upserted). */
   setSubscriptions(
     profileId: string,
-    urls: string[],
+    subscriptions: Array<string | ListSubscription>,
     opts: { prune?: boolean } = {},
   ): boolean {
-    const prev = this.subscriptions.get(profileId)?.join("|") ?? "";
-    const next = urls.join("|");
-    this.subscriptions.set(profileId, urls);
+    const normalized = subscriptions.map((item) =>
+      typeof item === "string" ? { url: item } : item,
+    );
+    const prev = (this.subscriptions.get(profileId) ?? [])
+      .map((s) => `${s.url}|${s.listId ?? ""}`)
+      .join("|");
+    const next = normalized.map((s) => `${s.url}|${s.listId ?? ""}`).join("|");
+    this.subscriptions.set(profileId, normalized);
     // Multi-profile wiring should pass prune:false and call
     // pruneUnreferencedLists() once after every profile is wired; otherwise a
     // profile with a subset of lists can delete tables another profile needs.
@@ -141,8 +159,8 @@ export class RuleStore {
   private pruneCatalog(): void {
     if (this.listCatalog.size === 0) return;
     const referenced = new Set<string>();
-    for (const urls of this.subscriptions.values()) {
-      for (const u of urls) referenced.add(u);
+    for (const subscriptions of this.subscriptions.values()) {
+      for (const subscription of subscriptions) referenced.add(subscription.url);
     }
     for (const url of this.listCatalog.keys()) {
       if (!referenced.has(url)) this.listCatalog.delete(url);
@@ -266,15 +284,28 @@ export class RuleStore {
    * then block-tables — observable parity with previous merged sets.
    */
   resolveRemote(profileId: string, domain: string): RuleAction | undefined {
-    const urls = this.subscriptions.get(profileId);
-    if (!urls?.length) return undefined;
-    for (const url of urls) {
-      const entry = this.listCatalog.get(url);
-      if (entry?.table.checkAllow(domain)) return "allow";
+    return this.resolveRemoteDetailed(profileId, domain)?.action;
+  }
+
+  /**
+   * Same lookup as `resolveRemote`, plus the winning subscription's stable
+   * list ID for query-log attribution. Returning the ID is free: the loop
+   * already found the matching list.
+   */
+  resolveRemoteDetailed(profileId: string, domain: string): RemoteResolution | undefined {
+    const subscriptions = this.subscriptions.get(profileId);
+    if (!subscriptions?.length) return undefined;
+    for (const subscription of subscriptions) {
+      const entry = this.listCatalog.get(subscription.url);
+      if (entry?.table.checkAllow(domain)) {
+        return { action: "allow", listId: subscription.listId };
+      }
     }
-    for (const url of urls) {
-      const entry = this.listCatalog.get(url);
-      if (entry?.table.checkBlock(domain)) return "block";
+    for (const subscription of subscriptions) {
+      const entry = this.listCatalog.get(subscription.url);
+      if (entry?.table.checkBlock(domain)) {
+        return { action: "block", listId: subscription.listId };
+      }
     }
     return undefined;
   }
@@ -299,6 +330,13 @@ export class RuleStore {
   profileUpstream(profileId: string): string | null {
     // Custom URL wins over the preset selector (readme §2).
     return this.profileUpstreamUrls.get(profileId) ?? this.profileUpstreams.get(profileId) ?? null;
+  }
+
+  /** Safe upstream label for logs — never expose a custom URL (may contain a token). */
+  profileUpstreamLabel(profileId: string): string {
+    const value = this.profileUpstream(profileId);
+    if (!value) return "edge-default";
+    return value.includes("://") ? "custom" : value;
   }
 
   // ---- Zone overrides (split-horizon records) ----

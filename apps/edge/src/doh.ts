@@ -18,6 +18,8 @@ import type { Recorder } from "./metrics";
 import { localNameAnswer, type ZoneRecordType } from "@resolvezero/shared";
 import { readBytesBounded } from "./body";
 
+export type QueryLogReason = "manual" | "blocklist" | "zone";
+
 export interface QueryLogEntry {
   profileId: string;
   domain: string;
@@ -26,6 +28,13 @@ export interface QueryLogEntry {
   clientIp: string | null;
   /** Device tag from device-tagged DoH path (/v1/:p/:device) — null when absent. */
   device: string | null;
+  /** Why the policy action happened. Omitted for ordinary forwards. */
+  reason?: QueryLogReason;
+  /** profile_blocklists.id for blocklist hits (never the URL: it may contain secrets). */
+  listId?: string;
+  transport?: "doh" | "udp" | "tcp";
+  /** Safe upstream label (preset, "custom", or "edge-default"). */
+  upstream?: string;
 }
 
 export interface Upstream {
@@ -168,6 +177,8 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
         device,
+        reason: "zone",
+        transport: "doh",
       });
       deps.recorder?.recordQuery("forward");
       try {
@@ -193,6 +204,8 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
         device,
+        reason: "manual",
+        transport: "doh",
       });
       deps.recorder?.recordQuery("block");
       return c.body(sinkholeResponse(question), 200, {
@@ -202,7 +215,8 @@ export function createDohApp(deps: DohAppDeps) {
     }
 
     // ---- Remote blocklists (custom-URL subscriptions; @@ allows win first) ----
-    if (!explicit && deps.store.resolveRemote(profileId, question.name) === "block") {
+    const remote = explicit ? undefined : deps.store.resolveRemoteDetailed(profileId, question.name);
+    if (remote?.action === "block") {
       deps.logQuery({
         profileId,
         domain: question.name,
@@ -210,6 +224,9 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
         device,
+        reason: "blocklist",
+        listId: remote.listId,
+        transport: "doh",
       });
       deps.recorder?.recordQuery("block");
       return c.body(sinkholeResponse(question), 200, {
@@ -232,6 +249,8 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
         device,
+        reason: "zone",
+        transport: "doh",
       });
       deps.recorder?.recordQuery("forward");
       return c.body(local, 200, { "content-type": "application/dns-message" });
@@ -239,6 +258,7 @@ export function createDohApp(deps: DohAppDeps) {
 
     // ---- DNS response LRU cache (keyed by question + upstream) ----
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
+    const upstream = deps.store.profileUpstreamLabel(profileId);
     const cached = deps.dnsCache.get(queryWire, upstreamUrl, () => refresh(queryWire, upstreamUrl));
     if (cached) {
       // Cache hits are still queries the user asked for — log them so the
@@ -251,6 +271,8 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
         device,
+        transport: "doh",
+        upstream,
       });
       deps.recorder?.recordQuery("forward");
       return c.body(cached, 200, { "content-type": "application/dns-message" });
@@ -276,6 +298,8 @@ export function createDohApp(deps: DohAppDeps) {
         rttMs: null,
         clientIp: clientAddr,
         device,
+        transport: "doh",
+        upstream,
       });
       deps.recorder?.recordQuery("forward");
       return c.body(servfailResponse(question), 200, {
@@ -291,6 +315,8 @@ export function createDohApp(deps: DohAppDeps) {
       rttMs,
       clientIp: clientAddr,
       device,
+      transport: "doh",
+      upstream,
     });
     deps.recorder?.recordQuery("forward");
     deps.recorder?.recordRtt(rttMs);

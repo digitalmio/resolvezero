@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { decode, encode } from "dns-packet";
 import { createDohApp, type QueryLogEntry, type Upstream } from "./doh";
+import { SuffixFingerprintBuilder } from "./fingerprint";
 import { DnsCache } from "./dnsCache";
 import { RuleStore } from "./ruleStore";
 
@@ -169,6 +170,52 @@ describe("DoH endpoint", () => {
     expect(packet.flags & 0x000f).toBe(3); // NXDOMAIN
     expect(seen).toEqual([nonce]);
     expect(mock.calls).toHaveLength(0);
+  });
+
+  test("remote block logs its list ID and transport", async () => {
+    const logs: QueryLogEntry[] = [];
+    const store = STORE_FIXTURE();
+    const builder = new SuffixFingerprintBuilder();
+    builder.add("tracker.test", "block");
+    store.upsertList("https://lists.example/tracker", builder.seal());
+    store.setSubscriptions(PROFILE, [
+      { url: "https://lists.example/tracker", listId: "11111111-aaaa-bbbb-cccc-222222222222" },
+    ]);
+    const api = createDohApp({
+      store,
+      dnsCache: new DnsCache(),
+      upstream: mockUpstream({}).upstream,
+      logQuery: (entry) => logs.push(entry),
+    });
+
+    const res = await api.request(`/v1/${PROFILE}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("ads.tracker.test"),
+    });
+    expect(res.status).toBe(200);
+    expect(logs[0]).toMatchObject({
+      action: "block",
+      reason: "blocklist",
+      listId: "11111111-aaaa-bbbb-cccc-222222222222",
+      transport: "doh",
+    });
+  });
+
+  test("manual block logs reason=manual", async () => {
+    const logs: QueryLogEntry[] = [];
+    const api = createDohApp({
+      store: STORE_FIXTURE(),
+      dnsCache: new DnsCache(),
+      upstream: mockUpstream({}).upstream,
+      logQuery: (entry) => logs.push(entry),
+    });
+    await api.request(`/v1/${PROFILE}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("evil.com"),
+    });
+    expect(logs[0]).toMatchObject({ action: "block", reason: "manual", transport: "doh" });
   });
 
   test("GET ?dns= base64url accepted (RFC 8484 GET)", async () => {

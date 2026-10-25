@@ -54,6 +54,22 @@ describe("key layout (shared contract)", () => {
     expect(e.time).toBe("2026-10-08T08:10:30.000Z");
     expect(e.action).toBe("forward");
     expect(e.rttMs).toBe(33);
+    expect(typeof e.region).toBe("string");
+    expect(typeof e.machine).toBe("string"); // internal diagnostics
+  });
+
+  test("lineFor includes attribution fields when present", () => {
+    const e = lineFor(row({
+      action: "block",
+      reason: "blocklist",
+      listId: "11111111-aaaa-bbbb-cccc-222222222222",
+      transport: "doh",
+      upstream: "custom",
+    }));
+    expect(e.reason).toBe("blocklist");
+    expect(e.listId).toBe("11111111-aaaa-bbbb-cccc-222222222222");
+    expect(e.transport).toBe("doh");
+    expect(e.upstream).toBe("custom");
   });
 });
 
