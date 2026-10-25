@@ -1,12 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #0b0c0e;
-  --paper: #f4f4f0;
-  --paper-2: #ecece6;
-  --line: #e1e1da;
-  --muted: #72736e;
-  --accent: #ff5a1f;
+  --ink: #111315;
+  --paper: #f7f6f3;
+  --paper-2: #efeee9;
+  --line: #e3e1db;
+  --muted: #6f716c;
+  --accent: #f45a22;
+  --sidebar: #fbfaf7;
   font-family: "Geist", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--ink);
   background: var(--paper);
@@ -26,9 +27,7 @@ body,
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 70% -10%, rgba(255, 90, 31, 0.055), transparent 34rem),
-    var(--paper);
+  background: var(--paper);
 }
 
 button,
@@ -38,9 +37,9 @@ a {
 
 .rz-card {
   border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 1px 0 rgba(11, 12, 14, 0.02), 0 12px 30px rgba(11, 12, 14, 0.025);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: none;
 }
 
 .rz-button-primary,
@@ -48,38 +47,38 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  border-radius: 10px;
-  padding: 9px 13px;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 7px 11px;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1;
-  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+  line-height: 1.1;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .rz-button-primary {
-  border: 1px solid var(--ink);
-  background: var(--ink);
+  border: 1px solid var(--accent);
+  background: var(--accent);
   color: white;
 }
 
 .rz-button-primary:hover {
-  transform: translateY(-1px);
-  background: #202124;
+  background: #dc4a16;
+  border-color: #dc4a16;
 }
 
 .rz-button-secondary {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.7);
+  background: #fff;
   color: var(--ink);
 }
 
 .rz-button-secondary:hover {
-  background: white;
+  background: var(--paper);
 }
 
 ::selection {
-  background: rgba(255, 90, 31, 0.2);
+  background: rgba(244, 90, 34, 0.2);
 }
 
 @media (max-width: 1023px) {

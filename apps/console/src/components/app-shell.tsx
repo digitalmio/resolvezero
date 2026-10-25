@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   BarChart3,
-  BookOpen,
   ChevronDown,
   CircleHelp,
   Command,
@@ -28,18 +27,37 @@ type NavItem = {
   badge?: string
 }
 
-const primaryNav: NavItem[] = [
-  { label: 'Overview', to: '/', icon: <Activity size={17} /> },
-  { label: 'Rules', to: '/rules', icon: <ListFilter size={17} /> },
-  { label: 'Blocklists', to: '/blocklists', icon: <Layers3 size={17} /> },
-  { label: 'Devices', to: '/devices', icon: <Monitor size={17} /> },
-  { label: 'Logs', to: '/logs', icon: <FileText size={17} /> },
-  { label: 'Analytics', to: '/analytics', icon: <BarChart3 size={17} /> },
+type NavGroup = {
+  label: string
+  items: NavItem[]
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: 'Network',
+    items: [
+      { label: 'Overview', to: '/', icon: <Activity size={16} /> },
+      { label: 'Devices', to: '/devices', icon: <Monitor size={16} /> },
+    ],
+  },
+  {
+    label: 'Protection',
+    items: [
+      { label: 'Rules', to: '/rules', icon: <ListFilter size={16} /> },
+      { label: 'Blocklists', to: '/blocklists', icon: <Layers3 size={16} /> },
+    ],
+  },
+  {
+    label: 'Observe',
+    items: [
+      { label: 'Logs', to: '/logs', icon: <FileText size={16} /> },
+      { label: 'Analytics', to: '/analytics', icon: <BarChart3 size={16} /> },
+    ],
+  },
 ]
 
-const secondaryNav: NavItem[] = [
-  { label: 'Settings', to: '/settings', icon: <Settings size={17} /> },
-  { label: 'API docs', to: '/settings', icon: <BookOpen size={17} /> },
+const accountNav: NavItem[] = [
+  { label: 'Settings', to: '/settings', icon: <Settings size={16} /> },
 ]
 
 export function AppShell() {
@@ -51,67 +69,75 @@ export function AppShell() {
     : '—'
   const blockRate = data ? (data.blockRatio * 100).toFixed(1) : '—'
   const edgeHealthy = data?.edge.ok
-  const nav = primaryNav.map((item) =>
-    item.label === 'Devices' && deviceCount > 0 ? { ...item, badge: String(deviceCount) } : item,
-  )
+  const groups = navGroups.map((group) => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.label === 'Devices' && deviceCount > 0 ? { ...item, badge: String(deviceCount) } : item,
+    ),
+  }))
 
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-white/8 bg-[var(--ink)] text-white lg:flex">
-        <Link to="/" className="flex items-center gap-3 px-5 pb-7 pt-6">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-white text-[#0b0c0e] shadow-[0_0_0_1px_rgba(255,255,255,.08)]">
-            <img src={logo} alt="" className="size-7" />
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-[var(--line)] bg-[var(--sidebar)] text-[var(--ink)] lg:flex">
+        <Link to="/" className="flex items-center gap-3 px-4 pb-6 pt-5">
+          <span className="flex size-9 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-[var(--ink)]">
+            <img src={logo} alt="" className="size-6" />
           </span>
           <span>
-            <span className="block text-[15px] font-semibold tracking-[-0.02em]">ResolveZero</span>
-            <span className="block text-[11px] uppercase tracking-[0.16em] text-white/40">DNS control plane</span>
+            <span className="block text-[14px] font-semibold tracking-[-0.02em]">ResolveZero</span>
+            <span className="block text-[10px] uppercase tracking-[0.16em] text-[var(--muted)]">Home DNS firewall</span>
           </span>
         </Link>
 
-        <div className="mx-3 mb-5 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-          <span className="size-1.5 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]" />
-          <span className="text-[12px] font-medium text-white/80">Home network</span>
-          <ChevronDown size={14} className="ml-auto text-white/35" />
+        <div className="mx-3 mb-4 flex items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 py-2">
+          <span className="size-1.5 rounded-full bg-[var(--accent)]" />
+          <span className="text-[12px] font-medium">Home network</span>
+          <ChevronDown size={14} className="ml-auto text-[var(--muted)]" />
         </div>
 
-        <nav className="flex flex-1 flex-col px-3">
-          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30">Workspace</p>
-          {nav.map((item) => (
-            <SidebarLink key={item.label} item={item} active={pathname === item.to || (item.to !== '/' && pathname.startsWith(item.to))} />
-          ))}
-          <div className="my-5 h-px bg-white/8" />
-          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30">Account</p>
-          {secondaryNav.map((item) => (
-            <SidebarLink key={item.label} item={item} active={pathname === item.to} />
+        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
+          {groups.map((group) => (
+            <div key={group.label}>
+              <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">{group.label}</p>
+              {group.items.map((item) => (
+                <SidebarLink key={item.label} item={item} active={pathname === item.to || (item.to !== '/' && pathname.startsWith(item.to))} />
+              ))}
+            </div>
           ))}
         </nav>
 
-        <div className="m-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
-          <div className="flex items-center gap-2 text-[12px] font-medium text-white/85">
-            <ShieldCheck size={15} className="text-[var(--accent)]" />
-            {edgeHealthy === false ? 'Edge unavailable' : 'Protection active'}
+        <div className="px-3 pb-3">
+          <div className="rounded-md border border-[var(--line)] bg-white p-3">
+            <div className="flex items-center gap-2 text-[11px] font-medium">
+              <ShieldCheck size={14} className="text-[var(--accent)]" />
+              {edgeHealthy === false ? 'Edge unavailable' : 'Protection active'}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-4 text-[var(--muted)]">
+              {data ? `${queriesLabel} queries in the last 24 hours.` : 'Loading live DNS data…'}
+            </p>
+            <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--muted)]">
+              <span>{deviceCount} devices</span>
+              <span className="font-mono text-[var(--ink)]">{blockRate}% blocked</span>
+            </div>
           </div>
-          <p className="mt-1.5 text-[11px] leading-5 text-white/45">
-            {data ? `${queriesLabel} DNS queries in the last 24 hours.` : 'Loading live DNS data…'}
-          </p>
-          <div className="mt-3 flex items-center justify-between text-[11px] text-white/40">
-            <span>{deviceCount} devices</span>
-            <span className="text-[var(--accent)]">{blockRate}% blocked</span>
-          </div>
+          <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Account</p>
+          {accountNav.map((item) => (
+            <SidebarLink key={item.label} item={item} active={pathname === item.to} />
+          ))}
         </div>
 
-        <div className="flex items-center gap-2.5 border-t border-white/8 px-5 py-4">
-          <span className="flex size-8 items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold">MK</span>
+        <div className="flex items-center gap-2.5 border-t border-[var(--line)] px-4 py-3">
+          <span className="flex size-7 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">MK</span>
           <span className="min-w-0">
-            <span className="block truncate text-[12px] font-medium text-white/85">Maciej K.</span>
-            <span className="block truncate text-[11px] text-white/35">Personal workspace</span>
+            <span className="block truncate text-[11px] font-medium">Maciej K.</span>
+            <span className="block truncate text-[10px] text-[var(--muted)]">Personal workspace</span>
           </span>
-          <CircleHelp size={15} className="ml-auto text-white/30" />
+          <CircleHelp size={14} className="ml-auto text-[var(--muted)]" />
         </div>
       </aside>
 
-      <div className="lg:pl-[248px]">
-        <header className="sticky top-0 z-20 flex h-[68px] items-center gap-3 border-b border-[var(--line)] bg-[color-mix(in_srgb,var(--paper)_92%,transparent)] px-5 backdrop-blur-xl sm:px-8">
+      <div className="lg:pl-[232px]">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-2 lg:hidden">
             <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--ink)] text-white">
               <img src={logo} alt="ResolveZero" className="size-5" />
@@ -119,10 +145,10 @@ export function AppShell() {
             <span className="text-sm font-semibold">ResolveZero</span>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px] text-[var(--muted)] shadow-[0_1px_0_rgba(0,0,0,.02)] sm:flex">
+          <div className="hidden items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 text-[12px] text-[var(--muted)] sm:flex">
             <Search size={14} />
             <span>Search domains, rules, devices</span>
-            <kbd className="ml-8 flex items-center gap-0.5 rounded border border-[var(--line)] bg-[var(--paper)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
+            <kbd className="ml-8 flex items-center gap-0.5 rounded border border-[var(--line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
               <Command size={10} /> K
             </kbd>
           </div>
@@ -139,7 +165,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1480px] px-5 py-7 sm:px-8 sm:py-9">
+        <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 sm:py-7">
           <Outlet />
         </main>
       </div>
@@ -152,14 +178,16 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       to={item.to}
       className={[
-        'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-colors',
-        active ? 'bg-white/[0.09] text-white' : 'text-white/50 hover:bg-white/[0.05] hover:text-white/85',
+        'group flex items-center gap-2.5 rounded-md border-l-2 px-2.5 py-2 text-[12px] font-medium transition-colors',
+        active
+          ? 'border-[var(--accent)] bg-[#fff1e9] text-[var(--ink)]'
+          : 'border-transparent text-[var(--muted)] hover:bg-[var(--paper)] hover:text-[var(--ink)]',
       ].join(' ')}
     >
-      <span className={active ? 'text-[var(--accent)]' : 'text-white/35 group-hover:text-white/65'}>{item.icon}</span>
+      <span className={active ? 'text-[var(--accent)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
       <span>{item.label}</span>
       {item.badge ? (
-        <span className="ml-auto rounded-md bg-white/8 px-1.5 py-0.5 font-mono text-[10px] text-white/45">{item.badge}</span>
+        <span className="ml-auto rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)] ring-1 ring-[var(--line)]">{item.badge}</span>
       ) : null}
     </Link>
   )

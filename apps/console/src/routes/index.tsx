@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { getOverview } from '../server/dashboard'
@@ -8,9 +8,7 @@ import {
   Clock3,
   Globe2,
   Monitor,
-  MoreHorizontal,
   ShieldCheck,
-  Sparkles,
   Zap,
 } from 'lucide-react'
 
@@ -67,15 +65,14 @@ function Overview() {
     count: formatNumber(d.count),
     share: Math.round((d.count / maxBlocked) * 100),
   }))
-  const devices = data.topDevices.map((d, index) => ({
+  const devices = data.topDevices.map((d) => ({
     name: d.device,
     detail: 'DoH device tag',
     queries: formatNumber(d.count),
-    status: index < 4 ? 'online' : 'unknown',
   }))
   const totalQueries = data.totalQueries
   const blocked = data.blocked
-  const activeDevices = data.activeDevices
+  const activeSources = Math.max(data.activeDevices, data.topClients.length)
   const forwarded = Math.max(totalQueries - blocked, 0)
   const qps = totalQueries / 86_400
   const qpsLabel = qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)
@@ -89,81 +86,71 @@ function Overview() {
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+          <p className="mb-1.5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
             <span className="size-1.5 rounded-full bg-[var(--accent)]" />
-            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {profileLabel} profile
           </p>
-          <h1 className="text-[30px] font-semibold tracking-[-0.045em] sm:text-[36px]">{greeting}, Maciej.</h1>
-          <p className="mt-2 flex items-center gap-2 text-[13px] text-[var(--muted)]">
-            {profileLabel} · last 24 hours
+          <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Overview</h1>
+          <p className="mt-1.5 text-[12px] text-[var(--muted)]">
+            {greeting}, Maciej · last 24 hours · updated {updateAge} ago
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="rz-button-secondary">View public status</button>
-          <button className="rz-button-primary">
-            <Sparkles size={14} />
-            Add device
-          </button>
         </div>
       </div>
 
       <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
-        <div className="rz-card relative overflow-hidden p-6 sm:p-7">
-          <div className="pointer-events-none absolute -right-20 -top-28 size-72 rounded-full bg-[radial-gradient(circle,rgba(255,90,31,.14),transparent_68%)]" />
-          <div className="relative flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
+        <div className="rz-card overflow-hidden">
+          <div className="flex flex-col gap-5 p-5 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="flex items-center gap-3">
-                <span className="flex size-11 items-center justify-center rounded-2xl bg-[#fff0e9] text-[var(--accent)]">
-                  <ShieldCheck size={23} strokeWidth={1.8} />
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-8 items-center justify-center rounded-md bg-[#fff1e9] text-[var(--accent)]">
+                  <ShieldCheck size={17} strokeWidth={1.8} />
                 </span>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Network posture</p>
-                  <p className="mt-0.5 text-[17px] font-semibold tracking-[-0.02em]">{data.edge.ok ? 'Protected' : 'Attention needed'}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Network posture</p>
+                  <p className="text-[15px] font-semibold tracking-[-0.02em]">{data.edge.ok ? 'Protected' : 'Attention needed'}</p>
                 </div>
               </div>
-              <p className="mt-5 max-w-[430px] text-[13px] leading-6 text-[var(--muted)]">
+              <p className="mt-4 max-w-[460px] text-[12px] leading-5 text-[var(--muted)]">
                 {data.edge.ok
-                  ? `The DNS edge is healthy${data.edge.region ? ` in ${REGION_NAMES[data.edge.region] ?? region}` : ''}. Your latest configuration is live.`
+                  ? `DNS is answering${data.edge.region ? ` from ${REGION_NAMES[data.edge.region] ?? region}` : ''}. Your latest rules and blocklists are live.`
                   : 'The DNS edge health check is unavailable. Queries may still be flowing.'}
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-4 md:min-w-[210px]">
+            <div className="grid grid-cols-2 gap-x-7 gap-y-3 md:min-w-[220px]">
               <MiniStat label="Custom rules" value={String(data.ruleCount)} />
-              <MiniStat label="Active devices" value={String(activeDevices)} />
-              <MiniStat label="Updated" value={updateAge} accent />
+              <MiniStat label="Active sources" value={String(activeSources)} />
+              <MiniStat label="Updated" value={`${updateAge} ago`} accent />
               <MiniStat label="Region" value={region} />
             </div>
           </div>
-          <div className="relative mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--line)] pt-4 text-[11px] text-[var(--muted)]">
-            <span className="flex items-center gap-2"><span className={['size-1.5 rounded-full', data.edge.dns53Bound ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> UDP + TCP 53 {data.edge.dns53Bound ? 'healthy' : 'unavailable'}</span>
-            <span className="flex items-center gap-2"><span className={['size-1.5 rounded-full', data.edge.blocklistsLoaded ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Blocklists {data.edge.blocklistsLoaded ? 'loaded' : 'unavailable'}</span>
-            <span className="flex items-center gap-2"><span className={['size-1.5 rounded-full', data.edge.ok ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Edge {data.edge.ok ? 'healthy' : 'unreachable'}</span>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[var(--line)] bg-[var(--paper)]/60 px-5 py-2.5 text-[10px] text-[var(--muted)]">
+            <span className="flex items-center gap-1.5"><span className={['size-1.5 rounded-full', data.edge.dns53Bound ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> UDP + TCP 53 {data.edge.dns53Bound ? 'healthy' : 'unavailable'}</span>
+            <span className="flex items-center gap-1.5"><span className={['size-1.5 rounded-full', data.edge.blocklistsLoaded ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Blocklists {data.edge.blocklistsLoaded ? 'loaded' : 'unavailable'}</span>
+            <span className="flex items-center gap-1.5"><span className={['size-1.5 rounded-full', data.edge.ok ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Edge {data.edge.ok ? 'healthy' : 'unreachable'}</span>
           </div>
         </div>
 
-        <div className="rz-card flex flex-col justify-between p-6">
+        <div className="rz-card flex flex-col justify-between p-5">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Live traffic</p>
-              <p className="mt-2 font-mono text-[34px] font-medium tracking-[-0.06em]">{qpsLabel}<span className="ml-2 font-sans text-[12px] tracking-normal text-[var(--muted)]">qps avg</span></p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Live traffic</p>
+              <p className="mt-1.5 font-mono text-[28px] font-medium tracking-[-0.05em]">{qpsLabel}<span className="ml-2 font-sans text-[11px] tracking-normal text-[var(--muted)]">qps avg</span></p>
             </div>
-            <span className="flex items-center gap-1.5 rounded-full bg-[#edf8f0] px-2.5 py-1 text-[11px] font-medium text-[#247440]">
-              <ArrowUpRight size={12} /> 8.4%
-            </span>
+            <span className="rounded border border-[var(--line)] px-2 py-1 text-[10px] text-[var(--muted)]">24h window</span>
           </div>
-          <div className="mt-6 space-y-4">
+          <div className="mt-5 space-y-3">
             <div>
-              <div className="mb-2 flex justify-between text-[11px] text-[var(--muted)]"><span>Forwarded</span><span className="font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span></div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--paper-2)]"><div className="h-full rounded-full bg-[var(--ink)]" style={{ width: `${forwardedPct}%` }} /></div>
+              <div className="mb-1.5 flex justify-between text-[10px] text-[var(--muted)]"><span>Forwarded</span><span className="font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span></div>
+              <div className="h-1 overflow-hidden rounded-sm bg-[var(--paper-2)]"><div className="h-full rounded-sm bg-[var(--ink)]" style={{ width: `${forwardedPct}%` }} /></div>
             </div>
             <div>
-              <div className="mb-2 flex justify-between text-[11px] text-[var(--muted)]"><span>Blocked</span><span className="font-mono text-[var(--ink)]">{formatNumber(blocked)}</span></div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--paper-2)]"><div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${blockedPct}%` }} /></div>
+              <div className="mb-1.5 flex justify-between text-[10px] text-[var(--muted)]"><span>Blocked</span><span className="font-mono text-[var(--ink)]">{formatNumber(blocked)}</span></div>
+              <div className="h-1 overflow-hidden rounded-sm bg-[var(--paper-2)]"><div className="h-full rounded-sm bg-[var(--accent)]" style={{ width: `${blockedPct}%` }} /></div>
             </div>
           </div>
-          <div className="mt-6 flex items-center gap-2 border-t border-[var(--line)] pt-4 text-[11px] text-[var(--muted)]">
-            <Zap size={12} className="text-[var(--accent)]" />
-            Window <span className="font-mono text-[var(--ink)]">last 24h</span>
+          <div className="mt-5 flex items-center gap-1.5 border-t border-[var(--line)] pt-3 text-[10px] text-[var(--muted)]">
+            <Zap size={11} className="text-[var(--accent)]" />
+            Last 24 hours
           </div>
         </div>
       </section>
@@ -172,7 +159,7 @@ function Overview() {
         <Kpi icon={<Globe2 size={16} />} label="Queries / 24h" value={formatNumber(totalQueries)} delta="last 24 hours" />
         <Kpi icon={<Ban size={16} />} label="Blocked" value={formatNumber(blocked)} delta={`${(data.blockRatio * 100).toFixed(1)}% of total`} />
         <Kpi icon={<Clock3 size={16} />} label="Avg upstream" value={data.avgRttMs != null ? `${data.avgRttMs} ms` : '—'} delta="forwarded queries" positive />
-        <Kpi icon={<Monitor size={16} />} label="Active devices" value={String(activeDevices)} delta="DoH tags in window" />
+        <Kpi icon={<Monitor size={16} />} label="Active sources" value={String(activeSources)} delta="client IPs / DoH tags" />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
@@ -182,11 +169,7 @@ function Overview() {
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Query volume</h2>
               <p className="mt-1 text-[12px] text-[var(--muted)]">Forwarded vs blocked over the last 24 hours</p>
             </div>
-            <div className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--paper)] p-0.5 text-[11px]">
-              <button className="rounded-md bg-white px-2.5 py-1.5 font-medium shadow-sm">24h</button>
-              <button className="px-2.5 py-1.5 text-[var(--muted)]">7d</button>
-              <button className="px-2.5 py-1.5 text-[var(--muted)]">30d</button>
-            </div>
+            <span className="rounded border border-[var(--line)] px-2 py-1 text-[10px] text-[var(--muted)]">Last 24 hours</span>
           </div>
           <div className="mt-4 flex items-center gap-5 text-[11px] text-[var(--muted)]">
             <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--ink)]" /> Forwarded</span>
@@ -204,7 +187,6 @@ function Overview() {
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Top blocked</h2>
               <p className="mt-1 text-[12px] text-[var(--muted)]">Last 24 hours</p>
             </div>
-            <button className="text-[var(--muted)]"><MoreHorizontal size={17} /></button>
           </div>
           <div className="mt-5 space-y-4">
             {topBlocked.length === 0 ? <p className="py-6 text-center text-[12px] text-[var(--muted)]">No blocked domains in this window.</p> : null}
@@ -220,9 +202,9 @@ function Overview() {
               </div>
             ))}
           </div>
-          <button className="mt-6 flex items-center gap-1 text-[11px] font-medium text-[var(--ink)]">
+          <Link to="/logs" className="mt-6 flex items-center gap-1 text-[11px] font-medium text-[var(--ink)] hover:text-[var(--accent)]">
             Open query log <ArrowUpRight size={12} />
-          </button>
+          </Link>
         </div>
       </section>
 
@@ -233,7 +215,7 @@ function Overview() {
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Devices</h2>
               <p className="mt-1 text-[12px] text-[var(--muted)]">Most active on this profile</p>
             </div>
-            <button className="rz-button-secondary !py-1.5 !text-[11px]">Manage</button>
+            <Link to="/devices" className="rz-button-secondary !py-1.5 !text-[11px]">Manage</Link>
           </div>
           <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
             {devices.length === 0 ? <p className="px-6 py-8 text-center text-[12px] text-[var(--muted)]">No tagged DoH devices in this window.</p> : null}
@@ -246,8 +228,7 @@ function Overview() {
                   <p className="truncate text-[12px] font-medium">{device.name}</p>
                   <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--muted)]">{device.detail}</p>
                 </div>
-                <span className={['ml-auto font-mono text-[11px]', device.status === 'online' ? 'text-[var(--ink)]' : 'text-[var(--muted)]'].join(' ')}>{device.queries}</span>
-                <span className={['size-1.5 rounded-full', device.status === 'online' ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} />
+                <span className="ml-auto font-mono text-[11px] text-[var(--muted)]">{device.queries}</span>
               </div>
             ))}
           </div>

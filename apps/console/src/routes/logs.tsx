@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Download, FileText, Search } from 'lucide-react'
+import { FileText, Search } from 'lucide-react'
 import { useState } from 'react'
 import { getLogsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
@@ -49,47 +49,46 @@ function Logs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Observability</p>
-          <h1 className="text-[30px] font-semibold tracking-[-0.045em]">Query log</h1>
-          <p className="mt-2 text-[13px] text-[var(--muted)]">{data.profileName} · latest 100 entries streamed from the edge archive.</p>
-        </div>
-        <button className="rz-button-secondary"><Download size={13} /> Export</button>
+      <div>
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">Network activity</p>
+        <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Query log</h1>
+        <p className="mt-1.5 text-[12px] text-[var(--muted)]">
+          {data.profileName} · latest 100 archived queries · 15-minute flush
+        </p>
       </div>
 
       <div className="rz-card overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-[var(--line)] p-4 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px] text-[var(--muted)]">
-            <Search size={14} />
+        <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-[var(--paper)]/50 px-4 py-3 sm:flex-row sm:items-center">
+          <div className="flex flex-1 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)]">
+            <Search size={13} />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Filter by domain"
-              className="w-full bg-transparent text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+              className="w-full bg-transparent text-[11px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
             />
           </div>
-          <span className="text-[11px] text-[var(--muted)]">{filtered.length} entries</span>
+          <span className="text-[10px] text-[var(--muted)]">{filtered.length} entries</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1040px] text-left">
             <thead>
-              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
-                <th className="px-5 py-3 font-medium">Time</th>
-                <th className="px-4 py-3 font-medium">Domain</th>
-                <th className="px-4 py-3 font-medium">Action</th>
-                <th className="px-4 py-3 font-medium">Reason</th>
-                <th className="px-4 py-3 font-medium">POP</th>
-                <th className="px-4 py-3 font-medium">Client IP</th>
-                <th className="px-4 py-3 font-medium">RTT</th>
+              <tr className="border-b border-[var(--line)] text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">
+                <th className="px-4 py-2.5 font-medium">Time</th>
+                <th className="px-4 py-2.5 font-medium">Domain</th>
+                <th className="px-4 py-2.5 font-medium">Action</th>
+                <th className="px-4 py-2.5 font-medium">Reason</th>
+                <th className="px-4 py-2.5 font-medium">POP</th>
+                <th className="px-4 py-2.5 font-medium">Client IP</th>
+                <th className="px-4 py-2.5 font-medium">RTT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--line)]">
               {filtered.length === 0 ? <tr><td colSpan={7} className="px-5 py-12 text-center text-[12px] text-[var(--muted)]">No log entries found.</td></tr> : null}
               {filtered.map((entry, index) => (
-                <tr key={`${entry.time}-${entry.domain}-${index}`} className="hover:bg-white/60">
-                  <td className="px-5 py-3.5 font-mono text-[10px] text-[var(--muted)]" title={entry.time ? new Date(entry.time).toISOString() : undefined}>
+                <tr key={`${entry.time}-${entry.domain}-${index}`} className="hover:bg-[var(--paper)]/60">
+                  <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[10px] text-[var(--muted)]" title={entry.time ? new Date(entry.time).toISOString() : undefined}>
                     {entry.time
                       ? new Date(entry.time).toLocaleString('en-GB', {
                           day: '2-digit',
@@ -100,28 +99,31 @@ function Logs() {
                         })
                       : '—'}
                   </td>
-                  <td className="max-w-[360px] truncate px-4 py-3.5 font-mono text-[12px]">{entry.domain}</td>
-                  <td className="px-4 py-3.5">
-                    <span className={['rounded-md px-2 py-1 text-[10px] font-semibold uppercase', entry.action === 'block' ? 'bg-[#fff0e9] text-[#c64012]' : 'bg-[#edf8f0] text-[#247440]'].join(' ')}>{entry.action}</span>
+                  <td className="max-w-[360px] truncate px-4 py-2.5 font-mono text-[11px]">{entry.domain}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={['inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]', entry.action === 'block' ? 'text-[#b83c14]' : 'text-[#247440]'].join(' ')}>
+                      <span className={['size-1.5 rounded-full', entry.action === 'block' ? 'bg-[#d94d20]' : 'bg-[#2e9b55]'].join(' ')} />
+                      {entry.action}
+                    </span>
                   </td>
-                  <td className="max-w-[260px] truncate px-4 py-3.5 text-[11px] text-[var(--muted)]" title={entry.listLabel ?? undefined}>
+                  <td className="max-w-[260px] truncate px-4 py-2.5 text-[11px] text-[var(--muted)]" title={entry.listLabel ?? undefined}>
                     {reasonLabel(entry)}
                   </td>
                   <td
-                    className="px-4 py-3.5 font-mono text-[10px] uppercase text-[var(--muted)]"
+                    className="px-4 py-2.5 font-mono text-[10px] uppercase text-[var(--muted)]"
                     title={popDetail(entry)}
                   >
                     {entry.region ?? '—'}
                   </td>
-                  <td className="px-4 py-3.5 font-mono text-[10px] text-[var(--muted)]">{entry.clientIp ?? '—'}</td>
-                  <td className="px-4 py-3.5 font-mono text-[10px] text-[var(--muted)]">{entry.rttMs != null ? `${entry.rttMs} ms` : '—'}</td>
+                  <td className="px-4 py-2.5 font-mono text-[10px] text-[var(--muted)]">{entry.clientIp ?? '—'}</td>
+                  <td className="px-4 py-2.5 font-mono text-[10px] text-[var(--muted)]">{entry.rttMs != null ? `${entry.rttMs} ms` : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="flex items-center gap-2 border-t border-[var(--line)] px-5 py-3 text-[10px] text-[var(--muted)]">
-          <FileText size={12} /> Archive objects are streamed on demand; older data remains in S3.
+        <div className="flex items-center gap-2 border-t border-[var(--line)] px-4 py-2.5 text-[10px] text-[var(--muted)]">
+          <FileText size={12} /> Archived on the edge; older objects remain in S3.
         </div>
       </div>
     </div>
