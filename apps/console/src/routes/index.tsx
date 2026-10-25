@@ -104,8 +104,8 @@ function Overview() {
         </div>
       </div>
 
-      <section className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
-        <div className="rz-card overflow-hidden">
+      <section className="grid items-start gap-4 xl:grid-cols-[1.55fr_1fr]">
+        <div className="rz-card flex flex-col overflow-hidden">
           <div className="flex flex-col gap-5 p-5 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="flex items-center gap-2.5">
@@ -130,7 +130,7 @@ function Overview() {
               <MiniStat label="Region" value={region} />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[var(--line)] bg-[var(--paper)]/60 px-5 py-2.5 text-[10px] text-[var(--muted)]">
+          <div className="mt-auto flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[var(--line)] bg-[var(--paper)]/60 px-5 py-2.5 text-[10px] text-[var(--muted)]">
             <span className="flex items-center gap-1.5"><span className={['size-1.5 rounded-full', data.edge.dns53Bound ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> UDP + TCP 53 {data.edge.dns53Bound ? 'healthy' : 'unavailable'}</span>
             <span className="flex items-center gap-1.5"><span className={['size-1.5 rounded-full', data.edge.blocklistsLoaded ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Blocklists {data.edge.blocklistsLoaded ? 'loaded' : 'unavailable'}</span>
             <span className="flex items-center gap-1.5"><span className={['size-1.5 rounded-full', data.edge.ok ? 'bg-[#2e9b55]' : 'bg-[#c8a24a]'].join(' ')} /> Edge {data.edge.ok ? 'healthy' : 'unreachable'}</span>
