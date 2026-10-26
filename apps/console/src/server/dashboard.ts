@@ -1,35 +1,62 @@
 import { createServerFn } from "@tanstack/react-start";
 
-export type { OverviewData, RulesData } from "./dashboard.server";
+export const getSession = createServerFn({ method: "GET" }).handler(async () => {
+  const { getSessionUser } = await import("./auth.server");
+  return getSessionUser();
+});
 
 export const getOverview = createServerFn({ method: "GET" }).handler(async () => {
-  const { loadOverview } = await import("./dashboard.server");
-  return loadOverview();
+  const [{ requireSessionUser, toViewer }, { loadOverview }] = await Promise.all([
+    import("./auth.server"),
+    import("./dashboard.server"),
+  ]);
+  const user = await requireSessionUser();
+  return loadOverview(user.id, toViewer(user));
 });
 
 export const getRulesData = createServerFn({ method: "GET" }).handler(async () => {
-  const { loadRules } = await import("./dashboard.server");
-  return loadRules();
+  const [{ requireSessionUser }, { loadRules }] = await Promise.all([
+    import("./auth.server"),
+    import("./dashboard.server"),
+  ]);
+  const user = await requireSessionUser();
+  return loadRules(user.id);
 });
 
 export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async () => {
-  const { loadBlocklists } = await import("./dashboard.server");
-  return loadBlocklists();
+  const [{ requireSessionUser }, { loadBlocklists }] = await Promise.all([
+    import("./auth.server"),
+    import("./dashboard.server"),
+  ]);
+  const user = await requireSessionUser();
+  return loadBlocklists(user.id);
 });
 
 export const getAnalyticsData = createServerFn({ method: "GET" }).handler(async () => {
-  const { loadAnalytics } = await import("./dashboard.server");
-  return loadAnalytics();
+  const [{ requireSessionUser }, { loadAnalytics }] = await Promise.all([
+    import("./auth.server"),
+    import("./dashboard.server"),
+  ]);
+  const user = await requireSessionUser();
+  return loadAnalytics(user.id);
 });
 
 export const getSettingsData = createServerFn({ method: "GET" }).handler(async () => {
-  const { loadSettings } = await import("./dashboard.server");
-  return loadSettings();
+  const [{ requireSessionUser }, { loadSettings }] = await Promise.all([
+    import("./auth.server"),
+    import("./dashboard.server"),
+  ]);
+  const user = await requireSessionUser();
+  return loadSettings(user.id);
 });
 
 export const getLogsData = createServerFn({ method: "GET" }).handler(async () => {
-  const { loadLogs } = await import("./dashboard.server");
-  return loadLogs();
+  const [{ requireSessionUser }, { loadLogs }] = await Promise.all([
+    import("./auth.server"),
+    import("./dashboard.server"),
+  ]);
+  const user = await requireSessionUser();
+  return loadLogs(user.id);
 });
 
 export const purgeCache = createServerFn({ method: "POST" })
@@ -47,8 +74,12 @@ export const purgeCache = createServerFn({ method: "POST" })
     return { domain, type };
   })
   .handler(async ({ data }) => {
-    const { purgeCache: runPurge } = await import("./dashboard.server");
-    return runPurge(data.domain, data.type);
+    const [{ requireSessionUser }, { purgeCache: runPurge }] = await Promise.all([
+      import("./auth.server"),
+      import("./dashboard.server"),
+    ]);
+    const user = await requireSessionUser();
+    return runPurge(user.id, data.domain, data.type);
   });
 
 export const checkDnsProbe = createServerFn({ method: "POST" })
@@ -57,6 +88,10 @@ export const checkDnsProbe = createServerFn({ method: "POST" })
     return nonce;
   })
   .handler(async ({ data }) => {
-    const { loadDnsProbe } = await import("./dashboard.server");
-    return loadDnsProbe(data);
+    const [{ requireSessionUser }, { loadDnsProbe }] = await Promise.all([
+      import("./auth.server"),
+      import("./dashboard.server"),
+    ]);
+    const user = await requireSessionUser();
+    return loadDnsProbe(user.id, data);
   });

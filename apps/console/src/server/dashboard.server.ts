@@ -1,6 +1,3 @@
-import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
@@ -12,9 +9,10 @@ import {
   profileZones,
   profiles,
   statsHourly,
-  user,
   type StatsTopEntry,
 } from "@resolvezero/db/schema";
+
+import "./env.server";
 
 export interface Viewer {
   name: string;
@@ -53,31 +51,6 @@ export interface OverviewData {
   topClients: { clientIp: string; count: number }[];
 }
 
-// Local dev convenience: pnpm may run from the repo root or apps/console,
-// while the shared secrets live in the repo-root .env. Production env vars
-// are untouched.
-if (!process.env.DATABASE_URL) {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    process.env.DASHBOARD_ENV_FILE,
-    resolve(process.cwd(), ".env"),
-    resolve(process.cwd(), "../../.env"),
-    resolve(process.cwd(), "../../../.env"),
-    resolve(here, "../../../../.env"),
-    resolve(here, "../../../../../.env"),
-  ].filter((path): path is string => Boolean(path));
-
-  for (const envFile of candidates) {
-    if (!existsSync(envFile)) continue;
-    try {
-      process.loadEnvFile(envFile);
-      if (process.env.DATABASE_URL) break;
-    } catch {
-      // try the next candidate; a malformed file will surface as a query error
-    }
-  }
-}
-
 const HOUR = 3_600_000;
 
 export interface RulesData {
@@ -88,8 +61,8 @@ export interface RulesData {
   counts: { block: number; allow: number; zones: number; lists: number };
 }
 
-export async function loadRules(): Promise<RulesData> {
-  const profile = await findProfile();
+export async function loadRules(ownerUserId: string): Promise<RulesData> {
+  const profile = await findProfile(ownerUserId);
   const [rules, zones, lists, configRows] = await Promise.all([
     db
       .select({ domain: profileRules.domain, action: profileRules.action })
@@ -148,16 +121,6 @@ export async function loadRules(): Promise<RulesData> {
   return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };
 }
 
-async function loadViewer(profileId: string): Promise<Viewer> {
-  const rows = await db
-    .select({ name: user.name, image: user.image, email: user.email })
-    .from(profiles)
-    .innerJoin(user, eq(profiles.ownerUserId, user.id))
-    .where(eq(profiles.id, profileId))
-    .limit(1);
-  return rows[0] ?? { name: "Account", image: null, email: null };
-}
-
 async function loadEdgeHealth(): Promise<EdgeHealth> {
   const edge = (process.env.EDGE_URL ?? "https://resolvezero-edge.fly.dev").replace(/\/+$/, "");
   try {
@@ -186,49 +149,50 @@ async function loadEdgeHealth(): Promise<EdgeHealth> {
   }
 }
 
-async function findProfile(): Promise<{ id: string; name: string }> {
-  const configuredProfile = process.env.DASHBOARD_PROFILE_ID;
-  if (configuredProfile) {
-    const configured = await db
-      .select({ id: profiles.id, name: profiles.name })
-      .from(profiles)
-      .where(eq(profiles.id, configuredProfile))
-      .limit(1);
-    if (configured[0]) return configured[0];
+/**
+ * Resolve the profile this session is allowed to see. Every query below is
+ * scoped by the owning user id; there is no global "latest profile" fallback.
+ */
+async function findProfile(ownerUserId: string): Promise<{ id: string; name: string }> {
+  const owned = await db
+    .select({ id: profiles.id, name: profiles.name })
+    .from(profiles)
+    .where(eq(profiles.ownerUserId, ownerUserId))
+    .orderBy(asc(profiles.createdAt));
+
+  if (owned.length === 0) {
+    throw new Error("No DNS profile is linked to this account.");
   }
 
-  // Prefer the profile with the most recent rollup. Picking an arbitrary
-  // "first profile" makes the dashboard look empty when a different profile
-  // is the one actually sending queries.
+  const configuredProfile = process.env.DASHBOARD_PROFILE_ID;
+  if (configuredProfile) {
+    const configured = owned.find((profile) => profile.id === configuredProfile);
+    if (configured) return configured;
+  }
+
+  // Prefer the owned profile with the most recent rollup so the dashboard
+  // follows the profile that is actually serving queries.
   const latest = await db
     .select({ profileId: statsHourly.profileId })
     .from(statsHourly)
+    .innerJoin(profiles, eq(statsHourly.profileId, profiles.id))
+    .where(eq(profiles.ownerUserId, ownerUserId))
     .orderBy(desc(statsHourly.hour))
     .limit(1);
   if (latest[0]) {
-    const active = await db
-      .select({ id: profiles.id, name: profiles.name })
-      .from(profiles)
-      .where(eq(profiles.id, latest[0].profileId))
-      .limit(1);
-    if (active[0]) return active[0];
+    const active = owned.find((profile) => profile.id === latest[0]!.profileId);
+    if (active) return active;
   }
 
-  const fallback = await db
-    .select({ id: profiles.id, name: profiles.name })
-    .from(profiles)
-    .limit(1);
-  const profile = fallback[0];
-  if (!profile) throw new Error("no profile found");
-  return profile;
+  return owned[0]!;
 }
 
-export async function loadOverview(): Promise<OverviewData> {
+export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise<OverviewData> {
   const now = new Date();
   const since = new Date(now.getTime() - 24 * HOUR);
-  const profile = await findProfile();
+  const profile = await findProfile(ownerUserId);
 
-  const [rows, configRows, rules, edge, viewer] = await Promise.all([
+  const [rows, configRows, rules, edge] = await Promise.all([
     db
       .select({
         hour: statsHourly.hour,
@@ -254,7 +218,6 @@ export async function loadOverview(): Promise<OverviewData> {
       .from(profileRules)
       .where(eq(profileRules.profileId, profile.id)),
     loadEdgeHealth(),
-    loadViewer(profile.id),
   ]);
 
   let totalQueries = 0;
@@ -340,8 +303,8 @@ export interface BlocklistsData {
   }[];
 }
 
-export async function loadBlocklists(): Promise<BlocklistsData> {
-  const profile = await findProfile();
+export async function loadBlocklists(ownerUserId: string): Promise<BlocklistsData> {
+  const profile = await findProfile(ownerUserId);
   const lists = await db
     .select({
       id: profileBlocklists.id,
@@ -380,8 +343,8 @@ export interface AnalyticsData {
   topDomains: { domain: string; count: number }[];
 }
 
-export async function loadAnalytics(): Promise<AnalyticsData> {
-  const profile = await findProfile();
+export async function loadAnalytics(ownerUserId: string): Promise<AnalyticsData> {
+  const profile = await findProfile(ownerUserId);
   const now = new Date();
   const since = new Date(now.getTime() - 30 * 24 * HOUR);
   const rows = await db
@@ -463,8 +426,8 @@ export interface SettingsData {
   counts: { rules: number; zones: number; lists: number };
 }
 
-export async function loadSettings(): Promise<SettingsData> {
-  const profile = await findProfile();
+export async function loadSettings(ownerUserId: string): Promise<SettingsData> {
+  const profile = await findProfile(ownerUserId);
   const [full, sourceIps, rules, zones, lists] = await Promise.all([
     db
       .select({
@@ -506,8 +469,12 @@ export interface CachePurgeResult {
 }
 
 /** Queue an edge-cache purge. Upstream resolver caches remain TTL-bound. */
-export async function purgeCache(domain: string, type?: string): Promise<CachePurgeResult> {
-  const profile = await findProfile();
+export async function purgeCache(
+  ownerUserId: string,
+  domain: string,
+  type?: string,
+): Promise<CachePurgeResult> {
+  const profile = await findProfile(ownerUserId);
   const token = await db
     .select({ token: profiles.dohToken })
     .from(profiles)
@@ -540,9 +507,19 @@ export interface DnsProbeStatus {
 /**
  * Did this browser's probe query reach the edge? The edge only writes these
  * rows after profile/source-IP authentication, so this is not a public
- * resolver checker.
+ * resolver checker. The nonce carries the profile id as a prefix, which lets
+ * us reject a session trying to poll another tenant's canary.
  */
-export async function loadDnsProbe(nonce: string): Promise<DnsProbeStatus> {
+export async function loadDnsProbe(ownerUserId: string, nonce: string): Promise<DnsProbeStatus> {
+  const owned = await db
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(eq(profiles.ownerUserId, ownerUserId));
+  const allowed = owned.some((profile) => nonce.startsWith(profile.id.replace(/-/g, "")));
+  if (!allowed) {
+    return { seen: false, seenAt: null, region: null };
+  }
+
   const rows = await db
     .select({
       seenAt: dnsProbes.seenAt,
@@ -573,8 +550,8 @@ export interface LogEntry {
   upstream: string | null;
 }
 
-export async function loadLogs(): Promise<{ profileId: string; profileName: string; entries: LogEntry[] }> {
-  const profile = await findProfile();
+export async function loadLogs(ownerUserId: string): Promise<{ profileId: string; profileName: string; entries: LogEntry[] }> {
+  const profile = await findProfile(ownerUserId);
   const [token, lists] = await Promise.all([
     db
       .select({ token: profiles.dohToken })

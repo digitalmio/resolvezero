@@ -71,13 +71,14 @@ Every query must be authenticated before processing. Unauthenticated/unknown UDP
     * Optional per profile; checked against `senderAddress` (Fly preserves the real client IP). Unknown source → REFUSED (above). Since UDP source IPs are spoofable, apply a per-source rate limit / penalty box in front of policy checks.
 3. **What's deliberately NOT here:** per-tenant dedicated Anycast IPs. (Fly rewrites all of an app's UDP destinations to `fly-global-services`, so destination-based identity is impossible; per-tenant infra would mean one app per profile — pointless for a personal product.)
 
-### 4a. Accounts (login-first SHIPPED — `apps/control`)
+### 4a. Accounts (login-first SHIPPED — `apps/control` + `apps/console`)
 
-* **Status:** `apps/control` deploys `resolvezero-control` (fra). Better Auth 1.7 (GitHub OAuth only, no email flows) owns `user`/`session`/`account`/`verification` tables (migration 0003, shapes mirror @better-auth/core exactly — text ids, cascade FKs). `GET /api/me` is the post-login smoke route; profile CRUD + auto-profiles are PARKED until the app-design session.
-* **Auth flow**: `/api/auth/sign-in/github` → consent → callback → session cookie (server crypto via `BETTER_AUTH_SECRET`). `TRUSTED_ORIGINS` env gates redirect targets; CORS is dev-open (`CORS_ORIGINS=*` default) until the UI lands, tightened at productionalization.
+* **Status:** `apps/control` deploys `resolvezero-control` (fra). Better Auth 1.7 (GitHub OAuth only, no email flows) owns `user`/`session`/`account`/`verification` tables (migration 0003, shapes mirror @better-auth/core exactly — text ids, cascade FKs). `GET /api/me` is the post-login smoke route. The TanStack console (`apps/console`) now runs the same Better Auth/Drizzle setup behind `/api/auth/*`, guards every private server function, and scopes profile lookup by `profiles.owner_user_id`.
+* **Auth flow**: `/api/auth/sign-in/github` → consent → callback → session cookie (server crypto via `BETTER_AUTH_SECRET`). `TRUSTED_ORIGINS` env gates redirect targets. The console redirects unauthenticated page loads to `/login`; the route guard is UX only — data functions reject with `Unauthorized` before reading tenant data. Sign-out lives in the sidebar user menu.
+* **GitHub OAuth callback:** register `{BETTER_AUTH_URL}/api/auth/callback/github` for every environment (OAuth apps support up to 10 callback URLs), e.g. `http://localhost:3000/...` for local dev and the console hostname in production.
 * Mutations (rules/zones/blocklists/profile CRUD) move to the control-plane API (dashboard app); the edge stays a token-authed data plane consuming the config watermark only.
 * Linked-IP (parity with NextDNS): dashboard button + `?ip=` update URL (both live); later: DDNS hostname re-resolution; multi-profile-per-IP later via **per-profile anycast IP pools** (NextDNS pattern — not dedicated per-user IPs). Tailscale hardcodes DoH for NextDNS/ControlD only (ts#15724) — not supported by design; OS-native DoH profiles are our path.
-* Deployed via the shared pipeline: `deploy-control` job (FLY_CONFIG=fly.control.toml), same migrate-first ordering as the edge.
+* Deployed via the shared pipeline: `deploy-control` job (FLY_CONFIG=fly.control.toml), same migrate-first ordering as the edge. Console deployment remains pending its own Fly app and auth smoke test.
 * Deferred: teams/sharing, billing/quotas, per-profile rate limits.
 
 ### 4b. DNS-over-TLS (planned)

@@ -13,9 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as BlocklistsRouteImport } from './routes/blocklists'
 import { Route as DevicesRouteImport } from './routes/devices'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as RulesRouteImport } from './routes/rules'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -37,6 +39,11 @@ const DevicesRoute = DevicesRouteImport.update({
   path: '/devices',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LogsRoute = LogsRouteImport.update({
   id: '/logs',
   path: '/logs',
@@ -52,24 +59,33 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,9 +93,11 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -88,27 +106,33 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/blocklists'
     | '/devices'
+    | '/login'
     | '/logs'
     | '/rules'
     | '/settings'
+    | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/analytics'
     | '/blocklists'
     | '/devices'
+    | '/login'
     | '/logs'
     | '/rules'
     | '/settings'
+    | '/api/auth/$'
   id:
     | '__root__'
     | '/'
     | '/analytics'
     | '/blocklists'
     | '/devices'
+    | '/login'
     | '/logs'
     | '/rules'
     | '/settings'
+    | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -116,9 +140,11 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   BlocklistsRoute: typeof BlocklistsRoute
   DevicesRoute: typeof DevicesRoute
+  LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
   RulesRoute: typeof RulesRoute
   SettingsRoute: typeof SettingsRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -151,6 +177,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DevicesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/logs': {
       id: '/logs'
       path: '/logs'
@@ -172,6 +205,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -180,9 +220,11 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   BlocklistsRoute: BlocklistsRoute,
   DevicesRoute: DevicesRoute,
+  LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
   RulesRoute: RulesRoute,
   SettingsRoute: SettingsRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,11 +1,18 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Outlet, Scripts, createRootRoute, redirect, useRouterState } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { AppShell } from '../components/app-shell'
+import { getSession } from '../server/auth'
 import appCss from '../styles.css?url'
 
 export const Route = createRootRoute({
+  beforeLoad: async ({ location }) => {
+    if (location.pathname === '/login' || location.pathname.startsWith('/api/')) return { session: null }
+    const session = await getSession()
+    if (!session) throw redirect({ to: '/login' })
+    return { session }
+  },
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -20,6 +27,8 @@ export const Route = createRootRoute({
 })
 
 function RootComponent() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const { session } = Route.useRouteContext()
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -31,7 +40,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppShell />
+      {pathname === '/login' ? <Outlet /> : <AppShell session={session} />}
     </QueryClientProvider>
   )
 }

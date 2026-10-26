@@ -3,19 +3,22 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   ChevronDown,
-  CircleHelp,
+  ChevronUp,
   Command,
   FileText,
   Layers3,
   ListFilter,
+  LogOut,
   Monitor,
   Search,
   Settings,
   ShieldCheck,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import logo from '../assets/logo-square.svg'
+import { authClient } from '../lib/auth-client'
+import type { SessionUser } from '../server/auth'
 import { DnsProbeBadge } from './dns-probe-badge'
 import { getOverview } from '../server/dashboard'
 
@@ -58,7 +61,7 @@ const accountNav: NavItem[] = [
   { label: 'Settings', to: '/settings', icon: <Settings size={16} /> },
 ]
 
-export function AppShell() {
+export function AppShell({ session }: { session: SessionUser | null }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { data } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
   const deviceCount = data ? Math.max(data.activeDevices, data.topClients.length) : 0
@@ -67,14 +70,9 @@ export function AppShell() {
     : '—'
   const blockRate = data ? (data.blockRatio * 100).toFixed(1) : '—'
   const edgeHealthy = data?.edge.ok
-  const viewerName = data?.viewer.name ?? ''
-  const viewerImage = data?.viewer.image ?? null
-  const viewerInitials = viewerName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('')
+  const viewerName = session?.name ?? ''
+  const viewerImage = session?.image ?? null
+  const viewerEmail = session?.email ?? null
   const groups = navGroups.map((group) => ({
     ...group,
     items: group.items.map((item) =>
@@ -131,20 +129,7 @@ export function AppShell() {
           ))}
         </div>
 
-        {data ? (
-          <div className="flex items-center gap-2.5 border-t border-[var(--line)] px-4 py-3">
-            {viewerImage ? (
-              <img src={viewerImage} alt="" className="size-7 rounded-full object-cover" referrerPolicy="no-referrer" />
-            ) : (
-              <span className="flex size-7 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">{viewerInitials}</span>
-            )}
-            <span className="min-w-0">
-              <span className="block truncate text-[11px] font-medium">{viewerName}</span>
-              <span className="block truncate text-[10px] text-[var(--muted)]">Personal workspace</span>
-            </span>
-            <CircleHelp size={14} className="ml-auto text-[var(--muted)]" />
-          </div>
-        ) : null}
+        {session ? <UserMenu name={viewerName} image={viewerImage} email={viewerEmail} /> : null}
       </aside>
 
       <div className="lg:pl-[232px]">
@@ -165,7 +150,7 @@ export function AppShell() {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <DnsProbeBadge />
+            {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
             <span className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)] md:flex">
               <Activity size={12} className="text-[var(--accent)]" />
               {queriesLabel} queries / 24h
@@ -178,6 +163,91 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+    </div>
+  )
+}
+
+function UserMenu({ name, image, email }: { name: string; image: string | null; email: string | null }) {
+  const [open, setOpen] = useState(false)
+  const [pending, setPending] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const initials =
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('') || 'RZ'
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  async function signOut() {
+    setPending(true)
+    try {
+      await authClient.signOut()
+    } finally {
+      window.location.assign('/login')
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative border-t border-[var(--line)]">
+      {open ? (
+        <div
+          role="menu"
+          className="absolute bottom-full left-3 right-3 mb-1 overflow-hidden rounded-lg border border-[var(--line)] bg-white shadow-[0_12px_32px_rgba(17,19,21,0.12)]"
+        >
+          <div className="border-b border-[var(--line)] px-3 py-2.5">
+            <p className="truncate text-[11px] font-medium">{name}</p>
+            {email ? <p className="mt-0.5 truncate text-[10px] text-[var(--muted)]">{email}</p> : null}
+          </div>
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => void signOut()}
+            disabled={pending}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--ink)] transition-colors hover:bg-[var(--paper)] disabled:opacity-60"
+          >
+            <LogOut size={14} className="text-[var(--muted)]" />
+            {pending ? 'Signing out…' : 'Sign out'}
+          </button>
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-[#f1f0ec]"
+      >
+        {image ? (
+          <img src={image} alt="" className="size-7 rounded-full object-cover" referrerPolicy="no-referrer" />
+        ) : (
+          <span className="flex size-7 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">
+            {initials}
+          </span>
+        )}
+        <span className="min-w-0">
+          <span className="block truncate text-[11px] font-medium">{name}</span>
+          <span className="block truncate text-[10px] text-[var(--muted)]">Personal workspace</span>
+        </span>
+        <ChevronUp size={14} className={`ml-auto text-[var(--muted)] transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
     </div>
   )
 }

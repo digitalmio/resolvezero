@@ -38,16 +38,18 @@ const phaseMeta: Record<
   },
 }
 
-function randomNonce(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+function randomNonce(profileId: string): string {
+  const prefix = profileId.replace(/-/g, '')
+  const bytes = crypto.getRandomValues(new Uint8Array(8))
+  const suffix = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `${prefix}${suffix}`
 }
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export function DnsProbeBadge() {
+export function DnsProbeBadge({ profileId }: { profileId: string }) {
   const [phase, setPhase] = useState<Phase>('checking')
   const [attempt, setAttempt] = useState(0)
 
@@ -55,7 +57,7 @@ export function DnsProbeBadge() {
     let cancelled = false
     setPhase('checking')
 
-    const nonce = randomNonce()
+    const nonce = randomNonce(profileId)
     const controller = new AbortController()
     const fetchTimeout = setTimeout(() => controller.abort(), 2500)
 
@@ -91,7 +93,7 @@ export function DnsProbeBadge() {
       controller.abort()
       clearTimeout(fetchTimeout)
     }
-  }, [attempt])
+  }, [attempt, profileId])
 
   const meta = phaseMeta[phase]
   const Icon = meta.icon
