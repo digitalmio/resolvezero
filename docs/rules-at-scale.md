@@ -387,7 +387,7 @@ boot time are.
 The numbers in this document came from:
 
 - Production Bun RSS/CPU via private metrics on port 9091.
-- Node staging on `resolvezero-edge-node` (fra + lhr, 512 MB, IP `149.248.204.122`).
+- Node staging on `resolvezero-edge-staging` (fra, 512 MB, ingress IP `213.188.210.31`).
 - External UDP/TCP/DoH benchmark from the same client (`apps/edge/scripts/bench-node-vs-bun.ts`).
 - Synthetic local parse/build probes with generated unique domains.
 

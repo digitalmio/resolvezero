@@ -10,9 +10,9 @@ import { db } from "@resolvezero/db/client";
 import { profiles } from "@resolvezero/db/schema";
 
 const PROD_IP = process.env.PROD_IP ?? "37.16.24.46";
-const NODE_IP = process.env.NODE_IP ?? "149.248.204.122";
+const NODE_IP = process.env.NODE_IP ?? "213.188.210.31";
 const PROD_DOH = process.env.PROD_DOH ?? "https://resolvezero-edge.fly.dev";
-const NODE_DOH = process.env.NODE_DOH ?? "https://resolvezero-edge-node.fly.dev";
+const NODE_DOH = process.env.NODE_DOH ?? "https://resolvezero-edge-staging.fly.dev";
 
 const N_CACHED = Number(process.env.N_CACHED ?? 200);
 const N_UPSTREAM = Number(process.env.N_UPSTREAM ?? 50);

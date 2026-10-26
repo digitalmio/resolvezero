@@ -1,6 +1,6 @@
 # Node runtime staging app — separate app/IP from resolvezero-edge.
-# Deploy: fly deploy --config fly.node.toml
-app = "resolvezero-edge-node"
+# Deploy: fly deploy --config fly.node.toml --ha=false   (staging runs 1 machine)
+app = "resolvezero-edge-staging"
 primary_region = "fra"
 kill_timeout = 30
 
