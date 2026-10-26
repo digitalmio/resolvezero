@@ -189,7 +189,11 @@ async function findProfile(ownerUserId: string): Promise<{ id: string; name: str
 
 export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise<OverviewData> {
   const now = new Date();
-  const since = new Date(now.getTime() - 24 * HOUR);
+  // Align the query and the plotted series to the same floored hour. Filtering
+  // from `now - 24h` while plotting from the floored hour made the first
+  // bucket look like a real zero even when it had queries.
+  const start = Math.floor((now.getTime() - 24 * HOUR) / HOUR) * HOUR;
+  const end = Math.floor(now.getTime() / HOUR) * HOUR;
   const profile = await findProfile(ownerUserId);
 
   const [rows, configRows, rules, edge] = await Promise.all([
@@ -206,7 +210,7 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
         topClients: statsHourly.topClients,
       })
       .from(statsHourly)
-      .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, since)))
+      .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, new Date(start))))
       .orderBy(asc(statsHourly.hour)),
     db
       .select({ configVersion: edgeConfigState.configVersion, blocklistVersion: edgeConfigState.blocklistVersion })
@@ -240,8 +244,6 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
     merge(clientCounts, row.topClients as StatsTopEntry[]);
   }
 
-  const start = Math.floor((now.getTime() - 24 * HOUR) / HOUR) * HOUR;
-  const end = Math.floor(now.getTime() / HOUR) * HOUR;
   const byHour = new Map<number, { total: number; blocked: number }>();
   for (const row of rows) {
     const key = Math.floor(row.hour.getTime() / HOUR) * HOUR;

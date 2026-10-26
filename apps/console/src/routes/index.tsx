@@ -194,9 +194,6 @@ function Overview() {
             <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--accent)]" /> Blocked</span>
           </div>
           <QueryChart data={chartData} />
-          <div className="mt-3 flex justify-between font-mono text-[10px] text-[var(--muted)]">
-            <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>now</span>
-          </div>
         </div>
 
         <div className="rz-card p-6">
