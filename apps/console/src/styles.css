@@ -68,7 +68,8 @@ a {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  background: color-mix(in oklab, var(--green) 22%, transparent);
+  color: var(--ink);
 }
 
 :focus-visible {
