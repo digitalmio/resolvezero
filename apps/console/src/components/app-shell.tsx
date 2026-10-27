@@ -150,7 +150,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
       </aside>
 
       <div className="lg:pl-[240px]">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-[var(--paper)]/95 px-4 backdrop-blur-xl sm:px-6">
+        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 shadow-[0_1px_3px_rgba(26,32,24,0.04)] backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-2 lg:hidden">
             <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--ink)] text-white">
               <img src={logo} alt="ResolveZero" className="size-5" />
@@ -158,10 +158,10 @@ export function AppShell({ session }: { session: SessionUser | null }) {
             <span className="text-sm font-semibold">ResolveZero</span>
           </div>
 
-          <div className="hidden w-full max-w-[360px] items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px] text-[var(--muted)] sm:flex">
+          <div className="hidden w-full max-w-[360px] items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--sage)] px-3 py-2 text-[12px] text-[var(--muted)] sm:flex">
             <Search size={14} />
             <span>Search domains, rules, devices</span>
-            <kbd className="ml-auto flex items-center gap-0.5 rounded border border-[var(--line)] bg-[var(--paper)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
+            <kbd className="ml-auto flex items-center gap-0.5 rounded border border-[var(--line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
               <Command size={10} /> K
             </kbd>
           </div>
