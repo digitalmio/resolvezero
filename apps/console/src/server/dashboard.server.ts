@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte } from "drizzle-orm";
+import { getRequestHeaders } from "@tanstack/react-start/server";
 import { db } from "@resolvezero/db/client";
 import {
   dnsProbes,
@@ -35,6 +36,7 @@ export interface EdgeHealth {
 export interface OverviewData {
   profileId: string;
   profileName: string;
+  profiles: { id: string; name: string }[];
   generatedAt: string;
   configVersion: number;
   blocklistVersion: number;
@@ -234,6 +236,12 @@ async function findProfile(ownerUserId: string): Promise<{ id: string; name: str
     throw new Error("No DNS profile is linked to this account.");
   }
 
+  const preferred = preferredProfileId();
+  if (preferred) {
+    const match = owned.find((profile) => profile.id === preferred);
+    if (match) return match;
+  }
+
   const configuredProfile = process.env.DASHBOARD_PROFILE_ID;
   if (configuredProfile) {
     const configured = owned.find((profile) => profile.id === configuredProfile);
@@ -257,6 +265,17 @@ async function findProfile(ownerUserId: string): Promise<{ id: string; name: str
   return owned[0]!;
 }
 
+/** Profile selection is a UI preference; ownership is re-checked in findProfile. */
+function preferredProfileId(): string | null {
+  try {
+    const cookie = getRequestHeaders().get("cookie") ?? "";
+    const match = cookie.match(/(?:^|;\s*)rz_profile_id=([^;]+)/);
+    return match?.[1] ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise<OverviewData> {
   const now = new Date();
   // Align the query and the plotted series to the same floored hour. Filtering
@@ -266,7 +285,7 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
   const end = Math.floor(now.getTime() / HOUR) * HOUR;
   const profile = await findProfile(ownerUserId);
 
-  const [rows, configRows, rules, zones, edge] = await Promise.all([
+  const [rows, configRows, rules, zones, edge, ownedProfiles] = await Promise.all([
     db
       .select({
         hour: statsHourly.hour,
@@ -296,6 +315,11 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
       .from(profileZones)
       .where(eq(profileZones.profileId, profile.id)),
     loadEdgeHealth(),
+    db
+      .select({ id: profiles.id, name: profiles.name })
+      .from(profiles)
+      .where(eq(profiles.ownerUserId, ownerUserId))
+      .orderBy(asc(profiles.createdAt)),
   ]);
 
   let totalQueries = 0;
@@ -335,6 +359,7 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
   return {
     profileId: profile.id,
     profileName: profile.name,
+    profiles: ownedProfiles,
     generatedAt: new Date().toISOString(),
     configVersion: configRows[0]?.configVersion ?? 0,
     blocklistVersion: configRows[0]?.blocklistVersion ?? 0,

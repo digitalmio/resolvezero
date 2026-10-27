@@ -2,6 +2,7 @@ import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
+  Check,
   ChevronDown,
   ChevronUp,
   Command,
@@ -73,7 +74,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
   const viewerEmail = session?.email ?? null
   const profileLabel = data?.profileName
     ? data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
-    : 'Home network'
+    : 'Loading…'
   const groups = navGroups.map((group) => ({
     ...group,
     items: group.items.map((item) =>
@@ -83,15 +84,12 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
-      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 shadow-[0_1px_3px_rgba(26,32,24,0.04)] backdrop-blur-xl sm:px-6">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-white/95 pl-3 pr-4 shadow-[0_1px_3px_rgba(26,32,24,0.04)] backdrop-blur-xl sm:pr-6">
         <Link to="/" aria-label="ResolveZero home" className="flex shrink-0 items-center">
           <img src={logo} alt="" className="size-9 shrink-0 sm:size-10" />
         </Link>
 
-        <div className="ml-1 hidden h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-[12px] font-medium text-[var(--ink)] shadow-[0_1px_2px_rgba(26,32,24,0.03)] transition-colors hover:bg-[var(--sage)] md:flex">
-          <span className="max-w-[120px] truncate">{profileLabel}</span>
-          <ChevronDown size={14} className="shrink-0 text-[var(--muted)]" />
-        </div>
+        <ProfileMenu profiles={data?.profiles ?? []} activeId={data?.profileId ?? ''} label={profileLabel} loading={!data} />
 
         <div className="absolute left-1/2 top-1/2 hidden w-full max-w-[420px] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px] text-[var(--muted)] shadow-[0_1px_2px_rgba(26,32,24,0.03)] lg:flex">
           <Search size={14} />
@@ -165,6 +163,102 @@ export function AppShell({ session }: { session: SessionUser | null }) {
           <Outlet />
         </main>
       </div>
+    </div>
+  )
+}
+
+function ProfileMenu({
+  profiles,
+  activeId,
+  label,
+  loading,
+}: {
+  profiles: { id: string; name: string }[]
+  activeId: string
+  label: string
+  loading: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  function choose(id: string) {
+    setOpen(false)
+    if (id === activeId) return
+    document.cookie = `rz_profile_id=${encodeURIComponent(id)}; Path=/; Max-Age=31536000; SameSite=Lax`
+    window.location.reload()
+  }
+
+  return (
+    <div ref={containerRef} className="relative ml-1 hidden md:block">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        disabled={loading}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-busy={loading}
+        className="flex h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-[12px] font-medium text-[var(--ink)] shadow-[0_1px_2px_rgba(26,32,24,0.03)] transition-colors hover:bg-[var(--sage)] disabled:cursor-wait disabled:opacity-60"
+      >
+        <span className="max-w-[120px] truncate">{label}</span>
+        {!loading ? (
+          <ChevronDown
+            size={14}
+            className={`shrink-0 text-[var(--muted)] transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        ) : null}
+      </button>
+
+      {open && !loading ? (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-50 mt-4 w-[172px] overflow-hidden rounded-[10px] border border-[var(--line)] bg-white py-1 shadow-[0_12px_32px_rgba(26,32,24,0.12)]"
+        >
+          {profiles.length === 0 ? (
+            <p className="px-3 py-2 text-[11px] text-[var(--muted)]">No profiles</p>
+          ) : null}
+          {profiles.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={profile.id === activeId}
+              onClick={() => choose(profile.id)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--sage)]"
+            >
+              <span className="flex size-4 shrink-0 items-center justify-center">
+                {profile.id === activeId ? <Check size={12} className="text-[var(--green)]" /> : null}
+              </span>
+              <span className="truncate">
+                {profile.name.charAt(0).toUpperCase() + profile.name.slice(1)}
+              </span>
+            </button>
+          ))}
+          <div className="my-1 border-t border-[var(--line)]" />
+          <Link
+            to="/settings"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-3 py-2 text-[11px] text-[var(--muted)] transition-colors hover:bg-[var(--sage)] hover:text-[var(--ink)]"
+          >
+            <Settings size={12} /> Profile settings
+          </Link>
+        </div>
+      ) : null}
     </div>
   )
 }
