@@ -5,6 +5,7 @@ import { CheckCircle2, Copy, KeyRound, Network, Settings, ShieldCheck, Trash2 } 
 import { useState } from 'react'
 import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
+import { PageHeader } from '../components/page-header'
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 
@@ -22,18 +23,16 @@ function SettingsPage() {
   if (isPending) return <PageLoading label="Loading settings…" />
   if (isError || !data) return <PageError title="Could not load settings." onRetry={() => void refetch()} />
 
+  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+
   return (
     <div className="space-y-6">
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Account</p>
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-white text-[var(--accent)] ring-1 ring-[var(--line)]"><Settings size={20} /></span>
-          <div>
-            <h1 className="text-[30px] font-semibold tracking-[-0.045em]">Settings</h1>
-            <p className="mt-1 text-[13px] text-[var(--muted)]">{data.profileName} · profile and resolver configuration.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Account"
+        title="Settings"
+        description={`${profileLabel} · profile and resolver configuration.`}
+        icon={<Settings size={20} />}
+      />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Section title="Profile" icon={<ShieldCheck size={16} />}>
@@ -88,8 +87,8 @@ function SettingsPage() {
             {purge.isPending ? 'Purging…' : 'Purge'}
           </button>
         </div>
-        {purge.isError ? <p className="mt-2 text-[11px] text-[#b83c14]">{purge.error.message}</p> : null}
-        {purge.isSuccess ? <p className="mt-2 text-[11px] text-[#247440]">Queued for {purge.data.name}{purge.data.type ? ` (${purge.data.type})` : ''}.</p> : null}
+        {purge.isError ? <p className="mt-2 text-[11px] text-[var(--danger)]">{purge.error.message}</p> : null}
+        {purge.isSuccess ? <p className="mt-2 text-[11px] text-[var(--green)]">Queued for {purge.data.name}{purge.data.type ? ` (${purge.data.type})` : ''}.</p> : null}
         <p className="mt-2 text-[10px] text-[var(--muted)]">
           Edge caches are purged within a few seconds. Upstream resolvers may still serve cached records until their TTL expires.
         </p>
@@ -108,7 +107,7 @@ function SettingsPage() {
             {data.sourceIps.length === 0 ? <p className="p-6 text-center text-[12px] text-[var(--muted)]">No linked IPs.</p> : null}
             {data.sourceIps.map((ip) => (
               <div key={ip} className="flex items-center gap-3 px-5 py-3.5">
-                <CheckCircle2 size={14} className="text-[#2e9b55]" />
+                <CheckCircle2 size={14} className="text-[var(--green)]" />
                 <span className="font-mono text-[12px]">{ip}</span>
                 <span className="ml-auto text-[10px] text-[var(--muted)]">linked</span>
               </div>
@@ -138,7 +137,7 @@ function SettingsPage() {
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rz-card p-5">
-      <div className="mb-4 flex items-center gap-2"><span className="text-[var(--muted)]">{icon}</span><h2 className="text-[14px] font-semibold">{title}</h2></div>
+      <div className="mb-4 flex items-center gap-2"><span className="text-[var(--muted)]">{icon}</span><h2 className="rz-section-title">{title}</h2></div>
       <div className="space-y-3">{children}</div>
     </div>
   )
@@ -155,9 +154,9 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl bg-[var(--paper)] p-3">
-      <p className="text-[9px] uppercase tracking-[0.14em] text-[var(--muted)]">{label}</p>
-      <p className="mt-1 font-mono text-[20px] tracking-[-0.04em]">{value}</p>
+    <div className="rounded-xl bg-[var(--sage)] p-3">
+      <p className="text-[10px] text-[var(--muted)]">{label}</p>
+      <p className="mt-1 font-[var(--font-display)] text-[22px] font-semibold tracking-[-0.04em]">{value}</p>
     </div>
   )
 }

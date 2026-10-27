@@ -4,6 +4,7 @@ import { House, Info, Pencil, Plus, Router, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
 import { PageError, PageLoading } from '../components/data-state'
+import { PageHeader } from '../components/page-header'
 import { ZONE_RECORD_TYPES, zoneKey, type LocalDnsZone, type ZoneRecordType } from '../lib/zone'
 import { deleteLocalDnsZone, getLocalDnsData, saveLocalDnsZone } from '../server/dashboard'
 
@@ -94,39 +95,35 @@ function LocalDnsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Network</p>
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-white text-[var(--accent)] ring-1 ring-[var(--line)]">
-            <House size={20} />
-          </span>
-          <div>
-            <h1 className="text-[30px] font-semibold tracking-[-0.045em]">Local DNS</h1>
-            <p className="mt-1 text-[13px] text-[var(--muted)]">
-              {profileLabel} profile · answer <span className="font-mono">.lan</span> names before blocklists and upstream.
-            </p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Network"
+        title="Local DNS"
+        description={
+          <>
+            {profileLabel} profile · answer <span className="font-mono">.lan</span> names before blocklists and upstream.
+          </>
+        }
+        icon={<House size={20} />}
+      />
 
-      <div className="rz-card flex items-start gap-3 border-[#dbe3ff] bg-[#f5f7ff] p-4">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-[#e6ecff] text-[#3552a5]">
+      <div className="rz-card flex items-start gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-white text-[var(--ink)] ring-1 ring-[var(--line)]">
           <Info size={14} />
         </span>
-        <div className="text-[12px] leading-5 text-[#3f4f75]">
+        <div className="text-[12px] leading-5 text-[var(--ink)]">
           <p>
             Only names ending in <span className="font-mono">.lan</span> are accepted. Exact names match only themselves.
             Use <span className="font-mono">*.home.lan</span> for wildcard subdomains — the apex{' '}
             <span className="font-mono">home.lan</span> is not included.
           </p>
-          <p className="mt-1">
+          <p className="mt-1 text-[var(--muted)]">
             A/AAAA/CNAME answers can be comma-separated. Use new lines for multiple TXT values. Local records win before
             blocklists, cache, and upstream.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
+      <div className="grid items-start gap-4 xl:grid-cols-[360px_1fr]">
         <form onSubmit={submit} className="rz-card h-fit p-5">
           <div className="flex items-center gap-2">
             <Plus size={16} className="text-[var(--muted)]" />
@@ -259,7 +256,7 @@ function LocalDnsPage() {
                     <tr key={key} className="group hover:bg-white/60">
                       <td className="px-5 py-3.5 font-mono text-[12px]">{zone.domain}</td>
                       <td className="px-4 py-3.5">
-                        <span className="inline-flex items-center rounded-md bg-[#eef2ff] px-2 py-1 text-[10px] font-semibold text-[#3552a5] ring-1 ring-[#dbe3ff]">
+                        <span className="inline-flex items-center rounded-md bg-[var(--sage)] px-2 py-1 text-[10px] font-semibold text-[var(--ink)] ring-1 ring-[var(--line)]">
                           {zone.recordType}
                         </span>
                       </td>
@@ -285,7 +282,7 @@ function LocalDnsPage() {
                             onClick={() => {
                               if (window.confirm(`Delete ${zone.domain} (${zone.recordType})?`)) remove.mutate(zone)
                             }}
-                            className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[#fff0e9] hover:text-[#c64012]"
+                            className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[#b74716]"
                             aria-label={`Delete ${zone.domain} ${zone.recordType}`}
                             title="Delete"
                           >

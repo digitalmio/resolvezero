@@ -18,7 +18,7 @@ export const Route = createRootRoute({
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       { title: 'ResolveZero' },
-      { name: 'theme-color', content: '#0b0c0e' },
+      { name: 'theme-color', content: '#fcfcf7' },
     ],
     links: [{ rel: 'stylesheet', href: appCss }],
   }),

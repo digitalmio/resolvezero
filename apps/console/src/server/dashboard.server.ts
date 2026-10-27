@@ -39,6 +39,7 @@ export interface OverviewData {
   configVersion: number;
   blocklistVersion: number;
   ruleCount: number;
+  zoneCount: number;
   viewer: Viewer;
   edge: EdgeHealth;
   totalQueries: number;
@@ -265,7 +266,7 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
   const end = Math.floor(now.getTime() / HOUR) * HOUR;
   const profile = await findProfile(ownerUserId);
 
-  const [rows, configRows, rules, edge] = await Promise.all([
+  const [rows, configRows, rules, zones, edge] = await Promise.all([
     db
       .select({
         hour: statsHourly.hour,
@@ -290,6 +291,10 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
       .select({ domain: profileRules.domain })
       .from(profileRules)
       .where(eq(profileRules.profileId, profile.id)),
+    db
+      .select({ domain: profileZones.domain })
+      .from(profileZones)
+      .where(eq(profileZones.profileId, profile.id)),
     loadEdgeHealth(),
   ]);
 
@@ -334,6 +339,7 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise
     configVersion: configRows[0]?.configVersion ?? 0,
     blocklistVersion: configRows[0]?.blocklistVersion ?? 0,
     ruleCount: rules.length,
+    zoneCount: zones.length,
     viewer,
     edge,
     totalQueries,

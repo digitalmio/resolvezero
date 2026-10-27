@@ -5,6 +5,7 @@ import { FileText, Search } from 'lucide-react'
 import { useState } from 'react'
 import { getLogsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
+import { PageHeader } from '../components/page-header'
 
 export const Route = createFileRoute('/logs')({ component: Logs })
 
@@ -44,19 +45,18 @@ function Logs() {
   if (isPending) return <PageLoading label="Loading recent queries…" />
   if (isError || !data) return <PageError title="Could not load query logs." onRetry={() => void refetch()} />
 
+  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
   const filtered = data.entries.filter((entry) =>
     search.trim() ? entry.domain.toLowerCase().includes(search.toLowerCase()) : true,
   )
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="mb-1.5 text-[11px] font-medium text-[var(--muted)]">Network activity</p>
-        <h1 className="text-[24px] font-semibold tracking-[-0.035em]">Query log</h1>
-        <p className="mt-1.5 text-[12px] text-[var(--muted)]">
-          {data.profileName} · latest 100 archived queries · 1-minute flush
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Network activity"
+        title="Query log"
+        description={`${profileLabel} · latest 100 archived queries · 1-minute flush`}
+      />
 
       <div className="rz-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-[var(--paper)]/50 px-4 py-3 sm:flex-row sm:items-center">
@@ -94,8 +94,8 @@ function Logs() {
                   </td>
                   <td className="max-w-[360px] truncate px-4 py-2.5 font-mono text-[11px]">{entry.domain}</td>
                   <td className="px-4 py-2.5">
-                    <span className={['inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]', entry.action === 'block' ? 'text-[#b83c14]' : 'text-[#247440]'].join(' ')}>
-                      <span className={['size-1.5 rounded-full', entry.action === 'block' ? 'bg-[#d94d20]' : 'bg-[#2e9b55]'].join(' ')} />
+                    <span className={['inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]', entry.action === 'block' ? 'text-[var(--danger)]' : 'text-[var(--green)]'].join(' ')}>
+                      <span className={['size-1.5 rounded-full', entry.action === 'block' ? 'bg-[var(--accent)]' : 'bg-[var(--green)]'].join(' ')} />
                       {entry.action}
                     </span>
                   </td>

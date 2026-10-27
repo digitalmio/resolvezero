@@ -12,8 +12,8 @@ export function PageLoading({ label = "Loading live data…" }: { label?: string
 export function PageError({ title, onRetry }: { title: string; onRetry: () => void }) {
   return (
     <div className="rz-card mx-auto mt-16 max-w-[520px] p-8 text-center">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Data unavailable</p>
-      <h1 className="mt-3 text-[22px] font-semibold tracking-[-0.04em]">{title}</h1>
+      <span className="rz-pill rz-pill-danger mx-auto">Data unavailable</span>
+      <h1 className="rz-page-title mt-4">{title}</h1>
       <p className="mt-2 text-[13px] leading-6 text-[var(--muted)]">
         Check the console server logs for the Postgres or edge error.
       </p>

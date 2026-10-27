@@ -53,15 +53,11 @@ const navGroups: NavGroup[] = [
   },
   {
     label: 'Observe',
-    items: [
-      { label: 'Logs', to: '/logs', icon: <FileText size={16} /> },
-    ],
+    items: [{ label: 'Logs', to: '/logs', icon: <FileText size={16} /> }],
   },
 ]
 
-const accountNav: NavItem[] = [
-  { label: 'Settings', to: '/settings', icon: <Settings size={16} /> },
-]
+const accountNav: NavItem[] = [{ label: 'Settings', to: '/settings', icon: <Settings size={16} /> }]
 
 export function AppShell({ session }: { session: SessionUser | null }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
@@ -75,6 +71,9 @@ export function AppShell({ session }: { session: SessionUser | null }) {
   const viewerName = session?.name ?? ''
   const viewerImage = session?.image ?? null
   const viewerEmail = session?.email ?? null
+  const profileLabel = data?.profileName
+    ? data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+    : 'Home network'
   const groups = navGroups.map((group) => ({
     ...group,
     items: group.items.map((item) =>
@@ -84,48 +83,64 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-[var(--line)] bg-[var(--sidebar)] text-[var(--ink)] lg:flex">
-        <Link to="/" className="flex items-center gap-3 px-4 pb-6 pt-5">
-          <span className="flex size-9 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-[var(--ink)]">
-            <img src={logo} alt="" className="size-6" />
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r border-[var(--line)] bg-[var(--sidebar)] text-[var(--ink)] lg:flex">
+        <Link to="/" className="flex items-center gap-3 px-4 pb-7 pt-5">
+          <span className="flex size-10 items-center justify-center rounded-[12px] border border-[var(--line)] bg-white text-[var(--ink)] shadow-[0_1px_2px_rgba(26,32,24,0.04)]">
+            <img src={logo} alt="" className="size-7" />
           </span>
-          <span>
-            <span className="block text-[14px] font-semibold tracking-[-0.02em]">ResolveZero</span>
-            <span className="block text-[10px] text-[var(--muted)]">Home DNS firewall</span>
+          <span className="min-w-0">
+            <span className="block font-[var(--font-display)] text-[15px] font-semibold tracking-[-0.03em]">ResolveZero</span>
+            <span className="mt-0.5 block text-[10px] text-[var(--muted)]">Home DNS firewall</span>
           </span>
         </Link>
 
-        <div className="mx-3 mb-4 flex items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 py-2">
-          <span className="text-[12px] font-medium">Home network</span>
-          <ChevronDown size={14} className="ml-auto text-[var(--muted)]" />
+        <div className="mx-3 mb-5 flex items-center gap-2.5 rounded-[10px] border border-[var(--line)] bg-[var(--sage)] px-3 py-2.5">
+          <span className="size-1.5 rounded-full bg-[var(--green)]" />
+          <span className="truncate text-[12px] font-medium">{profileLabel}</span>
+          <ChevronDown size={14} className="ml-auto shrink-0 text-[var(--muted)]" />
         </div>
 
-        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
+        <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 pb-4">
           {groups.map((group) => (
             <div key={group.label}>
               <p className="px-2.5 pb-1.5 text-[11px] font-medium text-[var(--muted)]">{group.label}</p>
               {group.items.map((item) => (
-                <SidebarLink key={item.label} item={item} active={pathname === item.to || (item.to !== '/' && pathname.startsWith(item.to))} />
+                <SidebarLink
+                  key={item.label}
+                  item={item}
+                  active={pathname === item.to || (item.to !== '/' && pathname.startsWith(item.to))}
+                />
               ))}
             </div>
           ))}
         </nav>
 
         <div className="px-3 pb-3">
-          <div className="rounded-md border border-[var(--line)] bg-white p-3">
-            <div className="flex items-center gap-2 text-[11px] font-medium">
-              <ShieldCheck size={14} className="text-[var(--accent)]" />
-              {edgeHealthy === false ? 'Edge unavailable' : 'Protection active'}
+          <div className="rounded-[var(--radius)] border border-[var(--line)] bg-white p-3.5 shadow-[0_1px_2px_rgba(26,32,24,0.03)]">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-[11px] font-medium">
+                <span
+                  className={[
+                    'size-1.5 rounded-full',
+                    edgeHealthy === false ? 'bg-[var(--warning)]' : 'bg-[var(--green)]',
+                  ].join(' ')}
+                />
+                {edgeHealthy === false ? 'Edge unavailable' : 'Protection active'}
+              </span>
+              <ShieldCheck size={14} className="text-[var(--green)]" />
             </div>
-            <p className="mt-1.5 text-[10px] leading-4 text-[var(--muted)]">
+            <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
               {data ? `${queriesLabel} queries in the last 24 hours.` : 'Loading live DNS data…'}
             </p>
-            <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--muted)]">
-              <span>{deviceCount} devices</span>
-              <span className="font-mono text-[var(--ink)]">{blockRate}% blocked</span>
+            <div className="mt-2.5 flex items-center justify-between border-t border-[var(--line)] pt-2.5 text-[10px] text-[var(--muted)]">
+              <span>
+                {deviceCount} {deviceCount === 1 ? 'device' : 'devices'}
+              </span>
+              <span className="rz-mono text-[var(--ink)]">{blockRate}% blocked</span>
             </div>
           </div>
-          <p className="px-2.5 pb-1 pt-3 text-[11px] font-medium text-[var(--muted)]">Account</p>
+
+          <p className="px-2.5 pb-1 pt-4 text-[11px] font-medium text-[var(--muted)]">Account</p>
           {accountNav.map((item) => (
             <SidebarLink key={item.label} item={item} active={pathname === item.to} />
           ))}
@@ -134,8 +149,8 @@ export function AppShell({ session }: { session: SessionUser | null }) {
         {session ? <UserMenu name={viewerName} image={viewerImage} email={viewerEmail} /> : null}
       </aside>
 
-      <div className="lg:pl-[232px]">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 backdrop-blur-xl sm:px-6">
+      <div className="lg:pl-[240px]">
+        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-[var(--paper)]/95 px-4 backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-2 lg:hidden">
             <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--ink)] text-white">
               <img src={logo} alt="ResolveZero" className="size-5" />
@@ -143,25 +158,24 @@ export function AppShell({ session }: { session: SessionUser | null }) {
             <span className="text-sm font-semibold">ResolveZero</span>
           </div>
 
-          <div className="hidden items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--paper)] px-3 py-1.5 text-[12px] text-[var(--muted)] sm:flex">
+          <div className="hidden w-full max-w-[360px] items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px] text-[var(--muted)] sm:flex">
             <Search size={14} />
             <span>Search domains, rules, devices</span>
-            <kbd className="ml-8 flex items-center gap-0.5 rounded border border-[var(--line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
+            <kbd className="ml-auto flex items-center gap-0.5 rounded border border-[var(--line)] bg-[var(--paper)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
               <Command size={10} /> K
             </kbd>
           </div>
 
           <div className="ml-auto flex items-center gap-2">
             {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
-            <span className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)] md:flex">
+            <span className="rz-pill hidden md:inline-flex">
               <Activity size={12} className="text-[var(--accent)]" />
               {queriesLabel} queries / 24h
             </span>
-
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 sm:py-7">
+        <main className="mx-auto max-w-[1440px] px-4 py-7 sm:px-8 sm:py-9">
           <Outlet />
         </main>
       </div>
@@ -211,7 +225,7 @@ function UserMenu({ name, image, email }: { name: string; image: string | null; 
       {open ? (
         <div
           role="menu"
-          className="absolute bottom-full left-3 right-3 mb-1 overflow-hidden rounded-lg border border-[var(--line)] bg-white shadow-[0_12px_32px_rgba(17,19,21,0.12)]"
+          className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-[12px] border border-[var(--line)] bg-white shadow-[0_12px_32px_rgba(26,32,24,0.12)]"
         >
           <div className="border-b border-[var(--line)] px-3 py-2.5">
             <p className="truncate text-[11px] font-medium">{name}</p>
@@ -222,7 +236,7 @@ function UserMenu({ name, image, email }: { name: string; image: string | null; 
             type="button"
             onClick={() => void signOut()}
             disabled={pending}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--ink)] transition-colors hover:bg-[var(--paper)] disabled:opacity-60"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--ink)] transition-colors hover:bg-[var(--sage)] disabled:opacity-60"
           >
             <LogOut size={14} className="text-[var(--muted)]" />
             {pending ? 'Signing out…' : 'Sign out'}
@@ -235,12 +249,12 @@ function UserMenu({ name, image, email }: { name: string; image: string | null; 
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-[#f1f0ec]"
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-[var(--sage)]"
       >
         {image ? (
-          <img src={image} alt="" className="size-7 rounded-full object-cover" referrerPolicy="no-referrer" />
+          <img src={image} alt="" className="size-8 rounded-full object-cover ring-1 ring-[var(--line)]" referrerPolicy="no-referrer" />
         ) : (
-          <span className="flex size-7 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">
+          <span className="flex size-8 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">
             {initials}
           </span>
         )}
@@ -261,8 +275,8 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
       className={[
         'group flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[12px] font-medium transition-colors',
         active
-          ? 'border-[var(--accent)] bg-transparent text-[var(--ink)]'
-          : 'border-transparent text-[var(--muted)] hover:bg-[#f1f0ec] hover:text-[var(--ink)]',
+          ? 'border-[var(--accent)] bg-[var(--sage)] text-[var(--ink)]'
+          : 'border-transparent text-[var(--muted)] hover:bg-[var(--sage)]/60 hover:text-[var(--ink)]',
       ].join(' ')}
     >
       <span className={active ? 'text-[var(--ink)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
