@@ -14,6 +14,8 @@ import {
 
 import "./env.server";
 
+import type { LocalDnsZone } from "../lib/zone";
+
 export interface Viewer {
   name: string;
   image: string | null;
@@ -59,6 +61,12 @@ export interface RulesData {
   configVersion: number;
   rules: { domain: string; action: string; scope: string; source: string; updated: string }[];
   counts: { block: number; allow: number; zones: number; lists: number };
+}
+
+export interface LocalDnsData {
+  profileId: string;
+  profileName: string;
+  zones: LocalDnsZone[];
 }
 
 export async function loadRules(ownerUserId: string): Promise<RulesData> {
@@ -119,6 +127,67 @@ export async function loadRules(ownerUserId: string): Promise<RulesData> {
     lists: lists.length,
   };
   return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };
+}
+
+export async function loadLocalDns(ownerUserId: string): Promise<LocalDnsData> {
+  const profile = await findProfile(ownerUserId);
+  const rows = await db
+    .select({
+      domain: profileZones.domain,
+      recordType: profileZones.recordType,
+      values: profileZones.values,
+      ttl: profileZones.ttl,
+    })
+    .from(profileZones)
+    .where(eq(profileZones.profileId, profile.id))
+    .orderBy(asc(profileZones.domain), asc(profileZones.recordType));
+
+  return {
+    profileId: profile.id,
+    profileName: profile.name,
+    zones: rows.map((row) => ({
+      domain: row.domain,
+      recordType: row.recordType as LocalDnsZone["recordType"],
+      values: row.values ?? [],
+      ttl: row.ttl,
+    })),
+  };
+}
+
+export async function upsertLocalDnsZone(ownerUserId: string, zone: LocalDnsZone): Promise<LocalDnsZone> {
+  const profile = await findProfile(ownerUserId);
+  await db
+    .insert(profileZones)
+    .values({
+      profileId: profile.id,
+      domain: zone.domain,
+      recordType: zone.recordType,
+      values: zone.values,
+      ttl: zone.ttl,
+    })
+    .onConflictDoUpdate({
+      target: [profileZones.profileId, profileZones.domain, profileZones.recordType],
+      set: { values: zone.values, ttl: zone.ttl },
+    });
+  return zone;
+}
+
+export async function removeLocalDnsZone(
+  ownerUserId: string,
+  domain: string,
+  recordType: LocalDnsZone["recordType"],
+): Promise<{ ok: true }> {
+  const profile = await findProfile(ownerUserId);
+  await db
+    .delete(profileZones)
+    .where(
+      and(
+        eq(profileZones.profileId, profile.id),
+        eq(profileZones.domain, domain),
+        eq(profileZones.recordType, recordType),
+      ),
+    );
+  return { ok: true };
 }
 
 async function loadEdgeHealth(): Promise<EdgeHealth> {

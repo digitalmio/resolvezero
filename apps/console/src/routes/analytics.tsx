@@ -56,7 +56,7 @@ function Analytics() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Query volume</h2>
-              <p className="mt-1 text-[12px] text-[var(--muted)]">Forwarded vs blocked · {range}</p>
+              <p className="mt-1 text-[12px] text-[var(--muted)]">Total vs blocked queries · {range}</p>
             </div>
             <BarChart3 size={18} className="text-[var(--muted)]" />
           </div>

@@ -85,7 +85,6 @@ function Overview() {
   const totalQueries = data.totalQueries
   const blocked = data.blocked
   const activeSources = Math.max(data.activeDevices, data.topClients.length)
-  const forwarded = Math.max(totalQueries - blocked, 0)
   const qps = totalQueries / 86_400
   const qpsLabel = qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)
   const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
@@ -147,23 +146,23 @@ function Overview() {
             <span className="rounded border border-[var(--line)] px-2 py-1 text-[10px] text-[var(--muted)]">24h window</span>
           </div>
           <div className="mt-4">
-            <div className="flex h-2 overflow-hidden rounded-sm bg-[var(--paper-2)]">
-              <div className="h-full bg-[var(--ink)]" style={{ width: `${totalQueries > 0 ? (forwarded / totalQueries) * 100 : 100}%` }} />
-              <div className="h-full bg-[var(--accent)]" style={{ width: `${totalQueries > 0 ? (blocked / totalQueries) * 100 : 0}%` }} />
+            <div className="flex h-2 overflow-hidden rounded-sm bg-[var(--ink)]">
+              <div
+                className="ml-auto h-full bg-[var(--accent)]"
+                style={{ width: `${totalQueries > 0 ? (blocked / totalQueries) * 100 : 0}%` }}
+              />
             </div>
             <div className="mt-3 flex items-center justify-between text-[10px]">
               <span className="flex items-center gap-1.5 text-[var(--muted)]">
-                <span className="size-1.5 rounded-full bg-[var(--ink)]" /> Forwarded
-                <span className="font-mono text-[var(--ink)]">{formatNumber(forwarded)}</span>
-              </span>
-              <span className="flex items-center gap-1.5 text-[var(--muted)]">
                 <span className="size-1.5 rounded-full bg-[var(--accent)]" /> Blocked
                 <span className="font-mono text-[var(--ink)]">{formatNumber(blocked)}</span>
+                <span className="text-[var(--line)]">·</span>
+                <span className="font-mono text-[var(--ink)]">{(data.blockRatio * 100).toFixed(1)}%</span>
               </span>
-            </div>
-            <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-2.5 text-[10px] text-[var(--muted)]">
-              <span>Total</span>
-              <span className="font-mono text-[var(--ink)]">{formatNumber(totalQueries)}</span>
+              <span className="flex items-center gap-1.5 text-[var(--muted)]">
+                Total
+                <span className="font-mono text-[var(--ink)]">{formatNumber(totalQueries)}</span>
+              </span>
             </div>
           </div>
           <div className="mt-5 flex items-center gap-1.5 border-t border-[var(--line)] pt-3 text-[10px] text-[var(--muted)]">
@@ -176,7 +175,7 @@ function Overview() {
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi icon={<Globe2 size={16} />} label="Queries / 24h" value={formatNumber(totalQueries)} delta="last 24 hours" />
         <Kpi icon={<Ban size={16} />} label="Blocked" value={formatNumber(blocked)} delta={`${(data.blockRatio * 100).toFixed(1)}% of total`} />
-        <Kpi icon={<Clock3 size={16} />} label="Avg upstream" value={data.avgRttMs != null ? `${data.avgRttMs} ms` : '—'} delta="forwarded queries" positive />
+        <Kpi icon={<Clock3 size={16} />} label="Avg upstream" value={data.avgRttMs != null ? `${data.avgRttMs} ms` : '—'} delta="upstream queries" positive />
         <Kpi icon={<Monitor size={16} />} label="Active sources" value={String(activeSources)} delta="client IPs / DoH tags" />
       </section>
 
@@ -185,12 +184,12 @@ function Overview() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Query volume</h2>
-              <p className="mt-1 text-[12px] text-[var(--muted)]">Forwarded vs blocked over the last 24 hours</p>
+              <p className="mt-1 text-[12px] text-[var(--muted)]">Total vs blocked queries over the last 24 hours</p>
             </div>
             <span className="rounded border border-[var(--line)] px-2 py-1 text-[10px] text-[var(--muted)]">Last 24 hours</span>
           </div>
           <div className="mt-4 flex items-center gap-5 text-[11px] text-[var(--muted)]">
-            <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--ink)]" /> Forwarded</span>
+            <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--ink)]" /> Queries</span>
             <span className="flex items-center gap-2"><span className="size-2 rounded-full bg-[var(--accent)]" /> Blocked</span>
           </div>
           <QueryChart data={chartData} />
@@ -372,7 +371,7 @@ function QueryChart({ data }: { data: { time: string; total: number; blocked: nu
             }}
             labelStyle={{ color: 'var(--muted)', marginBottom: 2, lineHeight: 1.2 }}
             itemStyle={{ padding: 0, lineHeight: 1.3 }}
-            formatter={(value, name) => [Number(value).toLocaleString('en-GB'), name === 'total' ? 'Forwarded' : 'Blocked']}
+            formatter={(value, name) => [Number(value).toLocaleString('en-GB'), name === 'total' ? 'Queries' : 'Blocked']}
           />
           <Area
             type="monotone"

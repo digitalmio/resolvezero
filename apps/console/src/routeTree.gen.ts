@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as BlocklistsRouteImport } from './routes/blocklists'
 import { Route as DevicesRouteImport } from './routes/devices'
+import { Route as LocalDnsRouteImport } from './routes/local-dns'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as RulesRouteImport } from './routes/rules'
@@ -37,6 +38,11 @@ const BlocklistsRoute = BlocklistsRouteImport.update({
 const DevicesRoute = DevicesRouteImport.update({
   id: '/devices',
   path: '/devices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocalDnsRoute = LocalDnsRouteImport.update({
+  id: '/local-dns',
+  path: '/local-dns',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/blocklists'
     | '/devices'
+    | '/local-dns'
     | '/login'
     | '/logs'
     | '/rules'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/blocklists'
     | '/devices'
+    | '/local-dns'
     | '/login'
     | '/logs'
     | '/rules'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/blocklists'
     | '/devices'
+    | '/local-dns'
     | '/login'
     | '/logs'
     | '/rules'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   BlocklistsRoute: typeof BlocklistsRoute
   DevicesRoute: typeof DevicesRoute
+  LocalDnsRoute: typeof LocalDnsRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
   RulesRoute: typeof RulesRoute
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/devices'
       fullPath: '/devices'
       preLoaderRoute: typeof DevicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/local-dns': {
+      id: '/local-dns'
+      path: '/local-dns'
+      fullPath: '/local-dns'
+      preLoaderRoute: typeof LocalDnsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -220,6 +240,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   BlocklistsRoute: BlocklistsRoute,
   DevicesRoute: DevicesRoute,
+  LocalDnsRoute: LocalDnsRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
   RulesRoute: RulesRoute,

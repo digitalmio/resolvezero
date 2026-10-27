@@ -6,6 +6,7 @@ import {
   ChevronUp,
   Command,
   FileText,
+  House,
   Layers3,
   ListFilter,
   LogOut,
@@ -40,6 +41,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Overview', to: '/', icon: <Activity size={16} /> },
       { label: 'Devices', to: '/devices', icon: <Monitor size={16} /> },
+      { label: 'Local DNS', to: '/local-dns', icon: <House size={16} /> },
     ],
   },
   {

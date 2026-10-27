@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 
-export const getSession = createServerFn({ method: "GET" }).handler(async () => {
-  const { getSessionUser } = await import("./auth.server");
-  return getSessionUser();
-});
+import { normalizeDomain, normalizeRecordType, normalizeZoneInput, type ZoneInput } from "../lib/zone";
+
+export type { OverviewData, RulesData, LocalDnsData } from "./dashboard.server";
 
 export const getOverview = createServerFn({ method: "GET" }).handler(async () => {
   const [{ requireSessionUser, toViewer }, { loadOverview }] = await Promise.all([
@@ -22,6 +21,40 @@ export const getRulesData = createServerFn({ method: "GET" }).handler(async () =
   const user = await requireSessionUser();
   return loadRules(user.id);
 });
+
+export const getLocalDnsData = createServerFn({ method: "GET" }).handler(async () => {
+  const [{ requireSessionUser }, { loadLocalDns }] = await Promise.all([
+    import("./auth.server"),
+    import("./dashboard.server"),
+  ]);
+  const user = await requireSessionUser();
+  return loadLocalDns(user.id);
+});
+
+export const saveLocalDnsZone = createServerFn({ method: "POST" })
+  .validator((data: ZoneInput) => normalizeZoneInput(data))
+  .handler(async ({ data }) => {
+    const [{ requireSessionUser }, { upsertLocalDnsZone }] = await Promise.all([
+      import("./auth.server"),
+      import("./dashboard.server"),
+    ]);
+    const user = await requireSessionUser();
+    return upsertLocalDnsZone(user.id, data);
+  });
+
+export const deleteLocalDnsZone = createServerFn({ method: "POST" })
+  .validator((data: { domain: string; recordType: string }) => ({
+    domain: normalizeDomain(data?.domain),
+    recordType: normalizeRecordType(data?.recordType),
+  }))
+  .handler(async ({ data }) => {
+    const [{ requireSessionUser }, { removeLocalDnsZone }] = await Promise.all([
+      import("./auth.server"),
+      import("./dashboard.server"),
+    ]);
+    const user = await requireSessionUser();
+    return removeLocalDnsZone(user.id, data.domain, data.recordType);
+  });
 
 export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async () => {
   const [{ requireSessionUser }, { loadBlocklists }] = await Promise.all([
