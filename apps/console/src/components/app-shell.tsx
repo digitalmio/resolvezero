@@ -83,19 +83,38 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r border-[var(--line)] bg-white text-[var(--ink)] lg:flex">
-        <Link to="/" className="flex items-center gap-2.5 px-4 pb-6 pt-5">
-          <img src={logo} alt="" className="size-6 shrink-0" />
-          <span className="font-[var(--font-display)] text-[16px] font-semibold tracking-[-0.035em]">ResolveZero</span>
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 shadow-[0_1px_3px_rgba(26,32,24,0.04)] backdrop-blur-xl sm:px-6">
+        <Link to="/" className="flex shrink-0 items-center gap-2.5">
+          <img src={logo} alt="" className="size-8 shrink-0 sm:size-9" />
+          <span className="font-[var(--font-display)] text-[18px] font-semibold tracking-[-0.04em] sm:text-[20px]">ResolveZero</span>
         </Link>
 
-        <div className="mx-3 mb-5 flex items-center gap-2.5 rounded-[10px] border border-[var(--line)] bg-[var(--sage)] px-3 py-2.5">
+        <span className="hidden h-6 w-px bg-[var(--line)] md:block" />
+        <div className="hidden h-8 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--sage)] px-3 text-[11px] font-medium md:flex">
           <span className="size-1.5 rounded-full bg-[var(--green)]" />
-          <span className="truncate text-[12px] font-medium">{profileLabel}</span>
-          <ChevronDown size={14} className="ml-auto shrink-0 text-[var(--muted)]" />
+          <span className="max-w-[120px] truncate">{profileLabel}</span>
+          <ChevronDown size={14} className="shrink-0 text-[var(--muted)]" />
         </div>
 
-        <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 pb-4">
+        <div className="ml-2 hidden w-full max-w-[360px] items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--sage)] px-3 py-2 text-[12px] text-[var(--muted)] lg:flex">
+          <Search size={14} />
+          <span>Search domains, rules, devices</span>
+          <kbd className="ml-auto flex items-center gap-0.5 rounded border border-[var(--line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
+            <Command size={10} /> K
+          </kbd>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
+          <span className="hidden h-8 items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 text-[11px] font-medium text-[var(--muted)] md:inline-flex">
+            <Activity size={12} className="text-[var(--green)]" />
+            {queriesLabel} queries / 24h
+          </span>
+        </div>
+      </header>
+
+      <aside className="fixed bottom-0 left-0 top-16 z-30 hidden w-[240px] flex-col border-r border-[var(--line)] bg-white text-[var(--ink)] lg:flex">
+        <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 pb-4 pt-5">
           {groups.map((group) => (
             <div key={group.label}>
               <p className="px-2.5 pb-1.5 text-[11px] font-medium text-[var(--muted)]">{group.label}</p>
@@ -144,32 +163,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
         {session ? <UserMenu name={viewerName} image={viewerImage} email={viewerEmail} /> : null}
       </aside>
 
-      <div className="lg:pl-[240px]">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 shadow-[0_1px_3px_rgba(26,32,24,0.04)] backdrop-blur-xl sm:px-6">
-          <div className="flex items-center gap-2 lg:hidden">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--ink)] text-white">
-              <img src={logo} alt="ResolveZero" className="size-5" />
-            </span>
-            <span className="text-sm font-semibold">ResolveZero</span>
-          </div>
-
-          <div className="hidden w-full max-w-[360px] items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--sage)] px-3 py-2 text-[12px] text-[var(--muted)] sm:flex">
-            <Search size={14} />
-            <span>Search domains, rules, devices</span>
-            <kbd className="ml-auto flex items-center gap-0.5 rounded border border-[var(--line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
-              <Command size={10} /> K
-            </kbd>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
-            <span className="hidden h-8 items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 text-[11px] font-medium text-[var(--muted)] md:inline-flex">
-              <Activity size={12} className="text-[var(--green)]" />
-              {queriesLabel} queries / 24h
-            </span>
-          </div>
-        </header>
-
+      <div className="pt-16 lg:pl-[240px]">
         <main className="mx-auto max-w-[1440px] px-4 py-7 sm:px-8 sm:py-9">
           <Outlet />
         </main>
