@@ -361,15 +361,17 @@ function QueryChart({ data }: { data: { time: string; total: number; blocked: nu
           />
           <Tooltip
             cursor={{ stroke: 'var(--line)', strokeWidth: 1 }}
+            itemSorter={(item) => (item.dataKey === 'total' ? 0 : 1)}
             contentStyle={{
               background: '#fff',
               border: '1px solid var(--line)',
               borderRadius: 6,
               boxShadow: 'none',
               fontSize: 11,
-              padding: '6px 8px',
+              padding: '4px 6px',
             }}
-            labelStyle={{ color: 'var(--muted)', marginBottom: 4 }}
+            labelStyle={{ color: 'var(--muted)', marginBottom: 2, lineHeight: 1.2 }}
+            itemStyle={{ padding: 0, lineHeight: 1.3 }}
             formatter={(value, name) => [Number(value).toLocaleString('en-GB'), name === 'total' ? 'Forwarded' : 'Blocked']}
           />
           <Area
