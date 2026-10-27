@@ -4,6 +4,7 @@ import { format, parseISO } from 'date-fns'
 import { AlertCircle, CheckCircle2, ExternalLink, Layers3, Plus, RefreshCw } from 'lucide-react'
 import { getBlocklistsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
+import { PageHeader } from '../components/page-header'
 
 export const Route = createFileRoute('/blocklists')({ component: Blocklists })
 
@@ -16,26 +17,27 @@ function Blocklists() {
   if (isPending) return <PageLoading label="Loading blocklists…" />
   if (isError || !data) return <PageError title="Could not load blocklists." onRetry={() => void refetch()} />
 
+  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
   const totalEntries = data.lists.reduce((sum, list) => sum + list.entries, 0)
   const healthy = data.lists.filter((list) => list.enabled && list.lastStatus === 'ok').length
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Policy</p>
-          <h1 className="text-[30px] font-semibold tracking-[-0.045em]">Blocklists</h1>
-          <p className="mt-2 text-[13px] text-[var(--muted)]">
-            {data.profileName} · public lists and sync health across the edge fleet.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="rz-button-secondary" onClick={() => void refetch()}>
-            <RefreshCw size={13} /> Refresh
-          </button>
-          <button className="rz-button-primary"><Plus size={14} /> Add list</button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Policy"
+        title="Blocklists"
+        description={`${profileLabel} · public lists and sync health across the edge fleet.`}
+        actions={
+          <>
+            <button className="rz-button-secondary" onClick={() => void refetch()}>
+              <RefreshCw size={13} /> Refresh
+            </button>
+            <button className="rz-button-primary">
+              <Plus size={14} /> Add list
+            </button>
+          </>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Subscriptions" value={String(data.lists.length)} detail="Unique source URLs" />
@@ -74,7 +76,7 @@ function Blocklists() {
                   <td className="px-4 py-4 font-mono text-[12px]">{new Intl.NumberFormat('en-GB').format(list.entries)}</td>
                   <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">{list.lastSyncedAt ? format(parseISO(list.lastSyncedAt), 'dd MMM yyyy, HH:mm') : 'never'}</td>
                   <td className="px-4 py-4">
-                    <span className={['inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium', list.lastStatus === 'ok' ? 'bg-[#edf8f0] text-[#247440]' : 'bg-[#fff4ef] text-[#a64b22]'].join(' ')}>
+                    <span className={['inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium', list.lastStatus === 'ok' ? 'bg-[var(--green-soft)] text-[var(--green)]' : 'bg-[var(--accent-soft)] text-[var(--warning)]'].join(' ')}>
                       {list.lastStatus === 'ok' ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}
                       {list.lastStatus ?? (list.enabled ? 'pending' : 'disabled')}
                     </span>
@@ -92,8 +94,8 @@ function Blocklists() {
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rz-card p-5">
-      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 font-mono text-[24px] tracking-[-0.05em]">{value}</p>
+      <p className="text-[11px] text-[var(--muted)]">{label}</p>
+      <p className="mt-2 font-[var(--font-display)] text-[26px] font-semibold tracking-[-0.045em]">{value}</p>
       <p className="mt-1 text-[10px] text-[var(--muted)]">{detail}</p>
     </div>
   )

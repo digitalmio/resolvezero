@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { getRulesData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
+import { PageHeader } from '../components/page-header'
 import { Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 
@@ -28,17 +29,17 @@ function Rules() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Policy</p>
-          <h1 className="text-[30px] font-semibold tracking-[-0.045em]">Rules</h1>
-          <p className="mt-2 text-[13px] text-[var(--muted)]">Block, allow, and override names. Changes reach every edge in seconds.</p>
-        </div>
-        <button className="rz-button-primary">
-          <Plus size={14} />
-          Add rule
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Policy"
+        title="Rules"
+        description="Block, allow, and override names. Changes reach every edge in seconds."
+        actions={
+          <button className="rz-button-primary">
+            <Plus size={14} />
+            Add rule
+          </button>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)]">
         {tabs.map((tab) => {
@@ -54,7 +55,7 @@ function Rules() {
             >
               {tab.label}
               <span className="rounded-md bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{tab.count}</span>
-              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" /> : null}
+              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--green)]" /> : null}
             </button>
           )
         })}
@@ -115,9 +116,9 @@ function Rules() {
 function ActionPill({ action }: { action: string }) {
   const style =
     action === 'block'
-      ? 'bg-[#fff0e9] text-[#c64012] ring-[#ffd9ca]'
+      ? 'bg-[var(--accent-soft)] text-[#b74716] ring-[var(--line)]'
       : action === 'allow'
-        ? 'bg-[#edf8f0] text-[#247440] ring-[#cfe6d7]'
-        : 'bg-[#eef2ff] text-[#3552a5] ring-[#dbe3ff]'
+        ? 'bg-[var(--green-soft)] text-[var(--green)] ring-[var(--line)]'
+        : 'bg-[var(--sage)] text-[var(--ink)] ring-[var(--line)]'
   return <span className={`inline-flex items-center rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ring-1 ${style}`}>{action}</span>
 }

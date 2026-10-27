@@ -4,6 +4,7 @@ import { BarChart3, TrendingUp } from 'lucide-react'
 import { useState } from 'react'
 import { getAnalyticsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
+import { PageHeader } from '../components/page-header'
 
 export const Route = createFileRoute('/analytics')({ component: Analytics })
 
@@ -19,6 +20,7 @@ function Analytics() {
   if (isPending) return <PageLoading label="Loading analytics…" />
   if (isError || !data) return <PageError title="Could not load analytics." onRetry={() => void refetch()} />
 
+  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
   const series = data.series[range]
   const total = series.reduce((sum, point) => sum + point.total, 0)
   const blocked = series.reduce((sum, point) => sum + point.blocked, 0)
@@ -26,24 +28,24 @@ function Analytics() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Observability</p>
-          <h1 className="text-[30px] font-semibold tracking-[-0.045em]">Analytics</h1>
-          <p className="mt-2 text-[13px] text-[var(--muted)]">{data.profileName} · long-range rollups from Postgres.</p>
-        </div>
-        <div className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--paper)] p-0.5 text-[11px]">
-          {(['24h', '7d', '30d'] as Range[]).map((value) => (
-            <button
-              key={value}
-              onClick={() => setRange(value)}
-              className={['rounded-md px-2.5 py-1.5', range === value ? 'bg-white font-medium shadow-sm' : 'text-[var(--muted)]'].join(' ')}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Observability"
+        title="Analytics"
+        description={`${profileLabel} · long-range rollups from Postgres.`}
+        actions={
+          <div className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--paper)] p-0.5 text-[11px]">
+            {(['24h', '7d', '30d'] as Range[]).map((value) => (
+              <button
+                key={value}
+                onClick={() => setRange(value)}
+                className={['rounded-md px-2.5 py-1.5', range === value ? 'bg-white font-medium shadow-sm' : 'text-[var(--muted)]'].join(' ')}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label={`Queries · ${range}`} value={new Intl.NumberFormat('en-GB').format(total)} detail="Rollup total" />
@@ -115,13 +117,13 @@ function AnalyticsChart({ series }: { series: { label: string; total: number; bl
       <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Query analytics">
         <defs>
           <linearGradient id="rz-analytics-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--ink)" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="var(--ink)" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--green)" stopOpacity="0.12" />
+            <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0.2, 0.4, 0.6, 0.8].map((f) => <line key={f} x1="0" x2={width} y1={height * f} y2={height * f} stroke="var(--line)" strokeDasharray="2 5" />)}
         <path d={area} fill="url(#rz-analytics-area)" />
-        <path d={path('total')} fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={path('total')} fill="none" stroke="var(--green)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
         <path d={path('blocked')} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 4" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
     </div>
@@ -131,8 +133,8 @@ function AnalyticsChart({ series }: { series: { label: string; total: number; bl
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rz-card p-5">
-      <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 font-mono text-[24px] tracking-[-0.05em]">{value}</p>
+      <p className="text-[11px] text-[var(--muted)]">{label}</p>
+      <p className="mt-2 font-[var(--font-display)] text-[26px] font-semibold tracking-[-0.045em]">{value}</p>
       <p className="mt-1 text-[10px] text-[var(--muted)]">{detail}</p>
     </div>
   )

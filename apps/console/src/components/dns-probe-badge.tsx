@@ -22,19 +22,19 @@ const phaseMeta: Record<
     label: 'Checking DNS',
     icon: LoaderCircle,
     className: 'border-[var(--line)] bg-white text-[var(--muted)]',
-    dot: 'bg-[#c8a24a]',
+    dot: 'bg-[var(--warning)]',
   },
   active: {
     label: 'Using ResolveZero',
     icon: ShieldCheck,
-    className: 'border-[#cfe6d7] bg-[#edf8f0] text-[#247440]',
-    dot: 'bg-[#2e9b55]',
+    className: 'border-[var(--line)] bg-[var(--green-soft)] text-[var(--green)]',
+    dot: 'bg-[var(--green)]',
   },
   inactive: {
     label: 'Not using ResolveZero',
     icon: WifiOff,
-    className: 'border-[#eadfc4] bg-[#fbf6e9] text-[#7a5d16]',
-    dot: 'bg-[#c8a24a]',
+    className: 'border-[#eadfc4] bg-[#fbf6e9] text-[var(--warning)]',
+    dot: 'bg-[var(--warning)]',
   },
 }
 
@@ -103,7 +103,7 @@ export function DnsProbeBadge({ profileId }: { profileId: string }) {
       role="status"
       aria-live="polite"
       className={[
-        'flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium',
+        'flex h-8 items-center gap-2 rounded-full border px-3 text-[11px] font-medium',
         meta.className,
       ].join(' ')}
       title={
