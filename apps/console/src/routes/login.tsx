@@ -22,16 +22,9 @@ function GitHubMark() {
   )
 }
 
-/** Brand lockup: the mark sits directly on white, no container. */
+/** Brand mark: the signet stands alone on the white panel. */
 function BrandLockup() {
-  return (
-    <div className="flex items-center gap-3">
-      <img src={logo} alt="" className="size-11 shrink-0 lg:size-14" />
-      <span className="font-[var(--font-display)] text-[27px] font-semibold tracking-[-0.055em] lg:text-[34px]">
-        ResolveZero
-      </span>
-    </div>
-  )
+  return <img src={logo} alt="ResolveZero" className="size-11 shrink-0 lg:size-14" />
 }
 
 function Feature({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) {
