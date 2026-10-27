@@ -76,7 +76,6 @@ function LoginPage() {
         <BrandLockup />
 
         <div className="hidden max-w-[540px] flex-1 flex-col justify-center py-16 lg:flex">
-          <p className="rz-eyebrow mb-4">Home DNS firewall</p>
           <h1 className="font-[var(--font-display)] text-[46px] font-semibold leading-[1.03] tracking-[-0.06em]">
             Privacy for every name your home looks up.
           </h1>
