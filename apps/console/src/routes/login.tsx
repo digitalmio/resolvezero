@@ -34,19 +34,13 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
       >
         <img src={logo} alt="" className={compact ? 'size-9' : 'size-14'} />
       </span>
-      <span>
-        <span
-          className={[
-            'flex items-center gap-2 font-[var(--font-display)] font-semibold tracking-[-0.055em]',
-            compact ? 'text-[26px]' : 'text-[36px]',
-          ].join(' ')}
-        >
-          ResolveZero
-          <span className={['rounded-full bg-[var(--lime)]', compact ? 'size-1.5' : 'size-2'].join(' ')} />
-        </span>
-        <span className={['block text-[var(--muted)]', compact ? 'mt-0.5 text-[11px]' : 'mt-1.5 text-[12px]'].join(' ')}>
-          Home DNS firewall
-        </span>
+      <span
+        className={[
+          'font-[var(--font-display)] font-semibold tracking-[-0.055em]',
+          compact ? 'text-[26px]' : 'text-[36px]',
+        ].join(' ')}
+      >
+        ResolveZero
       </span>
     </div>
   )
