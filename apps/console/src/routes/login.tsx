@@ -22,24 +22,12 @@ function GitHubMark() {
   )
 }
 
-/** Large brand lockup: the login page is the one place the mark gets room. */
-function BrandLockup({ compact = false }: { compact?: boolean }) {
+/** Brand lockup: the mark sits directly on white, no container. */
+function BrandLockup() {
   return (
-    <div className="flex items-center gap-4">
-      <span
-        className={[
-          'flex shrink-0 items-center justify-center border border-[var(--line)] bg-white shadow-[0_10px_30px_rgba(26,32,24,0.09)]',
-          compact ? 'size-14 rounded-[16px]' : 'size-20 rounded-[22px]',
-        ].join(' ')}
-      >
-        <img src={logo} alt="" className={compact ? 'size-9' : 'size-14'} />
-      </span>
-      <span
-        className={[
-          'font-[var(--font-display)] font-semibold tracking-[-0.055em]',
-          compact ? 'text-[26px]' : 'text-[36px]',
-        ].join(' ')}
-      >
+    <div className="flex items-center gap-3">
+      <img src={logo} alt="" className="size-11 shrink-0 lg:size-14" />
+      <span className="font-[var(--font-display)] text-[27px] font-semibold tracking-[-0.055em] lg:text-[34px]">
         ResolveZero
       </span>
     </div>
@@ -83,30 +71,19 @@ function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[var(--paper)] text-[var(--ink)]">
-      <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute inset-x-0 top-0 h-[460px] opacity-60" />
+    <div className="flex min-h-screen flex-col bg-[var(--paper)] text-[var(--ink)] lg:grid lg:grid-cols-2">
+      <section className="relative flex flex-col border-b border-[var(--line)] bg-white px-5 py-5 sm:px-8 lg:min-h-screen lg:border-b-0 lg:border-r lg:px-14 lg:py-12 xl:px-20">
+        <BrandLockup />
 
-      <header className="relative z-10 flex items-center justify-end px-5 py-5 sm:px-8">
-        <span className="rz-pill rz-pill-positive">
-          <ShieldCheck size={11} /> Private by default
-        </span>
-      </header>
-
-      <main className="relative z-10 grid flex-1 items-center gap-12 px-5 pb-16 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-16">
-        <section className="hidden max-w-[610px] lg:block">
-          <BrandLockup />
-
-          <div className="mt-12">
-            <p className="rz-eyebrow mb-4">Home DNS firewall</p>
-            <h1 className="font-[var(--font-display)] text-[56px] font-semibold leading-[1.02] tracking-[-0.06em]">
-              Privacy for every name your home looks up.
-            </h1>
-            <p className="mt-5 max-w-[470px] text-[14px] leading-7 text-[var(--muted)]">
-              ResolveZero filters DNS at the edge, answers your <span className="font-mono">.lan</span> names locally, and
-              keeps query history in your own storage.
-            </p>
-          </div>
-
+        <div className="hidden max-w-[540px] flex-1 flex-col justify-center py-16 lg:flex">
+          <p className="rz-eyebrow mb-4">Home DNS firewall</p>
+          <h1 className="font-[var(--font-display)] text-[46px] font-semibold leading-[1.03] tracking-[-0.06em]">
+            Privacy for every name your home looks up.
+          </h1>
+          <p className="mt-5 max-w-[470px] text-[14px] leading-7 text-[var(--muted)]">
+            ResolveZero filters DNS at the edge, answers your <span className="font-mono">.lan</span> names locally, and
+            keeps query history in your own storage.
+          </p>
           <div className="mt-9 grid max-w-[430px] gap-4">
             <Feature
               icon={<Ban size={15} />}
@@ -124,46 +101,56 @@ function LoginPage() {
               detail="Compressed raw logs in your bucket, not somebody else's dashboard."
             />
           </div>
-        </section>
+        </div>
 
-        <section className="mx-auto w-full max-w-[420px]">
-          <div className="mb-7 lg:hidden">
-            <BrandLockup compact />
-          </div>
+        <p className="hidden text-[10px] text-[var(--muted)] lg:block">Self-hosted friendly · open-source console</p>
+      </section>
 
-          <div className="rz-card p-7 sm:p-8">
-            <p className="rz-eyebrow">Welcome back</p>
-            <h1 className="mt-2 font-[var(--font-display)] text-[30px] font-semibold tracking-[-0.05em]">Sign in</h1>
-            <p className="mt-2 text-[13px] leading-6 text-[var(--muted)]">
-              Continue with GitHub to manage your resolver, local DNS, and query history.
-            </p>
+      <section className="relative flex flex-1 flex-col overflow-hidden px-5 pb-8 pt-4 sm:px-8 lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
+        <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute inset-x-0 top-0 h-[420px] opacity-50" />
 
-            <button
-              type="button"
-              onClick={() => void signIn()}
-              disabled={pending}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--ink)] bg-[var(--ink)] px-4 py-2.5 text-[13px] font-medium text-[var(--paper)] transition-colors hover:bg-[#2a3028] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {pending ? <LoaderCircle size={16} className="animate-spin" /> : <GitHubMark />}
-              {pending ? 'Opening GitHub…' : 'Continue with GitHub'}
-            </button>
+        <header className="relative z-10 flex items-center justify-end">
+          <span className="rz-pill rz-pill-positive">
+            <ShieldCheck size={11} /> Private by default
+          </span>
+        </header>
 
-            {error ? (
-              <p role="alert" className="mt-4 rounded-lg border border-[#f0d7c8] bg-[#fff6f1] px-3 py-2 text-[11px] leading-5 text-[#9a3f1b]">
-                {error}
+        <main className="relative z-10 flex flex-1 items-center justify-center py-8 lg:py-12">
+          <div className="w-full max-w-[420px]">
+            <div className="rz-card p-7 sm:p-8">
+              <p className="rz-eyebrow">Welcome back</p>
+              <h1 className="mt-2 font-[var(--font-display)] text-[30px] font-semibold tracking-[-0.05em]">Sign in</h1>
+              <p className="mt-2 text-[13px] leading-6 text-[var(--muted)]">
+                Continue with GitHub to manage your resolver, local DNS, and query history.
               </p>
-            ) : null}
+
+              <button
+                type="button"
+                onClick={() => void signIn()}
+                disabled={pending}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--ink)] bg-[var(--ink)] px-4 py-2.5 text-[13px] font-medium text-[var(--paper)] transition-colors hover:bg-[#2a3028] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pending ? <LoaderCircle size={16} className="animate-spin" /> : <GitHubMark />}
+                {pending ? 'Opening GitHub…' : 'Continue with GitHub'}
+              </button>
+
+              {error ? (
+                <p role="alert" className="mt-4 rounded-lg border border-[#f0d7c8] bg-[#fff6f1] px-3 py-2 text-[11px] leading-5 text-[#9a3f1b]">
+                  {error}
+                </p>
+              ) : null}
+            </div>
+
+            <p className="mt-4 text-center text-[11px] leading-5 text-[var(--muted)]">
+              Only the account that owns this resolver can access its data.
+            </p>
           </div>
+        </main>
 
-          <p className="mt-4 text-center text-[11px] leading-5 text-[var(--muted)]">
-            Only the account that owns this resolver can access its data.
-          </p>
-        </section>
-      </main>
-
-      <footer className="relative z-10 px-5 pb-6 text-[10px] text-[var(--muted)] sm:px-8">
-        Self-hosted friendly · open-source console
-      </footer>
+        <footer className="relative z-10 text-center text-[10px] text-[var(--muted)] lg:hidden">
+          Self-hosted friendly · open-source console
+        </footer>
+      </section>
     </div>
   )
 }
