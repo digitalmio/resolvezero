@@ -117,13 +117,13 @@ function AnalyticsChart({ series }: { series: { label: string; total: number; bl
       <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Query analytics">
         <defs>
           <linearGradient id="rz-analytics-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--ink)" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="var(--ink)" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--lime)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--lime)" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0.2, 0.4, 0.6, 0.8].map((f) => <line key={f} x1="0" x2={width} y1={height * f} y2={height * f} stroke="var(--line)" strokeDasharray="2 5" />)}
         <path d={area} fill="url(#rz-analytics-area)" />
-        <path d={path('total')} fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={path('total')} fill="none" stroke="var(--lime)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
         <path d={path('blocked')} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 4" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
     </div>

@@ -55,7 +55,7 @@ function Rules() {
             >
               {tab.label}
               <span className="rounded-md bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{tab.count}</span>
-              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--accent)]" /> : null}
+              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--green)]" /> : null}
             </button>
           )
         })}

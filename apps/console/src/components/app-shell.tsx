@@ -169,7 +169,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
           <div className="ml-auto flex items-center gap-2">
             {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
             <span className="rz-pill hidden md:inline-flex">
-              <Activity size={12} className="text-[var(--accent)]" />
+              <Activity size={12} className="text-[var(--green)]" />
               {queriesLabel} queries / 24h
             </span>
           </div>
@@ -275,11 +275,11 @@ function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
       className={[
         'group flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[12px] font-medium transition-colors',
         active
-          ? 'border-[var(--accent)] bg-[var(--sage)] text-[var(--ink)]'
+          ? 'border-[var(--green)] bg-[var(--sage)] text-[var(--ink)]'
           : 'border-transparent text-[var(--muted)] hover:bg-[var(--sage)]/60 hover:text-[var(--ink)]',
       ].join(' ')}
     >
-      <span className={active ? 'text-[var(--ink)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
+      <span className={active ? 'text-[var(--green)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
       <span>{item.label}</span>
       {item.badge ? (
         <span className="ml-auto rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)] ring-1 ring-[var(--line)]">{item.badge}</span>

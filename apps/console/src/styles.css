@@ -4,22 +4,23 @@
 
 :root {
   --ink: #1a2018;
-  --paper: #fcfcf7;
-  --paper-2: #efefe9;
+  --paper: #eff2ea;
+  --paper-2: #e6ebe2;
+  --card: #fcfcf7;
   --line: rgba(26, 32, 24, 0.1);
   --line-strong: rgba(26, 32, 24, 0.16);
   --muted: #5f655e;
   --accent: #f45a22;
   --accent-soft: #fff1e9;
   --sage: #edf2ec;
-  --sage-2: #e2eadf;
+  --sage-2: #dfe8dc;
   --green: #007753;
-  --green-soft: #edf8f0;
+  --green-soft: #e4efe2;
   --lime: #a5d122;
   --danger: #d64545;
   --warning: #a56a16;
-  --sidebar: #f5f6f0;
-  --radius: 0.7rem;
+  --sidebar: #f4f6ef;
+  --radius: 0.85rem;
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Plus Jakarta Sans Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -73,14 +74,14 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--accent) 55%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--green) 55%, transparent);
   outline-offset: 2px;
 }
 
 .rz-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--card);
   box-shadow: 0 1px 2px rgba(26, 32, 24, 0.03);
 }
 
@@ -135,7 +136,7 @@ a {
   font-size: 11px;
   font-weight: 500;
   line-height: 1;
-  color: var(--muted);
+  color: var(--green);
 }
 
 .rz-eyebrow::before {
@@ -144,7 +145,7 @@ a {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--lime);
 }
 
 .rz-page-title {
@@ -165,7 +166,7 @@ a {
   flex: 0 0 auto;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--sage);
+  background: #fff;
   color: var(--ink);
 }
 

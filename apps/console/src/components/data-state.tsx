@@ -2,7 +2,7 @@ export function PageLoading({ label = "Loading live data…" }: { label?: string
   return (
     <div className="rz-card flex min-h-[280px] items-center justify-center p-8" aria-busy="true">
       <div className="text-center">
-        <span className="mx-auto block size-5 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--accent)]" />
+        <span className="mx-auto block size-5 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--green)]" />
         <p className="mt-3 text-[12px] text-[var(--muted)]">{label}</p>
       </div>
     </div>

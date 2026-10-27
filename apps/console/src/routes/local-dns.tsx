@@ -143,7 +143,7 @@ function LocalDnsPage() {
             placeholder="nas.lan"
             autoComplete="off"
             spellCheck={false}
-            className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--green)]"
           />
           <p className="mt-1.5 text-[10px] text-[var(--muted)]">Must end in .lan.</p>
 
@@ -156,7 +156,7 @@ function LocalDnsPage() {
                 id="zone-type"
                 value={form.recordType}
                 onChange={(event) => setForm({ ...form, recordType: event.target.value as ZoneRecordType })}
-                className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-[11px] outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-[11px] outline-none focus:border-[var(--green)]"
               >
                 {ZONE_RECORD_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -176,7 +176,7 @@ function LocalDnsPage() {
                 max={86400}
                 value={form.ttl}
                 onChange={(event) => setForm({ ...form, ttl: event.target.value })}
-                className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--accent)]"
+                className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--green)]"
               />
             </div>
           </div>
@@ -191,7 +191,7 @@ function LocalDnsPage() {
             onChange={(event) => setForm({ ...form, values: event.target.value })}
             placeholder={valuePlaceholder(form.recordType)}
             spellCheck={false}
-            className="mt-1.5 w-full resize-y rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--accent)]"
+            className="mt-1.5 w-full resize-y rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--green)]"
           />
           <p className="mt-1.5 text-[10px] leading-4 text-[var(--muted)]">
             Up to 8 values. Separate A/AAAA/CNAME values with commas; TXT values can be one per line.

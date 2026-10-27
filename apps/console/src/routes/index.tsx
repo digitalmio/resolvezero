@@ -147,7 +147,7 @@ function Overview() {
           </div>
           <div className="mt-4 flex items-center gap-5 text-[11px] text-[var(--muted)]">
             <span className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-[var(--ink)]" /> Queries
+              <span className="size-2 rounded-full bg-[var(--lime)]" /> Queries
             </span>
             <span className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-[var(--accent)]" /> Blocked
@@ -213,14 +213,14 @@ function LiveTrafficCard({
           <h2 className="rz-section-title">Live traffic</h2>
           <p className="mt-1 text-[12px] text-[var(--muted)]">Rolling 24-hour window</p>
         </div>
-        <Zap size={15} className="text-[var(--accent)]" />
+        <Zap size={15} className="text-[var(--green)]" />
       </div>
       <p className="mt-4 font-[var(--font-display)] text-[32px] font-semibold tracking-[-0.055em]">
         {qpsLabel}
         <span className="ml-2 font-sans text-[11px] font-medium tracking-normal text-[var(--muted)]">qps avg</span>
       </p>
       <div className="mt-4">
-        <div className="flex h-2 overflow-hidden rounded-full bg-[var(--ink)]">
+        <div className="flex h-2 overflow-hidden rounded-full bg-[var(--green)]">
           <div
             className="ml-auto h-full bg-[var(--accent)]"
             style={{ width: `${totalQueries > 0 ? (blocked / totalQueries) * 100 : 0}%` }}
@@ -318,7 +318,7 @@ function TopBlockedCard({ items }: { items: { domain: string; label: string; cou
       </div>
       <Link
         to="/logs"
-        className="mt-5 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
+        className="mt-5 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--ink)] hover:text-[var(--green)]"
       >
         Open query log <ArrowUpRight size={12} />
       </Link>
@@ -390,7 +390,7 @@ function LocalDnsCard({ count }: { count: number }) {
           <h2 className="rz-section-title">Local DNS</h2>
           <p className="mt-1 text-[12px] text-[var(--muted)]">Split-horizon names</p>
         </div>
-        <House size={15} className="text-[var(--muted)]" />
+        <House size={15} className="text-[var(--green)]" />
       </div>
       <p className="mt-5 font-[var(--font-display)] text-[34px] font-semibold tracking-[-0.05em]">
         {count}
@@ -401,7 +401,7 @@ function LocalDnsCard({ count }: { count: number }) {
       <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">Answer .lan names before blocklists and upstream.</p>
       <Link
         to="/local-dns"
-        className="mt-auto inline-flex items-center gap-1 pt-5 text-[11px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
+        className="mt-auto inline-flex items-center gap-1 pt-5 text-[11px] font-medium text-[var(--ink)] hover:text-[var(--green)]"
       >
         Manage records <ArrowUpRight size={12} />
       </Link>
@@ -496,8 +496,8 @@ function QueryChart({ data }: { data: { time: string; total: number; blocked: nu
         <AreaChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="rz-query-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--ink)" stopOpacity={0.12} />
-              <stop offset="100%" stopColor="var(--ink)" stopOpacity={0} />
+              <stop offset="0%" stopColor="var(--lime)" stopOpacity={0.18} />
+              <stop offset="100%" stopColor="var(--lime)" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 5" />
@@ -527,7 +527,7 @@ function QueryChart({ data }: { data: { time: string; total: number; blocked: nu
           <Area
             type="monotone"
             dataKey="total"
-            stroke="var(--ink)"
+            stroke="var(--lime)"
             strokeWidth={1.8}
             fill="url(#rz-query-area)"
             dot={false}

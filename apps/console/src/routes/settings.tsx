@@ -63,12 +63,12 @@ function SettingsPage() {
             value={domain}
             onChange={(event) => setDomain(event.target.value)}
             placeholder="example.com"
-            className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--accent)]"
+            className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--green)]"
           />
           <select
             value={recordType}
             onChange={(event) => setRecordType(event.target.value)}
-            className="rounded-md border border-[var(--line)] bg-white px-3 py-2 text-[11px] outline-none focus:border-[var(--accent)]"
+            className="rounded-md border border-[var(--line)] bg-white px-3 py-2 text-[11px] outline-none focus:border-[var(--green)]"
           >
             <option value="">All types</option>
             <option value="A">A</option>
