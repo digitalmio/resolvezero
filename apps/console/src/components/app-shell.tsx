@@ -84,14 +84,9 @@ export function AppShell({ session }: { session: SessionUser | null }) {
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] flex-col border-r border-[var(--line)] bg-white text-[var(--ink)] lg:flex">
-        <Link to="/" className="flex items-center gap-3 px-4 pb-7 pt-5">
-          <span className="flex size-10 items-center justify-center rounded-[12px] border border-[var(--line)] bg-[var(--sage)] text-[var(--ink)] shadow-[0_1px_2px_rgba(26,32,24,0.04)]">
-            <img src={logo} alt="" className="size-7" />
-          </span>
-          <span className="min-w-0">
-            <span className="block font-[var(--font-display)] text-[15px] font-semibold tracking-[-0.03em]">ResolveZero</span>
-            <span className="mt-0.5 block text-[10px] text-[var(--muted)]">Home DNS firewall</span>
-          </span>
+        <Link to="/" className="flex items-center gap-2.5 px-4 pb-6 pt-5">
+          <img src={logo} alt="" className="size-6 shrink-0" />
+          <span className="font-[var(--font-display)] text-[16px] font-semibold tracking-[-0.035em]">ResolveZero</span>
         </Link>
 
         <div className="mx-3 mb-5 flex items-center gap-2.5 rounded-[10px] border border-[var(--line)] bg-[var(--sage)] px-3 py-2.5">
