@@ -103,7 +103,7 @@ function LocalDnsPage() {
           <div>
             <h1 className="text-[30px] font-semibold tracking-[-0.045em]">Local DNS</h1>
             <p className="mt-1 text-[13px] text-[var(--muted)]">
-              {profileLabel} profile · answer <span className="font-mono">.lan</span> and split-horizon names before blocklists and upstream.
+              {profileLabel} profile · answer <span className="font-mono">.lan</span> names before blocklists and upstream.
             </p>
           </div>
         </div>
@@ -115,8 +115,9 @@ function LocalDnsPage() {
         </span>
         <div className="text-[12px] leading-5 text-[#3f4f75]">
           <p>
-            Exact names match only themselves. Use <span className="font-mono">*.home.lan</span> for wildcard subdomains — the
-            apex <span className="font-mono">home.lan</span> is not included.
+            Only names ending in <span className="font-mono">.lan</span> are accepted. Exact names match only themselves.
+            Use <span className="font-mono">*.home.lan</span> for wildcard subdomains — the apex{' '}
+            <span className="font-mono">home.lan</span> is not included.
           </p>
           <p className="mt-1">
             A/AAAA/CNAME answers can be comma-separated. Use new lines for multiple TXT values. Local records win before
@@ -147,6 +148,7 @@ function LocalDnsPage() {
             spellCheck={false}
             className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--accent)]"
           />
+          <p className="mt-1.5 text-[10px] text-[var(--muted)]">Must end in .lan.</p>
 
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div>

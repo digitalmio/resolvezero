@@ -68,6 +68,11 @@ function validateValue(type: ZoneRecordType, value: string): void {
 
 export function normalizeZoneInput(input: ZoneInput): LocalDnsZone {
   const domain = normalizeDomain(input?.domain);
+  const base = domain.startsWith("*.") ? domain.slice(2) : domain;
+  if (!base.endsWith(".lan")) {
+    throw new Error("Local DNS names must end in .lan, e.g. nas.lan or *.home.lan");
+  }
+
   const recordType = normalizeRecordType(input?.recordType);
 
   const rawValues = Array.isArray(input?.values) ? input.values : String(input?.values ?? "").split(/[,\n]/);
