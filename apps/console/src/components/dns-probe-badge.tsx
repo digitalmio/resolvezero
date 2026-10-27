@@ -103,7 +103,7 @@ export function DnsProbeBadge({ profileId }: { profileId: string }) {
       role="status"
       aria-live="polite"
       className={[
-        'flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium',
+        'flex h-8 items-center gap-2 rounded-full border px-3 text-[11px] font-medium',
         meta.className,
       ].join(' ')}
       title={

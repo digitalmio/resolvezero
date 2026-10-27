@@ -168,7 +168,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
           <div className="ml-auto flex items-center gap-2">
             {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
-            <span className="rz-pill hidden md:inline-flex">
+            <span className="hidden h-8 items-center gap-2 rounded-full border border-[var(--line)] bg-white px-3 text-[11px] font-medium text-[var(--muted)] md:inline-flex">
               <Activity size={12} className="text-[var(--green)]" />
               {queriesLabel} queries / 24h
             </span>
