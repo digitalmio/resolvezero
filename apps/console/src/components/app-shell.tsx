@@ -84,22 +84,19 @@ export function AppShell({ session }: { session: SessionUser | null }) {
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
       <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 shadow-[0_1px_3px_rgba(26,32,24,0.04)] backdrop-blur-xl sm:px-6">
-        <Link to="/" className="flex shrink-0 items-center gap-2.5">
-          <img src={logo} alt="" className="size-8 shrink-0 sm:size-9" />
-          <span className="font-[var(--font-display)] text-[18px] font-semibold tracking-[-0.04em] sm:text-[20px]">ResolveZero</span>
+        <Link to="/" aria-label="ResolveZero home" className="flex shrink-0 items-center">
+          <img src={logo} alt="" className="size-9 shrink-0 sm:size-10" />
         </Link>
 
-        <span className="hidden h-6 w-px bg-[var(--line)] md:block" />
-        <div className="hidden h-8 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--sage)] px-3 text-[11px] font-medium md:flex">
-          <span className="size-1.5 rounded-full bg-[var(--green)]" />
+        <div className="ml-1 hidden h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-[12px] font-medium text-[var(--ink)] shadow-[0_1px_2px_rgba(26,32,24,0.03)] transition-colors hover:bg-[var(--sage)] md:flex">
           <span className="max-w-[120px] truncate">{profileLabel}</span>
           <ChevronDown size={14} className="shrink-0 text-[var(--muted)]" />
         </div>
 
-        <div className="ml-2 hidden w-full max-w-[360px] items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--sage)] px-3 py-2 text-[12px] text-[var(--muted)] lg:flex">
+        <div className="absolute left-1/2 top-1/2 hidden w-full max-w-[420px] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px] text-[var(--muted)] shadow-[0_1px_2px_rgba(26,32,24,0.03)] lg:flex">
           <Search size={14} />
           <span>Search domains, rules, devices</span>
-          <kbd className="ml-auto flex items-center gap-0.5 rounded border border-[var(--line)] bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
+          <kbd className="ml-auto flex items-center gap-0.5 rounded border border-[var(--line)] bg-[var(--sage)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
             <Command size={10} /> K
           </kbd>
         </div>
