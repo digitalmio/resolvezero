@@ -147,7 +147,7 @@ function Overview() {
           </div>
           <div className="mt-4 flex items-center gap-5 text-[11px] text-[var(--muted)]">
             <span className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-[var(--lime)]" /> Queries
+              <span className="size-2 rounded-full bg-[var(--green)]" /> Queries
             </span>
             <span className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-[var(--accent)]" /> Blocked
@@ -496,8 +496,8 @@ function QueryChart({ data }: { data: { time: string; total: number; blocked: nu
         <AreaChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="rz-query-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--lime)" stopOpacity={0.18} />
-              <stop offset="100%" stopColor="var(--lime)" stopOpacity={0} />
+              <stop offset="0%" stopColor="var(--green)" stopOpacity={0.12} />
+              <stop offset="100%" stopColor="var(--green)" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 5" />
@@ -527,7 +527,7 @@ function QueryChart({ data }: { data: { time: string; total: number; blocked: nu
           <Area
             type="monotone"
             dataKey="total"
-            stroke="var(--lime)"
+            stroke="var(--green)"
             strokeWidth={1.8}
             fill="url(#rz-query-area)"
             dot={false}
