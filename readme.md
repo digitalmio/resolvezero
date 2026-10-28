@@ -174,7 +174,7 @@ The full set of options lives in [`.env.example`](.env.example). The important o
 
 - Every private console server function re-checks the session before reading tenant data.
 - Profiles are resolved by `owner_user_id`; there is no global “latest profile” fallback.
-- DoH tokens are compared as hashes and are never written to query logs.
+- DoH tokens are kept server-side and never written to query logs. Database access should be treated as credential-bearing until token-at-rest encryption lands.
 - Raw query logging can be disabled per profile. When disabled, that profile's queries are not added to raw logs or stats rollups.
 - UDP source addresses are spoofable. Use source-IP allowlists with that in mind.
 - **Before exposing an instance to the public internet, put rate limiting and abuse protection in front of the DNS and console ports.** In-app rate limiting is not implemented yet.

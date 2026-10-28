@@ -1,6 +1,18 @@
 import { encode, decode } from "dns-packet";
-const P = "55eee5e7-b98f-4091-b080-3def0ab477b9";
-const TOKEN = "e32c47d75e0845ce868c8ef32307fbd8";
+
+/**
+ * Usage:
+ *   node --env-file=.env node_modules/tsx/dist/cli.mjs apps/edge/scripts/probe-blocks.ts
+ *
+ * Requires PROBE_PROFILE_ID and PROBE_DOH_TOKEN. Never commit real values.
+ */
+const P = process.env.PROBE_PROFILE_ID?.trim();
+const TOKEN = process.env.PROBE_DOH_TOKEN?.trim();
+
+if (!P || !TOKEN) {
+  throw new Error("PROBE_PROFILE_ID and PROBE_DOH_TOKEN must be set (see .env.example)");
+}
+
 const probe = async (name: string) => {
   const q = encode({ id: 1, type: "query", flags: 0x0100, questions: [{ name, type: "A" }] });
   const dns = Buffer.from(q).toString("base64url");

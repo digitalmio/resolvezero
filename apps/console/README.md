@@ -1,6 +1,6 @@
 # ResolveZero Console
 
-Design spike for the new ResolveZero control plane.
+TanStack Start console for ResolveZero — profiles, rules, local DNS, query logs, and analytics.
 
 ## Stack
 
@@ -11,26 +11,24 @@ Design spike for the new ResolveZero control plane.
 - Tailwind CSS 4
 - lucide-react
 
-No Hono in this app. The edge keeps its own Hono HTTP app; this is the control-plane replacement.
+The edge keeps its own Hono HTTP app; this app is the control-plane UI.
 
 ## Status
 
 Implemented:
 
-- App shell: sidebar, topbar, profile switcher, status pills
-- Brand assets: `src/assets/logo-square.svg`
-- Overview screen with status hero, live traffic, KPIs, query chart, top blocked domains, devices, recent changes
-- Rules screen backed by Postgres rules/zones/blocklists, with action tabs and summary cards
+- GitHub OAuth via Better Auth, a root route guard, and session-scoped server functions
+- Owner-scoped profile selection, a real profile switcher, and `rz_profile_id` preference cookie
+- Overview with live traffic, KPIs, query chart, top blocked domains, devices, and Local DNS summary
+- Rules screen backed by Postgres rules, zones, and blocklist subscriptions
 - Devices screen backed by stats rollups: DoH tags and UDP source-IP counts
-- Blocklists screen backed by `profile_blocklists`
+- Local DNS CRUD for `.lan` records (A/AAAA/CNAME/TXT, exact and wildcard)
+- Blocklists screen backed by `profile_blocklists` (read-only subscription/status view)
 - Analytics screen backed by 24h/7d/30d `stats_hourly` rollups
 - Logs screen backed by the edge log archive (latest 100 entries)
 - Settings screen backed by profile, upstream, linked IPs, and capacity counts
-- Responsive layout foundation
-- TanStack Query provider
-- Server-side `getOverview` querying Postgres `stats_hourly`
-- Loading and error states for the overview instead of dummy data flashes
-- Server-side `getRulesData` for explicit rules, zones, and blocklist subscriptions
+- Public `/waitlist` placeholder for hosted registration
+- Loading and error states instead of dummy data flashes
 - "This device is using ResolveZero DNS" probe in the topbar. The browser
   looks up a random `<nonce>.probe.resolvezero.com` name (no public record);
   the edge records it only after profile/source-IP auth. No wildcard TLS
@@ -38,32 +36,33 @@ Implemented:
 
 Not implemented yet:
 
-- better-auth / login
 - oRPC router
-- public API
-- favicon/app icon variants
+- Public `/v1` OpenAPI surface and API keys
+- Favicon/app icon variants
+- Automated console tests
 
 ## Run
 
-The overview reads real Postgres rollups. In development it automatically
-loads the repo-root `.env`; you can also set `DATABASE_URL` explicitly (and
-optionally `DASHBOARD_PROFILE_ID`) before starting:
+The app loads the repo-root `.env` automatically. It expects:
 
-```bash
-DATABASE_URL=postgres://... pnpm --filter @resolvezero/console dev
+```sh
+DATABASE_URL=postgres://...
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_SECRET=<openssl rand -base64 32>
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
 ```
 
-Without a reachable database, the overview shows a retryable error instead of dummy values.
+Register the GitHub callback as `http://localhost:3000/api/auth/callback/github`.
 
-Build:
+```bash
+pnpm --filter @resolvezero/console dev
+```
+
+Build and typecheck:
 
 ```bash
 pnpm --filter @resolvezero/console build
-```
-
-Typecheck:
-
-```bash
 pnpm --filter @resolvezero/console typecheck
 ```
 
@@ -76,8 +75,7 @@ pnpm --filter @resolvezero/console typecheck
 
 ## Next
 
-1. Wire better-auth into TanStack Start.
-2. Add oRPC v1 contracts + internal `/rpc` endpoint.
-3. Add public `/v1` OpenAPI surface and API keys.
-4. Replace the remaining static Rules/Devices/Logs data with real edge/DB queries.
-5. Add authentication before exposing server functions publicly.
+1. Add console security regression tests for session guards, owner scoping, profile selection, and validators.
+2. Add oRPC v1 contracts and an internal `/rpc` endpoint.
+3. Add the public `/v1` OpenAPI surface and API keys.
+4. Add first-run onboarding after the hosted registration flow is ready.
