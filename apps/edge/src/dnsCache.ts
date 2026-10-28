@@ -1,12 +1,14 @@
 import { LRUCache } from "lru-cache";
 import { decode, encode, type Packet } from "dns-packet";
+import { ecsKey } from "./dnsKey";
 
 /**
  * LRU cache for upstream DNS responses — the ONLY evictable state
  * (readme.md §2: policies must never be evicted, this must always evict).
  *
- * Key: question (name|type|class) + upstream + EDNS DO/CD. Answers vary by
- * provider and by DNSSEC intent, so those must not share entries.
+ * Key: question (name|type|class) + upstream + EDNS DO/CD/Client-Subnet.
+ * Answers vary by provider, DNSSEC intent, and ECS scope, so those must not
+ * share entries.
  *
  * Stored responses are normalized before caching:
  *  - the OPT pseudo-record is stripped (never replay a provider's EDNS
@@ -168,7 +170,7 @@ function queryMeta(wire: Uint8Array, upstream?: string | null): QueryMeta | unde
   const doBit = hasDoBit(packet);
   const cdBit = (((packet.flags ?? 0) & 0x0010) !== 0);
   return {
-    key: `${name}|${q.type}|${cls}|${doBit ? "do" : "nodo"}|${cdBit ? "cd" : "nocd"}|${upstream ?? "default"}`,
+    key: `${name}|${q.type}|${cls}|${doBit ? "do" : "nodo"}|${cdBit ? "cd" : "nocd"}|${ecsKey(packet)}|${upstream ?? "default"}`,
     rawName,
     doBit,
     cdBit,

@@ -374,6 +374,7 @@ describe("zone overrides", () => {
       profiles,
       [
         { profileId: ZP, domain: "nas.lan", recordType: "A", values: ["192.168.1.24", "192.168.1.25"], ttl: 120 },
+        { profileId: ZP, domain: "www.lan", recordType: "CNAME", values: ["nas.lan"], ttl: 60 },
         { profileId: ZP, domain: "printer.home.example.com", recordType: "A", values: ["10.0.0.5"], ttl: 300 },
       ],
     );
@@ -393,6 +394,33 @@ describe("zone overrides", () => {
     expect(answers.map((a: { data: string }) => a.data).sort()).toEqual(["192.168.1.24", "192.168.1.25"]);
     expect(answers[0]?.ttl).toBe(120);
     expect(mock.calls.filter((c) => c === "nas.lan")).toHaveLength(0); // never hit upstream
+  });
+
+  test("local name with no matching type answers NODATA without upstream", async () => {
+    const mock = mockUpstream({});
+    const res = await zoneApp(mock.upstream).request(`/v1/${ZP}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("nas.lan", "AAAA"),
+    });
+
+    const packet = decode(Buffer.from(await (res as Response).arrayBuffer()));
+    expect((packet as any).answers ?? []).toHaveLength(0);
+    expect((packet.flags ?? 0) & 0xf).toBe(0); // NOERROR, not NXDOMAIN
+    expect(mock.calls).not.toContain("nas.lan");
+  });
+
+  test("A query for a local CNAME returns the CNAME answer", async () => {
+    const mock = mockUpstream({});
+    const res = await zoneApp(mock.upstream).request(`/v1/${ZP}`, {
+      method: "POST",
+      headers: { "content-type": "application/dns-message" },
+      body: wireQuery("www.lan", "A"),
+    });
+
+    const packet = decode(Buffer.from(await (res as Response).arrayBuffer()));
+    expect((packet as any).answers?.[0]).toMatchObject({ type: "CNAME", data: "nas.lan" });
+    expect(mock.calls).not.toContain("www.lan");
   });
 
   test("zone override WINS over a blocklist rule on the same domain", async () => {

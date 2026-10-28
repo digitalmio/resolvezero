@@ -134,6 +134,27 @@ describe("zone overrides", () => {
     );
     expect(store.resolveZone(ZP, "nas.lan", "A")).toEqual({ values: ["192.168.1.24"], ttl: 60, recordType: "A" });
     expect(store.resolveZone(ZP, "nas.lan", "AAAA")).toBeUndefined(); // per-type
+    expect(store.hasZoneName(ZP, "nas.lan")).toBe(true);
+    expect(store.hasZoneName(ZP, "other.lan")).toBe(false);
+  });
+
+  test("A query for a local CNAME returns the CNAME, and unknown types get local NODATA", () => {
+    const store = new RuleStore();
+    store.replaceAll(
+      [], [], zp,
+      [{ profileId: ZP, domain: "www.lan", recordType: "CNAME", values: ["nas.lan"], ttl: 60 }],
+    );
+    expect(store.resolveZone(ZP, "www.lan", "A")).toEqual({
+      values: ["nas.lan"],
+      ttl: 60,
+      recordType: "CNAME",
+    });
+    expect(store.resolveZone(ZP, "www.lan", "CNAME")).toEqual({
+      values: ["nas.lan"],
+      ttl: 60,
+      recordType: "CNAME",
+    });
+    expect(store.hasZoneName(ZP, "www.lan")).toBe(true);
   });
 
   test("*. wildcard zones match subdomains, not the base", () => {

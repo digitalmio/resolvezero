@@ -1,6 +1,7 @@
 import { decode, type Packet } from "dns-packet";
 import { allowPrivateTargets, fetchWithSafeRedirects } from "./netGuard";
 import { readBytesBounded } from "./body";
+import { ecsKey } from "./dnsKey";
 
 /**
  * Upstream DoH presets (readme §2). Verified against Bun's fetch:
@@ -150,7 +151,7 @@ function flightKey(wire: Uint8Array, finalUrl: string): string | undefined {
   const doBit = typeof opt?.flags === "number" && (opt.flags & 0x8000) !== 0;
   const cdBit = ((packet.flags ?? 0) & 0x0010) !== 0;
   const name = q.name.toLowerCase().replace(/\.+$/, "");
-  return `${finalUrl}|${name}|${q.type}|${q.class ?? "IN"}|${doBit ? "do" : "nodo"}|${cdBit ? "cd" : "nocd"}`;
+  return `${finalUrl}|${name}|${q.type}|${q.class ?? "IN"}|${doBit ? "do" : "nodo"}|${cdBit ? "cd" : "nocd"}|${ecsKey(packet)}`;
 }
 
 function patchTransactionId(result: UpstreamResult, query: Uint8Array): UpstreamResult {

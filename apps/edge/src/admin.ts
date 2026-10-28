@@ -7,26 +7,13 @@ import type { RuleStore } from "./ruleStore";
 import { moduleLogger } from "./logger";
 import { normalizeIp } from "./wire";
 import { readTextBounded } from "./body";
+import { createRateLimiter } from "./limits";
 
 const log = moduleLogger("admin");
 
-/** Tiny in-memory rate limiter (per key, fixed window). */
-function createRateLimiter(limit: number, windowMs: number) {
-  const hits = new Map<string, { count: number; resetAt: number }>();
-  return (key: string): boolean => {
-    const now = Date.now();
-    const cur = hits.get(key);
-    if (!cur || now > cur.resetAt) {
-      hits.set(key, { count: 1, resetAt: now + windowMs });
-      return true;
-    }
-    cur.count += 1;
-    return cur.count <= limit;
-  };
-}
-
 const updateIpLimiter = createRateLimiter(30, 60_000);
 const syncLimiter = createRateLimiter(10, 60_000);
+const syncGlobalLimiter = createRateLimiter(6, 60_000);
 const purgeLimiter = createRateLimiter(10, 60_000);
 
 const PURGE_TYPES = new Set([
@@ -178,6 +165,9 @@ export function createAdminApp(deps: AdminDeps) {
     const caller = c.req.header("fly-client-ip") ?? "unknown";
     if (!syncLimiter(`${caller}:${c.req.param("profileId")}`)) {
       return c.json({ error: "rate limited" }, 429);
+    }
+    if (!syncGlobalLimiter("global")) {
+      return c.json({ error: "global sync budget exhausted" }, 429);
     }
     void deps.blocklists?.syncNow();
     return c.json({ ok: true, msg: "re-sync kicked" });

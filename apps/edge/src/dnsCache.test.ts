@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { decode, encode } from "dns-packet";
 import { DnsCache } from "./dnsCache";
 
-function query(name: string, id = 1, opts: { opt?: boolean; doBit?: boolean; cls?: string } = {}): Uint8Array {
+function query(name: string, id = 1, opts: { opt?: boolean; doBit?: boolean; cls?: string; ecs?: string } = {}): Uint8Array {
   return new Uint8Array(
     encode({
       id,
@@ -19,7 +19,18 @@ function query(name: string, id = 1, opts: { opt?: boolean; doBit?: boolean; cls
                 extendedRcode: 0,
                 ednsVersion: 0,
                 flags: opts.doBit ? 0x8000 : 0,
-                options: [],
+                options: opts.ecs
+                  ? [
+                      {
+                        code: 8,
+                        type: "CLIENT_SUBNET",
+                        family: 1,
+                        sourcePrefixLength: 24,
+                        scopePrefixLength: 0,
+                        ip: opts.ecs,
+                      },
+                    ]
+                  : [],
               },
             ],
           }
@@ -83,6 +94,14 @@ describe("DnsCache", () => {
     expect(cache.get(query("example.com", 1, { opt: true, doBit: true }))).toBeDefined();
     expect(cache.get(query("example.com", 1, { opt: true, doBit: false }))).toBeUndefined();
     expect(cache.get(query("example.com", 1, { cls: "CH" }))).toBeUndefined();
+  });
+
+  test("never shares entries across EDNS Client Subnet values", () => {
+    const cache = new DnsCache();
+    cache.set(query("geo.example", 1, { opt: true, ecs: "203.0.113.0" }), response("geo.example"));
+    expect(cache.get(query("geo.example", 2, { opt: true, ecs: "203.0.113.0" }))).toBeDefined();
+    expect(cache.get(query("geo.example", 3, { opt: true, ecs: "198.51.100.0" }))).toBeUndefined();
+    expect(cache.get(query("geo.example", 4, { opt: true }))).toBeUndefined();
   });
 
   test("strips OPT from the cached response", () => {

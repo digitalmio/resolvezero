@@ -7,12 +7,17 @@ import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 import { fetchWithSafeRedirects } from "./netGuard";
 import { readTextBounded } from "./body";
+import { positiveInt } from "./limits";
 
 const log = moduleLogger("blocklists");
 
 /** Hard cap per list (bytes) — protects edge memory from runaway sources. */
 const MAX_LIST_BYTES = 30 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 60_000;
+const MAX_UNIQUE_LISTS = positiveInt(process.env.BLOCKLIST_MAX_LISTS, 256);
+const MAX_LISTS_PER_PROFILE = positiveInt(process.env.BLOCKLIST_MAX_LISTS_PER_PROFILE, 64);
+const MAX_TOTAL_ENTRIES = positiveInt(process.env.BLOCKLIST_MAX_TOTAL_ENTRIES, 2_000_000);
+const CYCLE_DEADLINE_MS = positiveInt(process.env.BLOCKLIST_CYCLE_DEADLINE_MS, 180_000);
 
 export interface BlocklistDeps {
   store: RuleStore;
@@ -71,6 +76,7 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
     syncing = true;
     const cycleFailed: string[] = [];
     let cycleError: string | null = null;
+    let cycleDeadline = Number.POSITIVE_INFINITY;
     try {
       const rows = (await db
         .select({
@@ -92,12 +98,46 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
         enabledByProfile.get(row.profileId)!.push(row);
       }
 
+      const markFailed = async (url: string, message: string): Promise<void> => {
+        cycleFailed.push(url);
+        for (const profileRowGroups of enabledByProfile.values()) {
+          for (const row of profileRowGroups) {
+            if (row.url !== url) continue;
+            await writeStatus(row.id, `error: ${message.slice(0, 42)}`, 0).catch((statusErr) =>
+              log.warn({ err: statusErr }, "blocklist status write failed"),
+            );
+          }
+        }
+      };
+
+      const orderedUrls = [...uniqueUrls.values()];
+      if (orderedUrls.length > MAX_UNIQUE_LISTS) {
+        log.warn(
+          { total: orderedUrls.length, cap: MAX_UNIQUE_LISTS },
+          "blocklist catalog exceeds unique-list budget; extra lists skipped",
+        );
+        for (const { url } of orderedUrls.slice(MAX_UNIQUE_LISTS)) {
+          await markFailed(url, "global list budget exceeded");
+        }
+      }
+      const cycleUrls = orderedUrls.slice(0, MAX_UNIQUE_LISTS);
+      cycleDeadline = Date.now() + CYCLE_DEADLINE_MS;
+      let totalEntries = 0;
+
       // 1) catalog refresh — each URL fetched + parsed once.
       // SEQUENTIAL on purpose: parse+build peak-allocates tens of MB per
       // big list (raw text + string sets + fp arrays); running them in
       // parallel OOM'd the 256MB VMs at boot (multiplied transients).
       let cacheFlushed = false;
-      for (const { url, format } of [...uniqueUrls.values()]) {
+      for (const [index, { url, format }] of cycleUrls.entries()) {
+        if (Date.now() > cycleDeadline) {
+          log.error({ url, remaining: cycleUrls.length - index }, "blocklist cycle deadline reached; skipping remaining lists");
+          await markFailed(url, "cycle deadline exceeded");
+          for (const rest of cycleUrls.slice(index + 1)) {
+            await markFailed(rest.url, "cycle deadline exceeded");
+          }
+          break;
+        }
         try {
           const text = await fetchListText(url);
           const parsed = parseList(text, format);
@@ -105,6 +145,10 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
           for (const d of parsed.blocks) builder.add(d, "block");
           for (const d of parsed.allows) builder.add(d, "allow");
           const entryCount = parsed.blocks.size + parsed.allows.size;
+          if (totalEntries + entryCount > MAX_TOTAL_ENTRIES) {
+            throw new Error(`global rule budget exceeded (${totalEntries + entryCount} > ${MAX_TOTAL_ENTRIES})`);
+          }
+          totalEntries += entryCount;
           const table = builder.seal(entryCount);
           const changed = deps.store.upsertList(url, table);
           if (changed) cacheFlushed = true; // flush flag handled below
@@ -121,17 +165,8 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          cycleFailed.push(url);
           log.warn({ url, err: msg }, "list fetch failed — keeping previous table");
-          for (const profileRowGroups of enabledByProfile.values()) {
-            for (const row of profileRowGroups) {
-              if (row.url === url) {
-                await writeStatus(row.id, `error: ${msg.slice(0, 42)}`, 0).catch((statusErr) =>
-                  log.warn({ err: statusErr, url }, "blocklist status write failed"),
-                );
-              }
-            }
-          }
+          await markFailed(url, msg);
           // the subscription wiring below drops URLs with no table only
           // when the catalog ALSO lacks one (crash-reboot case) — a
           // previously-good table remains in force until de-listed.
@@ -144,8 +179,16 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
       //    of lists must not delete tables another profile still references.
       for (const [profileId, rowsForProfile] of enabledByProfile) {
         const listIdByUrl = new Map(rowsForProfile.map((row) => [row.url, row.id]));
-        const subscriptions = [...new Set(rowsForProfile.map((r) => r.url))]
-          .filter((url) => deps.store.hasList(url))
+        const uniqueForProfile = [...new Set(rowsForProfile.map((r) => r.url))]
+          .filter((url) => deps.store.hasList(url));
+        if (uniqueForProfile.length > MAX_LISTS_PER_PROFILE) {
+          log.warn(
+            { profileId, total: uniqueForProfile.length, cap: MAX_LISTS_PER_PROFILE },
+            "profile blocklist subscription cap reached; extra lists ignored",
+          );
+        }
+        const subscriptions = uniqueForProfile
+          .slice(0, MAX_LISTS_PER_PROFILE)
           .map((url) => ({ url, listId: listIdByUrl.get(url) }));
         const changed = deps.store.setSubscriptions(profileId, subscriptions, { prune: false });
         if (changed && !fetchedAnyChanged) log.info({ profileId, urls: subscriptions.length }, "subscriptions rewired");

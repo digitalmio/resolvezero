@@ -47,6 +47,17 @@ export function sumTotals(rows: { totalQueries: number; blocked: number; rttSumM
   };
 }
 
+/** Exact short-window totals from minute rows (no hourly interval skew). */
+export function sumMinuteTotals(rows: { totalQueries: number; blocked: number }[]) {
+  let total = 0;
+  let blocked = 0;
+  for (const r of rows) {
+    total += r.totalQueries;
+    blocked += r.blocked;
+  }
+  return { total, blocked };
+}
+
 export function mergeTop(lists: StatsTopEntry[][], keyName: "domain" | "clientIp" | "device", cap: number): StatsTopEntry[] {
   const counts = new Map<string, number>();
   for (const list of lists) {
@@ -131,19 +142,24 @@ export function createStatsApp(deps: StatsDeps) {
 
     try {
       if (cfg.source === "minute") {
-        // Short ranges: points from stats_minute; tops from the hourly rows
-        // covering the same window (bounded to whatever the table has).
+        // Short ranges: totals and points come from stats_minute so the
+        // headline numbers exactly match the chart. Top lists and average RTT
+        // are still hourly-granular; include the whole first overlapping hour
+        // instead of filtering it out at the hour boundary.
         const minuteRows = await db
           .select({ minute: statsMinute.minute, totalQueries: statsMinute.totalQueries, blocked: statsMinute.blocked })
           .from(statsMinute)
           .where(and(eq(statsMinute.profileId, profileId), gte(statsMinute.minute, since)))
           .orderBy(asc(statsMinute.minute));
 
+        const sinceHour = new Date(Math.floor(since.getTime() / 3_600_000) * 3_600_000);
         hourlyForTops = await db.select().from(statsHourly).where(
-          and(eq(statsHourly.profileId, profileId), gte(statsHourly.hour, since)),
+          and(eq(statsHourly.profileId, profileId), gte(statsHourly.hour, sinceHour)),
         );
 
-        totals = sumTotals(hourlyForTops);
+        const exact = sumMinuteTotals(minuteRows);
+        const hourly = sumTotals(hourlyForTops);
+        totals = { ...exact, avgRttMs: hourly.avgRttMs };
         series = buildSeries(
           minuteRows.map((r) => ({ t: r.minute.getTime(), total: r.totalQueries, blocked: r.blocked })),
           cfg.bucketMs,

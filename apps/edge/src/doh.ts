@@ -4,6 +4,7 @@ import {
   RESPONSE,
   SINKHOLE_TTL,
   decodeQuestion,
+  noDataResponse,
   nxdomainResponse,
   sinkholeResponse,
   servfailResponse,
@@ -17,6 +18,7 @@ import type { DnsCache } from "./dnsCache";
 import type { Recorder } from "./metrics";
 import { localNameAnswer, type ZoneRecordType } from "@resolvezero/shared";
 import { readBytesBounded } from "./body";
+import { createRateLimiter, positiveInt, Semaphore } from "./limits";
 
 export type QueryLogReason = "manual" | "blocklist" | "zone";
 
@@ -66,8 +68,13 @@ export interface DohAppDeps {
 /** Device tag charset: NextDNS-style url-safe short names. */
 const DEVICE_RE = /^[a-zA-Z0-9_-]{1,32}$/;
 
+const DOH_RATE_LIMIT_PER_MIN = positiveInt(process.env.DOH_RATE_LIMIT_PER_MIN, 600);
+const DOH_MAX_INFLIGHT = positiveInt(process.env.DOH_MAX_INFLIGHT, 512);
+
 export function createDohApp(deps: DohAppDeps) {
   const app = new Hono().basePath("/v1");
+  const rateLimit = createRateLimiter(DOH_RATE_LIMIT_PER_MIN, 60_000, 20_000);
+  const upstreamSlots = new Semaphore(DOH_MAX_INFLIGHT);
 
   app.use("*", async (_c, next) => {
     const started = performance.now();
@@ -148,6 +155,10 @@ export function createDohApp(deps: DohAppDeps) {
     }
 
     const clientAddr = clientIp(c);
+    if (!rateLimit(clientAddr ?? "unknown")) {
+      deps.recorder?.recordDrop("doh_rate_limited");
+      return c.body(null, 429);
+    }
 
     // ---- Resolver-presence canary ----
     // A random subdomain of PROBE_DOMAIN is only resolvable by this edge.
@@ -192,6 +203,24 @@ export function createDohApp(deps: DohAppDeps) {
           "content-type": "application/dns-message",
         });
       }
+    }
+
+    // ---- Local name exists but not for this type: local NODATA ----
+    if (deps.store.hasZoneName(profileId, question.name)) {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: clientAddr,
+        device,
+        reason: "zone",
+        transport: "doh",
+      });
+      deps.recorder?.recordQuery("forward");
+      return c.body(noDataResponse(question), 200, {
+        "content-type": "application/dns-message",
+      });
     }
 
     // ---- Rule check (explicit user rules beat remote lists) ----
@@ -280,6 +309,12 @@ export function createDohApp(deps: DohAppDeps) {
 
     // ---- Forward upstream over DoH (per-profile upstream choice) ----
     deps.recorder?.recordCacheMiss("doh");
+    if (!upstreamSlots.tryAcquire()) {
+      deps.recorder?.recordDrop("doh_inflight_limit");
+      return c.body(servfailResponse(question), 200, {
+        "content-type": "application/dns-message",
+      });
+    }
     let rttMs: number;
     let responseWire: Uint8Array<ArrayBuffer>;
     try {
@@ -305,6 +340,8 @@ export function createDohApp(deps: DohAppDeps) {
       return c.body(servfailResponse(question), 200, {
         "content-type": "application/dns-message",
       });
+    } finally {
+      upstreamSlots.release();
     }
 
     deps.dnsCache.set(queryWire, responseWire, upstreamUrl);

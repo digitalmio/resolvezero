@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { RANGE_CONFIG, buildSeries, mergeTop, sumTotals } from "./stats";
+import { RANGE_CONFIG, buildSeries, mergeTop, sumMinuteTotals, sumTotals } from "./stats";
 import type { StatsTopEntry } from "@resolvezero/db/schema";
 
 const MIN = 60_000;
@@ -70,6 +70,13 @@ describe("headline aggregates", () => {
     expect(t.total).toBe(15);
     expect(t.blocked).toBe(3); // post fix: 2+1=3 (bug in first assertion was mine)
     expect(t.avgRttMs).toBe(120); // (500+100)/(5+0)
+  });
+
+  test("sumMinuteTotals is exact for short windows", () => {
+    expect(sumMinuteTotals([
+      { totalQueries: 12, blocked: 2 },
+      { totalQueries: 3, blocked: 1 },
+    ])).toEqual({ total: 15, blocked: 3 });
   });
 
   test("mergeTop aggregates across hourly rows and sorts desc", () => {

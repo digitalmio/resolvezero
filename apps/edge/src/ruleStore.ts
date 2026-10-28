@@ -379,9 +379,45 @@ export class RuleStore {
    * Zone override lookup: exact domain first; then `*.` wildcard zones
    * matched suffix-style (a wildcard "*.home.example.com" TXT matches
    * "print.home.example.com" but not "home.example.com" itself — authored
-   * explicitly if needed). Zone hits short-circuit BEFORE policy/upstream.
+   * explicitly if needed). CNAME is returned for A/AAAA/TXT misses so local
+   * aliases behave like normal DNS. Zone hits short-circuit BEFORE
+   * policy/upstream.
    */
   resolveZone(profileId: string, domain: string, recordType: ZoneRecordType): ZoneAnswer | undefined {
+    const direct = this.findZone(profileId, domain, recordType);
+    if (direct) return direct;
+    if (recordType === "CNAME") return undefined;
+    return this.findZone(profileId, domain, "CNAME");
+  }
+
+  /** Does this local name exist for any record type? Used for local NODATA. */
+  hasZoneName(profileId: string, domain: string): boolean {
+    const target = domain.toLowerCase();
+    const exact = this.zones.get(profileId);
+    if (exact) {
+      for (const key of exact.keys()) {
+        if (key.startsWith(`${target}|`)) return true;
+      }
+    }
+
+    const wildcards = this.wildcardZones.get(profileId);
+    if (wildcards?.size) {
+      const labels = target.split(".");
+      for (let i = 1; i < labels.length; i++) {
+        const suffix = labels.slice(i).join(".");
+        for (const key of wildcards.keys()) {
+          if (key.startsWith(`${suffix}|`)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private findZone(
+    profileId: string,
+    domain: string,
+    recordType: ZoneRecordType,
+  ): ZoneAnswer | undefined {
     const exact = this.zones.get(profileId)?.get(`${domain.toLowerCase()}|${recordType}`);
     if (exact) {
       return { values: exact.values, ttl: exact.ttl, recordType };

@@ -8,6 +8,7 @@ import type { RuleStore } from "./ruleStore";
 import {
   UDP_MAX_PAYLOAD,
   decodeQuestion,
+  noDataResponse,
   normalizeIp,
   nxdomainResponse,
   sinkholeResponse,
@@ -19,17 +20,24 @@ import {
 import { moduleLogger } from "./logger";
 import { localNameAnswer } from "@resolvezero/shared";
 import { matchProbeNonce } from "./probe";
+import { createRateLimiter, positiveInt, Semaphore } from "./limits";
 
 const log = moduleLogger("dns53");
 
 const TCP_MAX_BUFFER_BYTES = Math.max(4096, Number(process.env.TCP_MAX_BUFFER_BYTES ?? 65_536) || 65_536);
 const TCP_IDLE_TIMEOUT_MS = Math.max(5_000, Number(process.env.TCP_IDLE_TIMEOUT_MS ?? 30_000) || 30_000);
+const TCP_MAX_LIFETIME_MS = positiveInt(process.env.TCP_MAX_LIFETIME_MS, 120_000);
 const TCP_MAX_CONNECTIONS = Math.max(1, Number(process.env.TCP_MAX_CONNECTIONS ?? 512) || 512);
+const TCP_MAX_CONNECTIONS_PER_SOURCE = positiveInt(process.env.TCP_MAX_CONNECTIONS_PER_SOURCE, 8);
+const TCP_MAX_INFLIGHT = positiveInt(process.env.TCP_MAX_INFLIGHT, 128);
+const UDP_RATE_LIMIT_PER_MIN = positiveInt(process.env.UDP_RATE_LIMIT_PER_MIN, 600);
+const UDP_MAX_INFLIGHT = positiveInt(process.env.UDP_MAX_INFLIGHT, 1024);
 
 interface TcpState {
   buffer: Uint8Array;
   headerParsed: boolean;
   sourceIp: string;
+  counted: boolean;
 }
 
 export interface Dns53Deps {
@@ -97,6 +105,10 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   const host = deps.host ?? process.env.UDP_HOST ?? "fly-global-services";
   const port = deps.port ?? Number(process.env.UDP_PORT ?? 53);
   const tcpStates = new WeakMap<object, TcpState>();
+  const udpRateLimit = createRateLimiter(UDP_RATE_LIMIT_PER_MIN, 60_000, 20_000);
+  const udpSlots = new Semaphore(UDP_MAX_INFLIGHT);
+  const tcpSlots = new Semaphore(TCP_MAX_INFLIGHT);
+  const tcpSourceCounts = new Map<string, number>();
 
   /** Refresh a cached entry before it expires (no client-visible latency). */
   const refresh = async (queryWire: Uint8Array, upstreamUrl?: string | null): Promise<void> => {
@@ -121,7 +133,16 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     udp.on("error", (err) => log.error({ err }, "udp socket error"));
     udp.on("message", (data, rinfo) => {
       const started = performance.now();
-      void handleUdp(new Uint8Array(data), normalizeIp(rinfo.address))
+      const sourceIp = normalizeIp(rinfo.address);
+      if (!udpRateLimit(sourceIp)) {
+        deps.recorder?.recordDrop("udp_rate_limited");
+        return;
+      }
+      if (!udpSlots.tryAcquire()) {
+        deps.recorder?.recordDrop("udp_inflight_limit");
+        return;
+      }
+      void handleUdp(new Uint8Array(data), sourceIp)
         .then((reply) => {
           if (!reply) return;
           udp!.send(reply, rinfo.port, rinfo.address, (err) => {
@@ -129,7 +150,10 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
           });
         })
         .catch((err) => log.error({ err }, "udp handler failed"))
-        .finally(() => deps.recorder?.recordDuration("udp", performance.now() - started));
+        .finally(() => {
+          udpSlots.release();
+          deps.recorder?.recordDuration("udp", performance.now() - started);
+        });
     });
     log.info({ host, port }, "UDP 53 listening");
   } catch (err) {
@@ -145,13 +169,27 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     const tcpHost = process.env.TCP_HOST ?? (host === "fly-global-services" ? "0.0.0.0" : host);
     try {
       tcp = net.createServer((socket) => {
+        const deadline = setTimeout(() => {
+          log.warn({ lifetimeMs: TCP_MAX_LIFETIME_MS }, "closing long-lived TCP DNS connection");
+          socket.destroy();
+        }, TCP_MAX_LIFETIME_MS);
+        deadline.unref?.();
         socket.setTimeout(TCP_IDLE_TIMEOUT_MS, () => {
           log.warn({ timeoutMs: TCP_IDLE_TIMEOUT_MS }, "closing idle TCP DNS connection");
           socket.destroy();
         });
         socket.on("data", (chunk) => tcpData(socket, new Uint8Array(chunk)));
         socket.on("error", (err) => log.warn({ err }, "tcp socket error"));
-        socket.on("close", () => tcpStates.delete(socket));
+        socket.on("close", () => {
+          clearTimeout(deadline);
+          const state = tcpStates.get(socket);
+          if (state?.counted) {
+            const current = tcpSourceCounts.get(state.sourceIp) ?? 0;
+            if (current <= 1) tcpSourceCounts.delete(state.sourceIp);
+            else tcpSourceCounts.set(state.sourceIp, current - 1);
+          }
+          tcpStates.delete(socket);
+        });
       });
       tcp.maxConnections = TCP_MAX_CONNECTIONS;
       await new Promise<void>((resolve, reject) => {
@@ -207,6 +245,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
         buffer: new Uint8Array(0),
         headerParsed: false,
         sourceIp: normalizeIp(socket.remoteAddress ?? ""),
+        counted: false,
       };
       tcpStates.set(socket, state);
     }
@@ -234,6 +273,18 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       state.headerParsed = true;
     }
 
+    if (!state.counted) {
+      const active = tcpSourceCounts.get(state.sourceIp) ?? 0;
+      if (active >= TCP_MAX_CONNECTIONS_PER_SOURCE) {
+        log.warn({ sourceIp: state.sourceIp, active }, "closing TCP DNS connection over per-source cap");
+        socket.destroy();
+        return;
+      }
+      if (tcpSourceCounts.size > 10_000) tcpSourceCounts.clear();
+      tcpSourceCounts.set(state.sourceIp, active + 1);
+      state.counted = true;
+    }
+
     // Process every complete DNS frame in the buffer.
     for (;;) {
       if (state.buffer.length < 2) return;
@@ -248,6 +299,11 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       state.buffer = state.buffer.slice(2 + expected);
       const sourceIp = state.sourceIp;
       const started = performance.now();
+      if (!tcpSlots.tryAcquire()) {
+        deps.recorder?.recordDrop("tcp_inflight_limit");
+        socket.destroy();
+        return;
+      }
       void handlePacket(wire, sourceIp, "tcp")
         .then((reply) => {
           if (!reply) return;
@@ -263,7 +319,10 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
           socket.write(frame);
         })
         .catch((err) => log.error({ err }, "tcp handler failed"))
-        .finally(() => deps.recorder?.recordDuration("tcp", performance.now() - started));
+        .finally(() => {
+          tcpSlots.release();
+          deps.recorder?.recordDuration("tcp", performance.now() - started);
+        });
     }
   }
 
@@ -324,6 +383,22 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       } catch {
         return servfailResponse(question);
       }
+    }
+
+    // 4b. Local name exists but not for this type: local NODATA.
+    if (deps.store.hasZoneName(profileId, question.name)) {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        reason: "zone",
+        transport,
+      });
+      deps.recorder?.recordQuery("forward");
+      return noDataResponse(question);
     }
 
     // 4. Blocklist (explicit rules first, then remote subscriptions w/ @@ allow precedence)

@@ -1,4 +1,4 @@
-import { gzipSync } from "node:zlib";
+import { gzip as gzipCallback } from "node:zlib";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -8,8 +8,14 @@ import {
 } from "@aws-sdk/client-s3";
 import { moduleLogger } from "../logger";
 import type { QueryLogRow } from "../batcher";
+import { positiveInt } from "../limits";
 
 const log = moduleLogger("s3sink");
+
+// Best-effort archive budgets. Raw logs are allowed to drop under pressure;
+// DNS resolution and rollups must keep moving.
+const MAX_STAGED_BYTES = positiveInt(process.env.S3_MAX_STAGED_BYTES, 64 * 1024 * 1024);
+const MAX_PENDING_BYTES = positiveInt(process.env.S3_MAX_PENDING_BYTES, 128 * 1024 * 1024);
 
 /** Minimal S3 surface we rely on (injectable for tests). */
 export interface S3ClientLike {
@@ -183,20 +189,24 @@ interface PendingObject {
   key: string;
   payload: Uint8Array;
   attempts: number;
+  bytes: number;
 }
 
 /**
  * In-process raw-log sink: stages events in memory per flush window,
  * PUTs one gzip NDJSON object per completed window per profile.
- * Failed uploads are retained and retried on the next tick (cap 200
- * pending objects, oldest dropped + warned).
+ * Failed uploads are retained and retried on the next tick (bounded by
+ * object count and pending bytes, oldest dropped + warned).
  *
  * Crash window = flushMinutes (raw events in RAM) — acceptable; rollups
  * (stats_hourly) are written independently and are the near-live path.
  */
 export class S3ArchiveSink {
-  private staging = new Map<string, { startsAt: number; profileId: string; lines: string[] }>();
+  private staging = new Map<string, { startsAt: number; profileId: string; lines: string[]; bytes: number }>();
   private pending: PendingObject[] = [];
+  private stagedBytes = 0;
+  private pendingBytes = 0;
+  private droppedLines = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private seq = 0;
   private readonly instanceId: string;
@@ -221,14 +231,25 @@ export class S3ArchiveSink {
   add(rows: QueryLogRow[]): void {
     try {
       for (const row of rows) {
+        const line = JSON.stringify(lineFor(row));
+        const bytes = Buffer.byteLength(line) + 1;
+        if (this.stagedBytes + bytes > MAX_STAGED_BYTES) {
+          this.droppedLines += 1;
+          if (this.droppedLines === 1 || this.droppedLines % 1000 === 0) {
+            this.log.warn({ droppedLines: this.droppedLines, stagedBytes: this.stagedBytes }, "raw-log staging cap reached, dropping lines");
+          }
+          continue;
+        }
         const startsAt = windowFloor(row.loggedAt.getTime(), this.windowMs());
         const key = `${startsAt}|${row.profileId}`;
         let buf = this.staging.get(key);
         if (!buf) {
-          buf = { startsAt, profileId: row.profileId, lines: [] };
+          buf = { startsAt, profileId: row.profileId, lines: [], bytes: 0 };
           this.staging.set(key, buf);
         }
-        buf.lines.push(JSON.stringify(lineFor(row)));
+        buf.lines.push(line);
+        buf.bytes += bytes;
+        this.stagedBytes += bytes;
       }
     } catch (err) {
       this.log.error({ err }, "staging failed");
@@ -241,6 +262,7 @@ export class S3ArchiveSink {
     for (const [key, buf] of [...this.staging]) {
       if (buf.startsAt + this.windowMs() <= now) {
         this.staging.delete(key);
+        this.stagedBytes = Math.max(0, this.stagedBytes - buf.bytes);
         await this.put(this.objectKey(buf.startsAt, buf.profileId), buf.lines);
       }
     }
@@ -251,6 +273,7 @@ export class S3ArchiveSink {
   async flushAll(): Promise<void> {
     for (const [key, buf] of [...this.staging]) {
       this.staging.delete(key);
+      this.stagedBytes = Math.max(0, this.stagedBytes - buf.bytes);
       await this.put(this.objectKey(buf.startsAt, buf.profileId), buf.lines);
     }
     await this.retryPending();
@@ -265,6 +288,9 @@ export class S3ArchiveSink {
       stagedWindows: this.staging.size,
       pendingUploads: this.pending.length,
       stagedLines: [...this.staging.values()].reduce((n, b) => n + b.lines.length, 0),
+      stagedBytes: this.stagedBytes,
+      pendingBytes: this.pendingBytes,
+      droppedLines: this.droppedLines,
     };
   }
 
@@ -289,15 +315,18 @@ export class S3ArchiveSink {
 
   private async put(key: string, lines: string[]): Promise<void> {
     if (lines.length === 0) return;
-    const payload = gzip(lines.join("\n"));
+    const payload = await gzip(lines.join("\n"));
     try {
       await this.opts.client.write(key, payload);
       this.log.debug({ key, lines: lines.length }, "archive object written");
     } catch (err) {
-      this.pending.push({ key, payload, attempts: 0 });
-      if (this.pending.length > 200) {
-        const dropped = this.pending.splice(0, this.pending.length - 200);
-        this.log.warn({ dropped: dropped.length }, "pending archive uploads overflow, dropped oldest");
+      this.pending.push({ key, payload, attempts: 0, bytes: payload.length });
+      this.pendingBytes += payload.length;
+      while (this.pending.length > 200 || this.pendingBytes > MAX_PENDING_BYTES) {
+        const dropped = this.pending.shift();
+        if (!dropped) break;
+        this.pendingBytes = Math.max(0, this.pendingBytes - dropped.bytes);
+        this.log.warn({ key: dropped.key, bytes: dropped.bytes }, "pending archive uploads overflow, dropped oldest");
       }
       this.log.error({ err, key }, "archive upload failed (queued for retry)");
     }
@@ -317,6 +346,7 @@ export class S3ArchiveSink {
       }
     }
     this.pending = still;
+    this.pendingBytes = still.reduce((sum, p) => sum + p.bytes, 0);
   }
 }
 
@@ -352,8 +382,14 @@ export function lineFor(row: QueryLogRow): Record<string, unknown> {
   };
 }
 
-function gzip(text: string): Uint8Array {
-  return new Uint8Array(gzipSync(new TextEncoder().encode(text)));
+function gzip(text: string): Promise<Uint8Array> {
+  const input = new TextEncoder().encode(text);
+  return new Promise((resolve, reject) => {
+    gzipCallback(input, (err, out) => {
+      if (err) reject(err);
+      else resolve(new Uint8Array(out));
+    });
+  });
 }
 
 /** Aligns a timestamp to the flush window grid (aligned to unix epoch). */

@@ -174,10 +174,10 @@ The full set of options lives in [`.env.example`](.env.example). The important o
 
 - Every private console server function re-checks the session before reading tenant data.
 - Profiles are resolved by `owner_user_id`; there is no global “latest profile” fallback.
-- DoH tokens are kept server-side and never written to query logs. Database access should be treated as credential-bearing until token-at-rest encryption lands.
+- DoH tokens are kept server-side and never written to query logs. Database access should be treated as credential-bearing until token-at-rest hardening lands.
 - Raw query logging can be disabled per profile. When disabled, that profile's queries are not added to raw logs or stats rollups.
 - UDP source addresses are spoofable. Use source-IP allowlists with that in mind.
-- **Before exposing an instance to the public internet, put rate limiting and abuse protection in front of the DNS and console ports.** In-app rate limiting is not implemented yet.
+- The edge applies per-PoP ingress limits for DoH, UDP/TCP, blocklist sync, log export, and raw-log staging. Hosted deployments still need network-level DDoS protection and per-tenant quotas in front of them.
 - Do not run the console without authentication.
 
 ## Development
@@ -211,6 +211,7 @@ Source files should stay small and focused. See [`AGENTS.md`](AGENTS.md) for the
 ## Documentation
 
 - [`docs/rules-at-scale.md`](docs/rules-at-scale.md) — blocklist/rule compilation and distribution design
+- [`docs/token-at-rest.md`](docs/token-at-rest.md) — DoH token hashing and edge-admin credential plan
 - [`packages/db/src/schema.ts`](packages/db/src/schema.ts) — database schema
 - [`AGENTS.md`](AGENTS.md) — repository conventions and guardrails
 

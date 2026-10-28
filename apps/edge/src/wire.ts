@@ -77,6 +77,16 @@ export function nxdomainResponse(question: QuestionInfo): WireBytes {
   });
 }
 
+/** NODATA: the local name exists, but not for this record type. */
+export function noDataResponse(question: QuestionInfo): WireBytes {
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    flags: RESPONSE | AUTHORITATIVE_ANSWER | RECURSION_DESIRED | RECURSION_AVAILABLE,
+    questions: [{ name: question.name, type: question.type }],
+  });
+}
+
 /** SERVFAIL: upstream unavailable — the client stub resolver will retry. */
 export function servfailResponse(question: QuestionInfo): WireBytes {
   return wireEncode({

@@ -1,7 +1,9 @@
 import { Hono } from "hono";
+import { Readable } from "node:stream";
 import { moduleLogger } from "./logger";
 import type { RuleStore } from "./ruleStore";
 import { deleteKeys, listAllKeys, profilePrefix, type S3ClientLike } from "./sinks/s3";
+import { createRateLimiter } from "./limits";
 
 const log = moduleLogger("logs");
 
@@ -9,23 +11,9 @@ const CSV_HEADER = "time,domain,action,client_ip,rtt_ms\n";
 // Cap inflated log objects at 32 MB — a poisoned/oversized archive object
 // must not OOM the 256 MB edge during download.
 const MAX_INFLATED_BYTES = 32 * 1024 * 1024;
+const MAX_TOTAL_INFLATED_BYTES = 128 * 1024 * 1024;
 const MAX_EXPORT_OBJECTS = 500;
 const MAX_DATE_EXPORT_OBJECTS = 5_000;
-
-/** Small per-key fixed-window limiter; keeps S3 exports from being a free loop. */
-function createRateLimiter(limit: number, windowMs: number) {
-  const hits = new Map<string, { count: number; resetAt: number }>();
-  return (key: string): boolean => {
-    const now = Date.now();
-    const cur = hits.get(key);
-    if (!cur || now > cur.resetAt) {
-      hits.set(key, { count: 1, resetAt: now + windowMs });
-      return true;
-    }
-    cur.count += 1;
-    return cur.count <= limit;
-  };
-}
 
 const exportLimiter = createRateLimiter(10, 60_000);
 const deleteLimiter = createRateLimiter(5, 60_000);
@@ -109,66 +97,68 @@ export function createLogsApp(deps: LogsDeps) {
     const capped = truncated || cappedKeys.length !== keys.length;
 
     const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        if (capped) {
-          controller.enqueue(
-            encoder.encode(format === "jsonl" ? `{"warning":"truncated at ${cappedKeys.length} objects"}\n` : `# warning: truncated at ${cappedKeys.length} objects\n`),
-          );
+    const signal = c.req.raw.signal;
+    const lines = async function* (): AsyncGenerator<Uint8Array> {
+      if (capped) {
+        yield encoder.encode(
+          format === "jsonl" ? `{"warning":"truncated at ${cappedKeys.length} objects"}\n` : `# warning: truncated at ${cappedKeys.length} objects\n`,
+        );
+      }
+      if (format === "csv") yield encoder.encode(CSV_HEADER);
+      let emitted = 0;
+      let totalInflated = 0;
+      for (const key of orderedKeys) {
+        if (signal.aborted) return;
+        const compressed = new Uint8Array(await deps.client!.file(key).arrayBuffer());
+        if (compressed.length > MAX_INFLATED_BYTES) {
+          log.warn({ key }, "log object too large, skipped");
+          continue;
         }
-        if (format === "csv") controller.enqueue(encoder.encode(CSV_HEADER));
-        let emitted = 0;
+        let raw: string;
         try {
-          outer: for (const key of orderedKeys) {
-            const compressed = new Uint8Array(await deps.client!.file(key).arrayBuffer());
-            if (compressed.length > MAX_INFLATED_BYTES) {
-              log.warn({ key }, "log object too large, skipped");
-              continue;
-            }
-            let raw: string;
-            try {
-              // Bounded streaming inflate: a gzip bomb aborts at the cap
-              // instead of allocating its full expansion.
-              const inflated = await gunzipBounded(compressed, MAX_INFLATED_BYTES);
-              raw = new TextDecoder().decode(inflated);
-            } catch (err) {
-              log.error({ err, key }, "log object corrupt/too large, skipped");
-              continue;
-            }
-            const lines = raw.split("\n").filter(Boolean);
-            if (newestFirst) lines.reverse();
-            for (const line of lines) {
-              if (limit && emitted >= limit) break outer;
-              if (format === "jsonl") {
-                controller.enqueue(encoder.encode(line + "\n"));
-                emitted++;
-                continue;
-              }
-              const e = JSON.parse(line) as Record<string, unknown>;
-              const row = [
-                csvField(e.time),
-                csvField(e.domain),
-                csvField(e.action),
-                csvField(e.clientIp ?? ""),
-                csvField(e.rttMs ?? ""),
-              ].join(",");
-              controller.enqueue(encoder.encode(row + "\n"));
-              emitted++;
-            }
+          // Bounded streaming inflate: a gzip bomb aborts at the cap
+          // instead of allocating its full expansion.
+          const inflated = await gunzipBounded(compressed, MAX_INFLATED_BYTES);
+          totalInflated += inflated.length;
+          if (totalInflated > MAX_TOTAL_INFLATED_BYTES) {
+            log.warn({ totalInflated }, "log export hit aggregate inflate cap");
+            yield encoder.encode(
+              format === "jsonl" ? `{"warning":"export truncated at aggregate size cap"}\n` : `# warning: export truncated at aggregate size cap\n`,
+            );
+            return;
           }
+          raw = new TextDecoder().decode(inflated);
         } catch (err) {
-          log.error({ err }, "log download failed mid-stream");
-          controller.error(err instanceof Error ? err : new Error(String(err)));
-          return;
-        } finally {
-          try {
-            controller.close();
-          } catch {
-            // already errored
-          }
+          log.error({ err, key }, "log object corrupt/too large, skipped");
+          continue;
         }
-      },
-    });
+        const objectLines = raw.split("\n").filter(Boolean);
+        if (newestFirst) objectLines.reverse();
+        for (const line of objectLines) {
+          if (signal.aborted) return;
+          if (limit && emitted >= limit) return;
+          if (format === "jsonl") {
+            yield encoder.encode(line + "\n");
+            emitted++;
+            continue;
+          }
+          const e = JSON.parse(line) as Record<string, unknown>;
+          const row = [
+            csvField(e.time),
+            csvField(e.domain),
+            csvField(e.action),
+            csvField(e.clientIp ?? ""),
+            csvField(e.rttMs ?? ""),
+          ].join(",");
+          yield encoder.encode(row + "\n");
+          emitted++;
+        }
+      }
+    };
+
+    // Readable.from + toWeb gives us real backpressure: a slow client pauses
+    // the generator instead of queueing the whole archive in memory.
+    const stream = Readable.toWeb(Readable.from(lines())) as ReadableStream<Uint8Array>;
 
     return new Response(stream, {
       headers: {
