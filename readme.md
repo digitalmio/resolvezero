@@ -66,7 +66,7 @@ Every query must be authenticated before processing. Unauthenticated/unknown UDP
         * `https://dns.resolvezero.com/v1/{profile_id}/{device}` (token-free profile)
         * `https://dns.resolvezero.com/v1/{profile_id}/{device}/{profile_token}` (tokened profile)
     * Device slugs: NextDNS-style `[a-zA-Z0-9_-]{1,32}`; round-trip into raw logs (`device` field), `profile_devices` rows (lazy first-seen insert) and `stats_hourly.top_devices` (top 50).
-    * Never log the raw token/path (hash comparison).
+    * Never log the raw token/path.
 2. **Source IP Whitelisting (UDP ingress, for routers/legacy devices):**
     * Optional per profile; checked against `senderAddress` (Fly preserves the real client IP). Unknown source → REFUSED (above). Since UDP source IPs are spoofable, apply a per-source rate limit / penalty box in front of policy checks.
 3. **What's deliberately NOT here:** per-tenant dedicated Anycast IPs. (Fly rewrites all of an app's UDP destinations to `fly-global-services`, so destination-based identity is impossible; per-tenant infra would mean one app per profile — pointless for a personal product.)
