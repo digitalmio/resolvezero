@@ -18,6 +18,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as RulesRouteImport } from './routes/rules'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as WaitlistRouteImport } from './routes/waitlist'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -65,6 +66,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WaitlistRoute = WaitlistRouteImport.update({
+  id: '/waitlist',
+  path: '/waitlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/waitlist': typeof WaitlistRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -93,6 +100,7 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/waitlist': typeof WaitlistRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/waitlist': typeof WaitlistRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/rules'
     | '/settings'
+    | '/waitlist'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/rules'
     | '/settings'
+    | '/waitlist'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -144,6 +155,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/rules'
     | '/settings'
+    | '/waitlist'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -157,6 +169,7 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   RulesRoute: typeof RulesRoute
   SettingsRoute: typeof SettingsRoute
+  WaitlistRoute: typeof WaitlistRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -225,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/waitlist': {
+      id: '/waitlist'
+      path: '/waitlist'
+      fullPath: '/waitlist'
+      preLoaderRoute: typeof WaitlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -245,6 +265,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   RulesRoute: RulesRoute,
   SettingsRoute: SettingsRoute,
+  WaitlistRoute: WaitlistRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

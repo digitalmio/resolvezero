@@ -6,9 +6,15 @@ import { AppShell } from '../components/app-shell'
 import { getSession } from '../server/auth'
 import appCss from '../styles.css?url'
 
+const PUBLIC_PATHS = new Set(['/login', '/waitlist'])
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.has(pathname) || pathname.startsWith('/api/')
+}
+
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
-    if (location.pathname === '/login' || location.pathname.startsWith('/api/')) return { session: null }
+    if (isPublicPath(location.pathname)) return { session: null }
     const session = await getSession()
     if (!session) throw redirect({ to: '/login' })
     return { session }
@@ -40,7 +46,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {pathname === '/login' ? <Outlet /> : <AppShell session={session} />}
+      {isPublicPath(pathname) ? <Outlet /> : <AppShell session={session} />}
     </QueryClientProvider>
   )
 }

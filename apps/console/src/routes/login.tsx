@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import { Ban, FileText, House, LoaderCircle } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
@@ -128,7 +128,13 @@ function LoginPage() {
             </div>
 
             <p className="mt-4 text-center text-[11px] leading-5 text-[var(--muted)]">
-              Sign in with the GitHub account that owns this resolver. There is no self-serve signup yet.
+              Don’t have an account yet?{' '}
+              <Link
+                to="/waitlist"
+                className="font-medium text-[var(--ink)] underline decoration-[var(--line-strong)] underline-offset-2 hover:text-[var(--green)]"
+              >
+                Click here
+              </Link>
             </p>
           </div>
         </main>
