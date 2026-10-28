@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { Ban, FileText, House, LoaderCircle, ShieldCheck } from 'lucide-react'
+import { Ban, FileText, House, LoaderCircle } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import logo from '../assets/logo-square.svg'
@@ -100,12 +100,6 @@ function LoginPage() {
 
       <section className="relative flex flex-1 flex-col overflow-hidden px-5 pb-8 pt-4 sm:px-8 lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
         <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute inset-x-0 top-0 h-[420px] opacity-50" />
-
-        <header className="relative z-10 flex items-center justify-end">
-          <span className="rz-pill rz-pill-positive">
-            <ShieldCheck size={11} /> Private by default
-          </span>
-        </header>
 
         <main className="relative z-10 flex flex-1 items-center justify-center py-8 lg:py-12">
           <div className="w-full max-w-[420px]">
