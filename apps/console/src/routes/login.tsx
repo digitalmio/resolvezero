@@ -128,7 +128,7 @@ function LoginPage() {
             </div>
 
             <p className="mt-4 text-center text-[11px] leading-5 text-[var(--muted)]">
-              Only the account that owns this resolver can access its data.
+              Sign in with the GitHub account that owns this resolver. There is no self-serve signup yet.
             </p>
           </div>
         </main>
