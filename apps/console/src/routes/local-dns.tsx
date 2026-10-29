@@ -100,7 +100,7 @@ function LocalDnsPage() {
       />
 
       <div className="rz-card flex items-start gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-white text-[var(--ink)] ring-1 ring-[var(--line)]">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-none bg-white text-[var(--ink)] ring-1 ring-[var(--line)]">
           <Info size={14} />
         </span>
         <div className="text-[12px] leading-5 text-[var(--ink)]">

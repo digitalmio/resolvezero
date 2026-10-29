@@ -26,7 +26,7 @@
   --sidebar-2: #171716;
   --sidebar-text: #f2efe6;
   --sidebar-muted: #b4ada0;
-  --radius: 4px;
+  --radius: 0;
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Archivo Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -99,7 +99,7 @@ a {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-radius: 2px;
+  border-radius: 0;
   padding: 8px 12px;
   font-size: 11px;
   font-weight: 600;
@@ -212,11 +212,41 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+.rz-input {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.rz-input:focus {
+  border-color: var(--brand);
+}
+
+.rz-input::placeholder {
+  color: color-mix(in oklab, var(--muted) 72%, transparent);
+}
+
+.rz-field-label {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .rz-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 2px;
+  border-radius: 0;
   border: 1px solid var(--line);
   padding: 5px 8px;
   font-size: 9px;

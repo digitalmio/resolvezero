@@ -74,7 +74,7 @@ function Logs() {
 
       <div className="rz-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-[var(--paper)]/50 px-4 py-3 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-[2px] border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)]">
+          <div className="flex flex-1 items-center gap-2 rounded-none border border-[var(--line-strong)] bg-transparent px-3 py-1.5 text-[11px] text-[var(--muted)]">
             <Search size={13} />
             <input
               value={search}
@@ -94,13 +94,13 @@ function Logs() {
             >
               <span
                 className={[
-                  'relative flex h-4 w-8 items-center rounded-full border transition-colors',
+                  'relative flex h-4 w-8 items-center rounded-none border transition-colors',
                   blockedOnly ? 'border-[var(--accent)] bg-[var(--accent)]' : 'border-[var(--line-strong)] bg-transparent',
                 ].join(' ')}
               >
                 <span
                   className={[
-                    'block size-2.5 rounded-full transition-transform',
+                    'block size-2.5 rounded-none transition-transform',
                     blockedOnly ? 'translate-x-[18px] bg-[var(--card)]' : 'translate-x-[2px] bg-[var(--muted)]',
                   ].join(' ')}
                 />

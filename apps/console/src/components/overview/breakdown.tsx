@@ -63,7 +63,7 @@ export function DevicesCard({
         ) : null}
         {devices.map((device) => (
           <div key={device.name} className="flex items-center gap-3 px-5 py-3">
-            <span className="flex size-8 items-center justify-center rounded-[2px] bg-[var(--paper-2)] text-[var(--muted)]">
+            <span className="flex size-8 items-center justify-center rounded-none bg-[var(--paper-2)] text-[var(--muted)]">
               <Monitor size={14} />
             </span>
             <div className="min-w-0">
@@ -78,7 +78,7 @@ export function DevicesCard({
             <p className="px-5 pb-1 pt-3 text-[8px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">Client IPs</p>
             {clients.map((client) => (
               <div key={client.ip} className="flex items-center gap-3 px-5 py-3">
-                <span className="flex size-8 items-center justify-center rounded-[2px] bg-[var(--paper-2)] text-[var(--muted)]">
+                <span className="flex size-8 items-center justify-center rounded-none bg-[var(--paper-2)] text-[var(--muted)]">
                   <Router size={14} />
                 </span>
                 <div className="min-w-0">

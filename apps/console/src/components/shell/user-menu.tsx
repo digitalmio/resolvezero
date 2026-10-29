@@ -32,7 +32,7 @@ export function UserMenu({ name, image, email }: { name: string; image: string |
       {open ? (
         <div
           role="menu"
-          className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-[2px] border border-[var(--line-strong)] bg-[var(--card)] text-[var(--ink)] shadow-[0_18px_48px_rgba(0,0,0,0.24)]"
+          className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-none border border-[var(--line-strong)] bg-[var(--card)] text-[var(--ink)] shadow-[0_18px_48px_rgba(0,0,0,0.24)]"
         >
           <div className="border-b border-[var(--line)] px-3 py-2.5">
             <p className="truncate text-[11px] font-semibold">{name}</p>

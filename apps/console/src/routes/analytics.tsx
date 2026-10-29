@@ -33,12 +33,12 @@ function Analytics() {
         title="Analytics"
         description={`${profileLabel} · long-range rollups from Postgres.`}
         actions={
-          <div className="flex items-center rounded-lg border border-[var(--line)] bg-[var(--paper)] p-0.5 text-[11px]">
+          <div className="flex items-center rounded-none border border-[var(--line-strong)] bg-[var(--paper)] p-0.5 text-[11px]">
             {(['24h', '7d', '30d'] as Range[]).map((value) => (
               <button
                 key={value}
                 onClick={() => setRange(value)}
-                className={['rounded-md px-2.5 py-1.5', range === value ? 'bg-white font-medium shadow-sm' : 'text-[var(--muted)]'].join(' ')}
+                className={['rounded-none px-2.5 py-1.5', range === value ? 'bg-[var(--card)] font-medium' : 'text-[var(--muted)]'].join(' ')}
               >
                 {value}
               </button>

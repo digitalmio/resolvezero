@@ -76,7 +76,7 @@ function Blocklists() {
                   <td className="px-4 py-4 font-mono text-[12px]">{new Intl.NumberFormat('en-GB').format(list.entries)}</td>
                   <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">{list.lastSyncedAt ? format(parseISO(list.lastSyncedAt), 'dd MMM yyyy, HH:mm') : 'never'}</td>
                   <td className="px-4 py-4">
-                    <span className={['inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium', list.lastStatus === 'ok' ? 'bg-[var(--green-soft)] text-[var(--green)]' : 'bg-[var(--accent-soft)] text-[var(--warning)]'].join(' ')}>
+                    <span className={['inline-flex items-center gap-1.5 rounded-none px-2 py-1 text-[10px] font-medium', list.lastStatus === 'ok' ? 'bg-[var(--green-soft)] text-[var(--green)]' : 'bg-[var(--accent-soft)] text-[var(--warning)]'].join(' ')}>
                       {list.lastStatus === 'ok' ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}
                       {list.lastStatus ?? (list.enabled ? 'pending' : 'disabled')}
                     </span>

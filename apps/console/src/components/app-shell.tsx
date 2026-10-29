@@ -62,17 +62,17 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
         <ProfileMenu profiles={data?.profiles ?? []} activeId={data?.profileId ?? ''} label={profileLabel} loading={!data} />
 
-        <div className="absolute left-1/2 top-1/2 hidden w-full max-w-[420px] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-[2px] border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[11px] text-[var(--muted)] lg:flex">
+        <div className="absolute left-1/2 top-1/2 hidden w-full max-w-[420px] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-none border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[11px] text-[var(--muted)] lg:flex">
           <Search size={14} />
           <span>Search domains, rules, devices</span>
-          <kbd className="ml-auto flex items-center gap-0.5 rounded-[2px] border border-[var(--line)] bg-[var(--card)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
+          <kbd className="ml-auto flex items-center gap-0.5 rounded-none border border-[var(--line)] bg-[var(--card)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
             <Command size={10} /> K
           </kbd>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
           {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
-          <span className="hidden h-8 items-center gap-2 rounded-[2px] border border-[var(--line)] bg-transparent px-3 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)] md:inline-flex">
+          <span className="hidden h-8 items-center gap-2 rounded-none border border-[var(--line)] bg-transparent px-3 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)] md:inline-flex">
             <Activity size={12} className="text-[var(--green)]" />
             {queriesLabel} queries / 24h
           </span>

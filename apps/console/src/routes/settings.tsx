@@ -64,12 +64,12 @@ function SettingsPage() {
             value={domain}
             onChange={(event) => setDomain(event.target.value)}
             placeholder="example.com"
-            className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--brand)]"
+            className="rz-input min-w-0 flex-1 font-mono"
           />
           <select
             value={recordType}
             onChange={(event) => setRecordType(event.target.value)}
-            className="rounded-md border border-[var(--line)] bg-white px-3 py-2 text-[11px] outline-none focus:border-[var(--brand)]"
+            className="rz-input w-full sm:w-auto"
           >
             <option value="">All types</option>
             <option value="A">A</option>
@@ -155,7 +155,7 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl bg-[var(--sage)] p-3">
+    <div className="rounded-none bg-[var(--sage)] p-3">
       <p className="text-[10px] text-[var(--muted)]">{label}</p>
       <p className="mt-1 rz-font-display text-[22px] font-semibold tracking-[-0.04em]">{value}</p>
     </div>

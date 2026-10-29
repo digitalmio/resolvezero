@@ -47,7 +47,7 @@ export function ZoneTable({
               <tr key={zoneKey(zone)} className="group hover:bg-white/60">
                 <td className="px-5 py-3.5 font-mono text-[12px]">{zone.domain}</td>
                 <td className="px-4 py-3.5">
-                  <span className="inline-flex items-center rounded-md bg-[var(--sage)] px-2 py-1 text-[10px] font-semibold text-[var(--ink)] ring-1 ring-[var(--line)]">
+                  <span className="inline-flex items-center rounded-none bg-[var(--sage)] px-2 py-1 text-[10px] font-semibold text-[var(--ink)] ring-1 ring-[var(--line)]">
                     {zone.recordType}
                   </span>
                 </td>
@@ -62,7 +62,7 @@ export function ZoneTable({
                     <button
                       type="button"
                       onClick={() => onEdit(zone)}
-                      className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
+                      className="rounded-none p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
                       aria-label={`Edit ${zone.domain} ${zone.recordType}`}
                       title="Edit"
                     >
@@ -71,7 +71,7 @@ export function ZoneTable({
                     <button
                       type="button"
                       onClick={() => onDelete(zone)}
-                      className="rounded-md p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[#b74716]"
+                      className="rounded-none p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[#b74716]"
                       aria-label={`Delete ${zone.domain} ${zone.recordType}`}
                       title="Delete"
                     >

@@ -46,7 +46,7 @@ export function ZoneForm({
         </div>
       </div>
 
-      <label htmlFor="zone-domain" className="mt-5 block text-[11px] font-medium">
+      <label htmlFor="zone-domain" className="rz-field-label mt-5">
         Name
       </label>
       <input
@@ -56,20 +56,20 @@ export function ZoneForm({
         placeholder="nas.lan"
         autoComplete="off"
         spellCheck={false}
-        className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--brand)]"
+        className="rz-input mt-1.5 font-mono"
       />
       <p className="mt-1.5 text-[10px] text-[var(--muted)]">Must end in .lan.</p>
 
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div>
-          <label htmlFor="zone-type" className="block text-[11px] font-medium">
+          <label htmlFor="zone-type" className="rz-field-label">
             Type
           </label>
           <select
             id="zone-type"
             value={form.recordType}
             onChange={(event) => onChange({ ...form, recordType: event.target.value as ZoneRecordType })}
-            className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-[11px] outline-none focus:border-[var(--brand)]"
+            className="rz-input mt-1.5"
           >
             {ZONE_RECORD_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -79,7 +79,7 @@ export function ZoneForm({
           </select>
         </div>
         <div>
-          <label htmlFor="zone-ttl" className="block text-[11px] font-medium">
+          <label htmlFor="zone-ttl" className="rz-field-label">
             TTL (seconds)
           </label>
           <input
@@ -89,12 +89,12 @@ export function ZoneForm({
             max={86400}
             value={form.ttl}
             onChange={(event) => onChange({ ...form, ttl: event.target.value })}
-            className="mt-1.5 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--brand)]"
+            className="rz-input mt-1.5 font-mono"
           />
         </div>
       </div>
 
-      <label htmlFor="zone-values" className="mt-3 block text-[11px] font-medium">
+      <label htmlFor="zone-values" className="rz-field-label mt-3">
         Answer
       </label>
       <textarea
@@ -104,14 +104,14 @@ export function ZoneForm({
         onChange={(event) => onChange({ ...form, values: event.target.value })}
         placeholder={valuePlaceholder(form.recordType)}
         spellCheck={false}
-        className="mt-1.5 w-full resize-y rounded-md border border-[var(--line)] bg-white px-3 py-2 font-mono text-[11px] outline-none focus:border-[var(--brand)]"
+        className="rz-input mt-1.5 resize-y font-mono"
       />
       <p className="mt-1.5 text-[10px] leading-4 text-[var(--muted)]">
         Up to 8 values. Separate A/AAAA/CNAME values with commas; TXT values can be one per line.
       </p>
 
       {error ? (
-        <p role="alert" className="mt-3 rounded-md border border-[#f0d7c8] bg-[#fff6f1] px-3 py-2 text-[11px] leading-5 text-[#9a3f1b]">
+        <p role="alert" className="mt-3 rounded-none border border-[#e7b4ae] bg-[var(--accent-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--danger)]">
           {error}
         </p>
       ) : null}

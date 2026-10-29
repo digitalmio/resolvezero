@@ -68,7 +68,7 @@ pnpm --filter @resolvezero/console typecheck
 
 ## Design direction
 
-- Editorial ink/cream/orange system with hard 1px rules and numbered sections
+- Editorial ink/cream/orange system with hard 1px rules, zero-radius controls, and numbered sections
 - Archivo Variable for expanded display type; Inter for body; monospace for domains, IPs, and logs
 - Orange for brand and primary actions, green for healthy states, red for blocked/alerts
 - Dense but calm data surfaces; the console should not become a marketing page

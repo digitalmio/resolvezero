@@ -54,8 +54,8 @@ function Rules() {
               ].join(' ')}
             >
               {tab.label}
-              <span className="rounded-md bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{tab.count}</span>
-              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[var(--brand)]" /> : null}
+              <span className="rounded-none bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{tab.count}</span>
+              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 bg-[var(--brand)]" /> : null}
             </button>
           )
         })}
@@ -63,7 +63,7 @@ function Rules() {
 
       <div className="rz-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-[var(--line)] p-4 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px] text-[var(--muted)]">
+          <div className="flex flex-1 items-center gap-2 rounded-none border border-[var(--line-strong)] bg-transparent px-3 py-2 text-[11px] text-[var(--muted)]">
             <Search size={14} />
             <span>Search rules and domains</span>
           </div>
@@ -120,5 +120,5 @@ function ActionPill({ action }: { action: string }) {
       : action === 'allow'
         ? 'bg-[var(--green-soft)] text-[var(--green)] ring-[var(--line)]'
         : 'bg-[var(--sage)] text-[var(--ink)] ring-[var(--line)]'
-  return <span className={`inline-flex items-center rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ring-1 ${style}`}>{action}</span>
+  return <span className={`inline-flex items-center rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ring-1 ${style}`}>{action}</span>
 }

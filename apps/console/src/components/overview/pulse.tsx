@@ -19,7 +19,7 @@ export function PulseMetric({
     <div className="px-5 py-6">
       <div className="flex items-center justify-between">
         <span className="rz-mono text-[9px] text-[var(--muted)]">{index}</span>
-        <span className="flex size-7 items-center justify-center rounded-[2px] bg-[var(--brand-soft)] text-[var(--brand)]">
+        <span className="flex size-7 items-center justify-center rounded-none bg-[var(--brand-soft)] text-[var(--brand)]">
           {icon}
         </span>
       </div>
@@ -35,7 +35,7 @@ export function PulseMetric({
 export function OverviewSkeleton() {
   return (
     <div className="space-y-7" aria-busy="true" aria-label="Loading dashboard">
-      <div className="h-[88px] w-[340px] animate-pulse rounded-[2px] bg-[var(--paper-2)]" />
+      <div className="h-[88px] w-[340px] animate-pulse rounded-none bg-[var(--paper-2)]" />
       <div className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
         <div className="rz-card h-[380px] animate-pulse bg-[var(--card)]/60" />
         <div className="flex flex-col gap-4">

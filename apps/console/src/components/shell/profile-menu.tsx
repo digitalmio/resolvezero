@@ -36,7 +36,7 @@ export function ProfileMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-busy={loading}
-        className="flex h-8 items-center gap-2 rounded-[2px] border border-[var(--line)] bg-transparent px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] disabled:cursor-wait disabled:opacity-60"
+        className="flex h-8 items-center gap-2 rounded-none border border-[var(--line)] bg-transparent px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] disabled:cursor-wait disabled:opacity-60"
       >
         <span className="max-w-[120px] truncate">{label}</span>
         {!loading ? (
@@ -50,7 +50,7 @@ export function ProfileMenu({
       {open && !loading ? (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-3 w-[188px] overflow-hidden rounded-[2px] border border-[var(--line-strong)] bg-[var(--card)] py-1 shadow-[0_18px_48px_rgba(11,11,10,0.14)]"
+          className="absolute left-0 top-full z-50 mt-3 w-[188px] overflow-hidden rounded-none border border-[var(--line-strong)] bg-[var(--card)] py-1 shadow-[0_18px_48px_rgba(11,11,10,0.14)]"
         >
           <p className="px-3 pb-1 pt-2 text-[8px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
             Profile

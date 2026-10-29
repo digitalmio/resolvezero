@@ -18,7 +18,7 @@ export function PagePlaceholder({
       <div>
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">{eyebrow}</p>
         <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-[2px] bg-[var(--brand-soft)] text-[var(--brand)] ring-1 ring-[var(--line)]">{icon}</span>
+          <span className="flex size-10 items-center justify-center rounded-none bg-[var(--brand-soft)] text-[var(--brand)] ring-1 ring-[var(--line)]">{icon}</span>
           <div>
             <h1 className="text-[28px] font-semibold tracking-[-0.045em]">{title}</h1>
             <p className="mt-1 text-[13px] text-[var(--muted)]">{description}</p>

@@ -54,7 +54,7 @@ export function SidebarLink({ item, active }: { item: NavItem; active: boolean }
       </span>
       <span>{item.label}</span>
       {item.badge ? (
-        <span className="ml-auto rounded-[2px] bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-[var(--sidebar-text)] ring-1 ring-white/10">
+        <span className="ml-auto rounded-none bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-[var(--sidebar-text)] ring-1 ring-white/10">
           {item.badge}
         </span>
       ) : null}
