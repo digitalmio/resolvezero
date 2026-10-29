@@ -226,7 +226,16 @@ a {
 }
 
 .rz-input:focus {
-  border-color: var(--brand);
+  border-color: var(--line-strong);
+  outline: none;
+  box-shadow: inset 0 -2px 0 var(--brand);
+}
+
+/* Form controls use the inner bottom accent, not the global focus ring. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
 }
 
 .rz-input::placeholder {
