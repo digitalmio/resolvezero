@@ -21,6 +21,7 @@ Implemented:
 - GitHub OAuth via Better Auth, a root route guard, and session-scoped server functions
 - Owner-scoped profile selection, a real profile switcher, and `rz_profile_id` preference cookie
 - Overview with live traffic, KPIs, query chart, top blocked domains, devices, and Local DNS summary
+- Query-volume chart ranges: 1H / 24H / 7D / 30D (KPIs remain fixed to 24h)
 - Rules screen backed by Postgres rules, zones, and blocklist subscriptions
 - Devices screen backed by stats rollups: DoH tags and UDP source-IP counts
 - Local DNS CRUD for `.lan` records (A/AAAA/CNAME/TXT, exact and wildcard)

@@ -11,12 +11,18 @@ import { ageLabel, displayDomain, formatNumber, greetingForHour, regionLabel } f
 import { OverviewSkeleton, PulseMetric } from '../components/overview/pulse'
 import { QueryChart } from '../components/overview/query-chart'
 import { LiveTrafficCard, PostureCard } from '../components/overview/traffic'
-import { getOverview } from '../server/dashboard'
+import { OVERVIEW_RANGES, overviewRange, type OverviewRangeKey } from '../lib/overview-range'
+import { getOverview, getQueryVolume } from '../server/dashboard'
 
 export const Route = createFileRoute('/')({ component: Overview })
 
 function Overview() {
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  const [range, setRange] = useState<OverviewRangeKey>('24h')
+  const { data: volume, isPending: volumePending } = useQuery({
+    queryKey: ['query-volume', range],
+    queryFn: () => getQueryVolume({ data: { range } }),
+  })
   const [greeting, setGreeting] = useState('Hello')
 
   // Resolve in the browser so the greeting matches the viewer's local time,
@@ -29,14 +35,15 @@ function Overview() {
   if (isPending) return <OverviewSkeleton />
   if (isError || !data) return <PageError title="Could not load live stats." onRetry={() => void refetch()} />
 
-  const chartData = data.series.map((point) => ({
+  const chartData = (volume?.range === range ? volume.series : range === '24h' ? data.series : []).map((point) => ({
     key: point.bucket,
-    time: format(parseISO(point.bucket), 'HH:mm'),
+    time: format(parseISO(point.bucket), range === '7d' || range === '30d' ? 'd MMM' : 'HH:mm'),
     day: format(parseISO(point.bucket), 'd MMM'),
     full: format(parseISO(point.bucket), 'EEE d MMM, HH:mm'),
     total: point.total,
     blocked: point.blocked,
   }))
+  const rangeConfig = overviewRange(range)
   const maxBlocked = Math.max(...data.topBlocked.map((d) => d.count), 1)
   const topBlocked = data.topBlocked.map((d) => ({
     domain: d.domain,
@@ -100,10 +107,32 @@ function Overview() {
             <div>
               <h2 className="rz-section-title">Query volume</h2>
               <p className="mt-1.5 text-[11px] text-[var(--muted)]">
-                Total vs blocked queries · rolling 24 hours · hover for exact date
+                Total vs blocked queries · {rangeConfig.description.toLowerCase()} · hover for exact date
               </p>
             </div>
-            <span className="rz-pill">Last 24 hours</span>
+            <div className="flex items-center gap-2">
+              {volumePending ? (
+                <span className="text-[8px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">Loading…</span>
+              ) : null}
+              <div className="flex items-center border border-[var(--line-strong)]">
+                {OVERVIEW_RANGES.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setRange(option.key)}
+                    aria-pressed={range === option.key}
+                    className={[
+                      'px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] transition-colors',
+                      range === option.key
+                        ? 'bg-[var(--brand)] text-white'
+                        : 'text-[var(--muted)] hover:bg-[var(--paper-2)] hover:text-[var(--ink)]',
+                    ].join(' ')}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="mt-4 flex items-center gap-5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
             <span className="flex items-center gap-2">
