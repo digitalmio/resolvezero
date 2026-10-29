@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { DEFAULT_OVERVIEW_RANGE, isOverviewRange } from "../lib/overview-range";
 import { normalizeDomain, normalizeRecordType, normalizeZoneInput, type ZoneInput } from "../lib/zone";
 
 export type { OverviewData, RulesData, LocalDnsData } from "./dashboard.server";
@@ -80,6 +81,21 @@ export const getOverview = createServerFn({ method: "GET" }).handler(async () =>
   const user = await requireSessionUser();
   return loadOverview(user.id, toViewer(user));
 });
+
+export const getQueryVolume = createServerFn({ method: "GET" })
+  .validator((data: { range?: string } | undefined) => {
+    const range = data?.range ?? DEFAULT_OVERVIEW_RANGE;
+    if (!isOverviewRange(range)) throw new Error("Invalid overview range");
+    return { range };
+  })
+  .handler(async ({ data }) => {
+    const [{ requireSessionUser }, { loadQueryVolume }] = await Promise.all([
+      import("./auth.server"),
+      import("./dashboard.server"),
+    ]);
+    const user = await requireSessionUser();
+    return loadQueryVolume(user.id, data.range);
+  });
 
 export const getRulesData = createServerFn({ method: "GET" }).handler(async () => {
   const [{ requireSessionUser }, { loadRules }] = await Promise.all([
