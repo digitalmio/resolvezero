@@ -30,7 +30,10 @@ function Overview() {
   if (isError || !data) return <PageError title="Could not load live stats." onRetry={() => void refetch()} />
 
   const chartData = data.series.map((point) => ({
+    key: point.bucket,
     time: format(parseISO(point.bucket), 'HH:mm'),
+    day: format(parseISO(point.bucket), 'd MMM'),
+    full: format(parseISO(point.bucket), 'EEE d MMM, HH:mm'),
     total: point.total,
     blocked: point.blocked,
   }))
@@ -96,7 +99,9 @@ function Overview() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="rz-section-title">Query volume</h2>
-              <p className="mt-1.5 text-[11px] text-[var(--muted)]">Total vs blocked queries over the last 24 hours</p>
+              <p className="mt-1.5 text-[11px] text-[var(--muted)]">
+                Total vs blocked queries · rolling 24 hours · hover for exact date
+              </p>
             </div>
             <span className="rz-pill">Last 24 hours</span>
           </div>
