@@ -6,6 +6,18 @@ import { useState } from 'react'
 import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+
+const PURGE_TYPES = [
+  { value: 'all', label: 'All types' },
+  { value: 'A', label: 'A' },
+  { value: 'AAAA', label: 'AAAA' },
+  { value: 'CNAME', label: 'CNAME' },
+  { value: 'TXT', label: 'TXT' },
+  { value: 'MX', label: 'MX' },
+  { value: 'NS', label: 'NS' },
+  { value: 'HTTPS', label: 'HTTPS' },
+] as const
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 
@@ -65,20 +77,21 @@ function SettingsPage() {
             placeholder="example.com"
             className="rz-input min-w-0 flex-1 font-mono"
           />
-          <select
-            value={recordType}
-            onChange={(event) => setRecordType(event.target.value)}
-            className="rz-input w-full sm:w-auto"
+          <Select
+            value={recordType || 'all'}
+            onValueChange={(value) => setRecordType(value === 'all' ? '' : value)}
           >
-            <option value="">All types</option>
-            <option value="A">A</option>
-            <option value="AAAA">AAAA</option>
-            <option value="CNAME">CNAME</option>
-            <option value="TXT">TXT</option>
-            <option value="MX">MX</option>
-            <option value="NS">NS</option>
-            <option value="HTTPS">HTTPS</option>
-          </select>
+            <SelectTrigger className="w-full sm:w-[136px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PURGE_TYPES.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <button
             className="rz-button-primary disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!domain.trim() || purge.isPending}

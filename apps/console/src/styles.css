@@ -85,6 +85,14 @@ a {
   outline-offset: 2px;
 }
 
+/* Form controls use the inner bottom accent, not the global focus ring. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.rz-input:focus-visible {
+  outline: none;
+}
+
 @layer components {
 .rz-card {
   border: 1px solid var(--line);
@@ -229,13 +237,6 @@ a {
   border-color: var(--line-strong);
   outline: none;
   box-shadow: inset 0 -2px 0 var(--brand);
-}
-
-/* Form controls use the inner bottom accent, not the global focus ring. */
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: none;
 }
 
 .rz-input::placeholder {

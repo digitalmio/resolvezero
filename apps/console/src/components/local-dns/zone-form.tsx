@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react'
 import type { FormEvent } from 'react'
 
 import { ZONE_RECORD_TYPES, type ZoneRecordType } from '../../lib/zone'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 export type ZoneFormState = {
   domain: string
@@ -65,18 +66,21 @@ export function ZoneForm({
           <label htmlFor="zone-type" className="rz-field-label">
             Type
           </label>
-          <select
-            id="zone-type"
+          <Select
             value={form.recordType}
-            onChange={(event) => onChange({ ...form, recordType: event.target.value as ZoneRecordType })}
-            className="rz-input mt-1.5"
+            onValueChange={(value) => onChange({ ...form, recordType: value as ZoneRecordType })}
           >
-            {ZONE_RECORD_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="zone-type" className="mt-1.5">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ZONE_RECORD_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {type}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <label htmlFor="zone-ttl" className="rz-field-label">

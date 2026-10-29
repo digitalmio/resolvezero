@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { getLogsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { Switch } from '../components/ui/switch'
 
 export const Route = createFileRoute('/logs')({ component: Logs })
 
@@ -84,29 +85,13 @@ function Logs() {
             />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={blockedOnly}
-              aria-label="Show blocked queries only"
-              onClick={() => setBlockedOnly((value) => !value)}
-              className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]"
+            <label
+              htmlFor="blocked-only"
+              className="flex cursor-pointer items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]"
             >
-              <span
-                className={[
-                  'relative flex h-4 w-8 items-center rounded-none border transition-colors',
-                  blockedOnly ? 'border-[var(--accent)] bg-[var(--accent)]' : 'border-[var(--line-strong)] bg-transparent',
-                ].join(' ')}
-              >
-                <span
-                  className={[
-                    'block size-2.5 rounded-none transition-transform',
-                    blockedOnly ? 'translate-x-[18px] bg-[var(--card)]' : 'translate-x-[2px] bg-[var(--muted)]',
-                  ].join(' ')}
-                />
-              </span>
+              <Switch id="blocked-only" checked={blockedOnly} onCheckedChange={setBlockedOnly} />
               <span className={blockedOnly ? 'text-[var(--accent)]' : undefined}>Blocked only</span>
-            </button>
+            </label>
             <span className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
               <span className="size-1.5 bg-[var(--green)]" />
               Auto-updates every minute
