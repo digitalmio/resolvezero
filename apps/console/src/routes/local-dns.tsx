@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { House, Info } from 'lucide-react'
+import { Info } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
 import { PageError, PageLoading } from '../components/data-state'
@@ -96,7 +96,6 @@ function LocalDnsPage() {
             {profileLabel} profile · answer <span className="font-mono">.lan</span> names before blocklists and upstream.
           </>
         }
-        icon={<House size={20} />}
       />
 
       <div className="rz-card flex items-start gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
