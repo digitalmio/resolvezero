@@ -80,6 +80,17 @@ a {
   color: var(--ink);
 }
 
+/* Tailwind v4 preflight leaves buttons on the default arrow cursor. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 :focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
