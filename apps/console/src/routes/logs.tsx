@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { format, formatISO, parseISO } from 'date-fns'
-import { FileText, Search } from 'lucide-react'
+import { FileText, RefreshCw, Search } from 'lucide-react'
 import { useState } from 'react'
 import { getLogsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
@@ -37,18 +37,22 @@ function popDetail(entry: { region: string | null; transport: string | null; ups
 
 function Logs() {
   const [search, setSearch] = useState('')
-  const { data, isPending, isError, refetch } = useQuery({
+  const [blockedOnly, setBlockedOnly] = useState(false)
+  const { data, isPending, isError, isFetching, dataUpdatedAt, refetch } = useQuery({
     queryKey: ['logs'],
     queryFn: () => getLogsData(),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   })
 
   if (isPending) return <PageLoading label="Loading recent queries…" />
   if (isError || !data) return <PageError title="Could not load query logs." onRetry={() => void refetch()} />
 
   const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
-  const filtered = data.entries.filter((entry) =>
-    search.trim() ? entry.domain.toLowerCase().includes(search.toLowerCase()) : true,
-  )
+  const filtered = data.entries.filter((entry) => {
+    if (blockedOnly && entry.action !== 'block') return false
+    return search.trim() ? entry.domain.toLowerCase().includes(search.toLowerCase()) : true
+  })
 
   return (
     <div className="space-y-6">
@@ -56,11 +60,21 @@ function Logs() {
         eyebrow="Network activity"
         title="Query log"
         description={`${profileLabel} · latest 100 archived queries · 1-minute flush`}
+        actions={
+          <button
+            type="button"
+            className="rz-button-secondary"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} /> Refresh
+          </button>
+        }
       />
 
       <div className="rz-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-[var(--paper)]/50 px-4 py-3 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)]">
+          <div className="flex flex-1 items-center gap-2 rounded-[2px] border border-[var(--line)] bg-white px-3 py-1.5 text-[11px] text-[var(--muted)]">
             <Search size={13} />
             <input
               value={search}
@@ -69,7 +83,42 @@ function Logs() {
               className="w-full bg-transparent text-[11px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
             />
           </div>
-          <span className="text-[10px] text-[var(--muted)]">{filtered.length} entries</span>
+          <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={blockedOnly}
+              aria-label="Show blocked queries only"
+              onClick={() => setBlockedOnly((value) => !value)}
+              className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]"
+            >
+              <span
+                className={[
+                  'relative flex h-4 w-8 items-center rounded-full border transition-colors',
+                  blockedOnly ? 'border-[var(--accent)] bg-[var(--accent)]' : 'border-[var(--line-strong)] bg-transparent',
+                ].join(' ')}
+              >
+                <span
+                  className={[
+                    'block size-2.5 rounded-full transition-transform',
+                    blockedOnly ? 'translate-x-[18px] bg-[var(--card)]' : 'translate-x-[2px] bg-[var(--muted)]',
+                  ].join(' ')}
+                />
+              </span>
+              <span className={blockedOnly ? 'text-[var(--accent)]' : undefined}>Blocked only</span>
+            </button>
+            <span className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+              <span className="size-1.5 bg-[var(--green)]" />
+              Auto-updates every minute
+              {dataUpdatedAt ? (
+                <>
+                  <span className="text-[var(--line-strong)]">·</span>
+                  <span className="rz-mono text-[var(--ink)]">{format(new Date(dataUpdatedAt), 'HH:mm:ss')}</span>
+                </>
+              ) : null}
+            </span>
+            <span className="text-[10px] text-[var(--muted)]">{filtered.length} entries</span>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
