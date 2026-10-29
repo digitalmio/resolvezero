@@ -5,7 +5,7 @@
 # Usage:
 #   FLY_REGIONS="lhr fra iad sjc" ./scripts/deploy.sh
 #   FLY_REGIONS="lhr" FLY_SCALE=2 ./scripts/deploy.sh   # 2 machines per region
-#   FLY_CONFIG=fly.control.toml ./scripts/deploy.sh     # other app configs
+#   FLY_CONFIG=fly.node.toml ./scripts/deploy.sh     # staging app config
 set -euo pipefail
 
 FLY_REGIONS="${FLY_REGIONS:-fra}"

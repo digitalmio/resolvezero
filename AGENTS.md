@@ -22,9 +22,8 @@ If an exception is used, keep the reason obvious in the file or the PR descripti
 ## Project shape
 
 - `apps/edge` — DNS/DoH data plane (Node 24). Keep the hot path allocation-light.
-- `apps/control` — control-plane API.
 - `apps/agent` — per-host agent.
-- `apps/console` — TanStack Start console (React 19 + Vite + Tailwind 4).
+- `apps/console` — TanStack Start console and authenticated server functions (React 19 + Vite + Tailwind 4).
 - `packages/db` — Drizzle schema and client. Schema changes need a migration.
 
 ## Working rules

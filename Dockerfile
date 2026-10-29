@@ -14,16 +14,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/db/package.json packages/db/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY apps/edge/package.json apps/edge/package.json
-COPY apps/control/package.json apps/control/package.json
-COPY apps/control-plane/package.json apps/control-plane/package.json
 RUN pnpm install --frozen-lockfile --prod
 
 # Application sources
 COPY packages/db packages/db
 COPY packages/shared packages/shared
 COPY apps/edge apps/edge
-COPY apps/control apps/control
-COPY apps/control-plane apps/control-plane
 
 ENV NODE_ENV=production
 # Writable home for the unprivileged runtime user.

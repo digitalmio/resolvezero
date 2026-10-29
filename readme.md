@@ -64,8 +64,6 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 |---|---|
 | `apps/edge` | DNS/DoH edge, policy cache, logging, stats, cache purge |
 | `apps/console` | TanStack Start console and authenticated server functions |
-| `apps/control` | Earlier Hono/Better Auth control-plane dashboard (legacy) |
-| `apps/control-plane` | Reserved scaffold for a future control-plane split |
 | `apps/agent` | Local DNS forwarding agent |
 | `packages/db` | Drizzle schema, migrations, database client |
 | `packages/shared` | Shared runtime helpers |
