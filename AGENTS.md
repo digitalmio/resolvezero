@@ -47,6 +47,14 @@ pnpm --filter @resolvezero/console build
 
 For edge or schema work, also run the relevant package typecheck (`pnpm typecheck`) and check `progress.md` for deploy/runtime caveats.
 
+### Local previews (do not kill the developer's server)
+
+- The developer's console dev server may already be running on `3000`. **Never** kill processes by port without checking what they are.
+- Start agent previews on a separate port, e.g. `3100`, with `--strictPort` so Vite fails instead of stealing another port.
+- Use a separate Chrome debugging port, e.g. `9333`, and a temporary `--user-data-dir`.
+- Kill only PIDs you started; never use broad cleanup such as `lsof -ti tcp:3000 | xargs kill`.
+- Temporary session rows and `/tmp` files may be cleaned up; the developer's dev server and browser processes are off-limits.
+
 ## Git
 
 - Keep changes on the active feature branch unless asked to merge.
