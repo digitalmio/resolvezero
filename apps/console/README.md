@@ -28,6 +28,7 @@ Implemented:
 - Logs screen backed by the edge log archive (latest 100 entries)
 - Settings screen backed by profile, upstream, linked IPs, and capacity counts
 - Public `/waitlist` placeholder for hosted registration
+- Favicon set generated from the `RØ` mark (SVG, PNG, ICO, Apple touch)
 - Loading and error states instead of dummy data flashes
 - "This device is using ResolveZero DNS" probe in the topbar. The browser
   looks up a random `<nonce>.probe.resolvezero.com` name (no public record);
@@ -38,7 +39,6 @@ Not implemented yet:
 
 - oRPC router
 - Public `/v1` OpenAPI surface and API keys
-- Favicon/app icon variants
 - Automated console tests
 
 ## Run
@@ -71,7 +71,7 @@ pnpm --filter @resolvezero/console typecheck
 - Ink/paper base with one signal accent
 - Monospace for domains, IPs, and logs
 - Dense but calm security dashboard
-- The `RØ` mark is the brand anchor; favicon variants come later
+- The `RØ` mark is the brand anchor; favicon variants are generated from it.
 
 ## Next
 
