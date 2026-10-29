@@ -84,7 +84,7 @@ function Analytics() {
                     <span className="shrink-0 font-mono text-[11px] text-[var(--muted)]">{new Intl.NumberFormat('en-GB').format(item.count)}</span>
                   </div>
                   <div className="h-1 overflow-hidden rounded-full bg-[var(--paper-2)]">
-                    <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(item.count / max) * 100}%` }} />
+                    <div className="h-full bg-[var(--accent)]" style={{ width: `${(item.count / max) * 100}%` }} />
                   </div>
                 </div>
               )
@@ -117,13 +117,13 @@ function AnalyticsChart({ series }: { series: { label: string; total: number; bl
       <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Query analytics">
         <defs>
           <linearGradient id="rz-analytics-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--green)" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="var(--green)" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--ink)" stopOpacity="0.1" />
+            <stop offset="100%" stopColor="var(--ink)" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0.2, 0.4, 0.6, 0.8].map((f) => <line key={f} x1="0" x2={width} y1={height * f} y2={height * f} stroke="var(--line)" strokeDasharray="2 5" />)}
         <path d={area} fill="url(#rz-analytics-area)" />
-        <path d={path('total')} fill="none" stroke="var(--green)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={path('total')} fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
         <path d={path('blocked')} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 4" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
     </div>
@@ -134,7 +134,7 @@ function Stat({ label, value, detail }: { label: string; value: string; detail: 
   return (
     <div className="rz-card p-5">
       <p className="text-[11px] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 font-[var(--font-display)] text-[26px] font-semibold tracking-[-0.045em]">{value}</p>
+      <p className="mt-2 rz-font-display text-[26px] font-semibold tracking-[-0.045em]">{value}</p>
       <p className="mt-1 text-[10px] text-[var(--muted)]">{detail}</p>
     </div>
   )

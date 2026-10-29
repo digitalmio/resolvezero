@@ -28,7 +28,7 @@ export function ProfileMenu({
   }
 
   return (
-    <div ref={containerRef} className="relative ml-1 hidden md:block">
+    <div ref={containerRef} className="relative ml-1 block">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -36,7 +36,7 @@ export function ProfileMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-busy={loading}
-        className="flex h-8 items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 text-[12px] font-medium text-[var(--ink)] shadow-[0_1px_2px_rgba(26,32,24,0.03)] transition-colors hover:bg-[var(--sage)] disabled:cursor-wait disabled:opacity-60"
+        className="flex h-8 items-center gap-2 rounded-[2px] border border-[var(--line)] bg-transparent px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] disabled:cursor-wait disabled:opacity-60"
       >
         <span className="max-w-[120px] truncate">{label}</span>
         {!loading ? (
@@ -50,8 +50,11 @@ export function ProfileMenu({
       {open && !loading ? (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-4 w-[172px] overflow-hidden rounded-[10px] border border-[var(--line)] bg-white py-1 shadow-[0_12px_32px_rgba(26,32,24,0.12)]"
+          className="absolute left-0 top-full z-50 mt-3 w-[188px] overflow-hidden rounded-[2px] border border-[var(--line-strong)] bg-[var(--card)] py-1 shadow-[0_18px_48px_rgba(11,11,10,0.14)]"
         >
+          <p className="px-3 pb-1 pt-2 text-[8px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+            Profile
+          </p>
           {profiles.length === 0 ? (
             <p className="px-3 py-2 text-[11px] text-[var(--muted)]">No profiles</p>
           ) : null}
@@ -62,10 +65,10 @@ export function ProfileMenu({
               role="menuitemradio"
               aria-checked={profile.id === activeId}
               onClick={() => choose(profile.id)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] transition-colors hover:bg-[var(--sage)]"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] transition-colors hover:bg-[var(--paper-2)]"
             >
               <span className="flex size-4 shrink-0 items-center justify-center">
-                {profile.id === activeId ? <Check size={12} className="text-[var(--green)]" /> : null}
+                {profile.id === activeId ? <Check size={12} className="text-[var(--brand)]" /> : null}
               </span>
               <span className="truncate">
                 {profile.name.charAt(0).toUpperCase() + profile.name.slice(1)}
@@ -76,7 +79,7 @@ export function ProfileMenu({
           <Link
             to="/settings"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 text-[11px] text-[var(--muted)] transition-colors hover:bg-[var(--sage)] hover:text-[var(--ink)]"
+            className="flex items-center gap-2 px-3 py-2 text-[10px] uppercase tracking-[0.06em] text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
           >
             <Settings size={12} /> Profile settings
           </Link>

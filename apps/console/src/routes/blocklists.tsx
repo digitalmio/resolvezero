@@ -95,7 +95,7 @@ function Stat({ label, value, detail }: { label: string; value: string; detail: 
   return (
     <div className="rz-card p-5">
       <p className="text-[11px] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 font-[var(--font-display)] text-[26px] font-semibold tracking-[-0.045em]">{value}</p>
+      <p className="mt-2 rz-font-display text-[26px] font-semibold tracking-[-0.045em]">{value}</p>
       <p className="mt-1 text-[10px] text-[var(--muted)]">{detail}</p>
     </div>
   )

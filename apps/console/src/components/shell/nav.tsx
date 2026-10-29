@@ -43,16 +43,18 @@ export function SidebarLink({ item, active }: { item: NavItem; active: boolean }
     <Link
       to={item.to}
       className={[
-        'group flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[12px] font-medium transition-colors',
+        'group flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[11px] font-medium transition-colors',
         active
-          ? 'border-[var(--green)] bg-[var(--sage)] text-[var(--ink)]'
-          : 'border-transparent text-[var(--muted)] hover:bg-[var(--sage)]/60 hover:text-[var(--ink)]',
+          ? 'border-[var(--brand)] bg-white/[0.06] text-[var(--sidebar-text)]'
+          : 'border-transparent text-[var(--sidebar-muted)] hover:bg-white/[0.04] hover:text-[var(--sidebar-text)]',
       ].join(' ')}
     >
-      <span className={active ? 'text-[var(--green)]' : 'text-[var(--muted)] group-hover:text-[var(--ink)]'}>{item.icon}</span>
+      <span className={active ? 'text-[var(--brand)]' : 'text-[var(--sidebar-muted)] group-hover:text-[var(--sidebar-text)]'}>
+        {item.icon}
+      </span>
       <span>{item.label}</span>
       {item.badge ? (
-        <span className="ml-auto rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)] ring-1 ring-[var(--line)]">
+        <span className="ml-auto rounded-[2px] bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-[var(--sidebar-text)] ring-1 ring-white/10">
           {item.badge}
         </span>
       ) : null}

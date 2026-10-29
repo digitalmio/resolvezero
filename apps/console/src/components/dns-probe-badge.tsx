@@ -21,7 +21,7 @@ const phaseMeta: Record<
   checking: {
     label: 'Checking DNS',
     icon: LoaderCircle,
-    className: 'border-[var(--line)] bg-white text-[var(--muted)]',
+    className: 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)]',
     dot: 'bg-[var(--warning)]',
   },
   active: {

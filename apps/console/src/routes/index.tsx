@@ -65,7 +65,7 @@ function Overview() {
       <div className="relative">
         <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute -inset-x-3 -top-6 h-36 opacity-60" />
         <PageHeader
-          eyebrow={`${profileLabel} profile`}
+          eyebrow={`01 / Network · ${profileLabel} profile`}
           title="Overview"
           description={`${greeting}, ${firstName}. Here’s how your network is doing over the last 24 hours.`}
           meta={
@@ -92,20 +92,20 @@ function Overview() {
       </div>
 
       <section className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
-        <div className="rz-card flex flex-col p-6 xl:p-7">
+        <div className="rz-card flex flex-col border-t-2 border-t-[var(--brand)] p-5 xl:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="rz-section-title">Query volume</h2>
-              <p className="mt-1 text-[12px] text-[var(--muted)]">Total vs blocked queries over the last 24 hours</p>
+              <p className="mt-1.5 text-[11px] text-[var(--muted)]">Total vs blocked queries over the last 24 hours</p>
             </div>
             <span className="rz-pill">Last 24 hours</span>
           </div>
-          <div className="mt-4 flex items-center gap-5 text-[11px] text-[var(--muted)]">
+          <div className="mt-4 flex items-center gap-5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
             <span className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-[var(--green)]" /> Queries
+              <span className="size-1.5 bg-[var(--ink)]" /> Queries
             </span>
             <span className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-[var(--accent)]" /> Blocked
+              <span className="size-1.5 bg-[var(--accent)]" /> Blocked
             </span>
           </div>
           <QueryChart data={chartData} />
@@ -123,22 +123,30 @@ function Overview() {
         </div>
       </section>
 
-      <section className="rz-card grid grid-cols-2 divide-y divide-[var(--line)] sm:grid-cols-4 sm:divide-x sm:divide-y-0">
-        <PulseMetric icon={<Globe2 size={15} />} label="Queries / 24h" value={formatNumber(totalQueries)} delta="last 24 hours" />
+      <section className="grid grid-cols-2 divide-y divide-[var(--line)] border-y border-[var(--line)] sm:grid-cols-4 sm:divide-x sm:divide-y-0">
+        <PulseMetric index="01" icon={<Globe2 size={15} />} label="Queries / 24h" value={formatNumber(totalQueries)} delta="last 24 hours" />
         <PulseMetric
+          index="02"
           icon={<Ban size={15} />}
           label="Blocked"
           value={formatNumber(blocked)}
           delta={`${(data.blockRatio * 100).toFixed(1)}% of total`}
         />
         <PulseMetric
+          index="03"
           icon={<Clock3 size={15} />}
           label="Avg upstream"
           value={data.avgRttMs != null ? `${data.avgRttMs} ms` : '—'}
           delta="upstream queries"
           positive
         />
-        <PulseMetric icon={<Monitor size={15} />} label="Active sources" value={String(activeSources)} delta="client IPs / DoH tags" />
+        <PulseMetric
+          index="04"
+          icon={<Monitor size={15} />}
+          label="Active sources"
+          value={String(activeSources)}
+          delta="client IPs / DoH tags"
+        />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,0.9fr)]">

@@ -28,14 +28,14 @@ export function UserMenu({ name, image, email }: { name: string; image: string |
   }
 
   return (
-    <div ref={containerRef} className="relative border-t border-[var(--line)]">
+    <div ref={containerRef} className="relative border-t border-white/10">
       {open ? (
         <div
           role="menu"
-          className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-[12px] border border-[var(--line)] bg-white shadow-[0_12px_32px_rgba(26,32,24,0.12)]"
+          className="absolute bottom-full left-3 right-3 mb-2 overflow-hidden rounded-[2px] border border-[var(--line-strong)] bg-[var(--card)] text-[var(--ink)] shadow-[0_18px_48px_rgba(0,0,0,0.24)]"
         >
           <div className="border-b border-[var(--line)] px-3 py-2.5">
-            <p className="truncate text-[11px] font-medium">{name}</p>
+            <p className="truncate text-[11px] font-semibold">{name}</p>
             {email ? <p className="mt-0.5 truncate text-[10px] text-[var(--muted)]">{email}</p> : null}
           </div>
           <button
@@ -43,7 +43,7 @@ export function UserMenu({ name, image, email }: { name: string; image: string |
             type="button"
             onClick={() => void signOut()}
             disabled={pending}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-[var(--ink)] transition-colors hover:bg-[var(--sage)] disabled:opacity-60"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] disabled:opacity-60"
           >
             <LogOut size={14} className="text-[var(--muted)]" />
             {pending ? 'Signing out…' : 'Sign out'}
@@ -56,20 +56,25 @@ export function UserMenu({ name, image, email }: { name: string; image: string |
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-[var(--sage)]"
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-white/[0.05]"
       >
         {image ? (
-          <img src={image} alt="" className="size-8 rounded-full object-cover ring-1 ring-[var(--line)]" referrerPolicy="no-referrer" />
+          <img src={image} alt="" className="size-8 rounded-full object-cover ring-1 ring-white/15" referrerPolicy="no-referrer" />
         ) : (
-          <span className="flex size-8 items-center justify-center rounded-full bg-[var(--ink)] text-[10px] font-semibold text-white">
+          <span className="flex size-8 items-center justify-center rounded-full bg-[var(--brand)] text-[10px] font-semibold text-[var(--ink)]">
             {initials}
           </span>
         )}
         <span className="min-w-0">
-          <span className="block truncate text-[11px] font-medium">{name}</span>
-          <span className="block truncate text-[10px] text-[var(--muted)]">Personal workspace</span>
+          <span className="block truncate text-[11px] font-medium text-[var(--sidebar-text)]">{name}</span>
+          <span className="block truncate text-[9px] uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
+            Personal workspace
+          </span>
         </span>
-        <ChevronUp size={14} className={`ml-auto text-[var(--muted)] transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronUp
+          size={14}
+          className={`ml-auto text-[var(--sidebar-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
     </div>
   )

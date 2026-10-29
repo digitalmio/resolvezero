@@ -1,28 +1,34 @@
 @import "@fontsource-variable/inter";
-@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/archivo/standard.css";
 @import "tailwindcss";
 
 :root {
-  --ink: #1a2018;
-  --paper: #eff2ea;
-  --paper-2: #e6ebe2;
-  --card: #fcfcf7;
-  --line: rgba(26, 32, 24, 0.1);
-  --line-strong: rgba(26, 32, 24, 0.16);
-  --muted: #5f655e;
-  --accent: #f45a22;
-  --accent-soft: #fff1e9;
-  --sage: #edf2ec;
-  --sage-2: #dfe8dc;
-  --green: #007753;
-  --green-soft: #e4efe2;
-  --lime: #a5d122;
-  --danger: #d64545;
+  --ink: #0b0b0a;
+  --ink-2: #171716;
+  --paper: #f2efe6;
+  --paper-2: #e7e2d6;
+  --card: #fffdf8;
+  --sage: #e7e2d6;
+  --sage-2: #dcd6c7;
+  --line: rgba(11, 11, 10, 0.14);
+  --line-strong: rgba(11, 11, 10, 0.28);
+  --muted: #6b675e;
+  --brand: #ff4d00;
+  --brand-soft: #ffe7db;
+  --accent: #d92d20;
+  --accent-soft: #fde8e4;
+  --green: #0a7d52;
+  --green-soft: #e3efe7;
+  --lime: #c6f24e;
+  --danger: #d92d20;
   --warning: #a56a16;
-  --sidebar: #f4f6ef;
-  --radius: 0.85rem;
+  --sidebar: #0b0b0a;
+  --sidebar-2: #171716;
+  --sidebar-text: #f2efe6;
+  --sidebar-muted: #b4ada0;
+  --radius: 4px;
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Plus Jakarta Sans Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Archivo Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-family: var(--font-sans);
   color: var(--ink);
@@ -53,7 +59,8 @@ h1,
 h2,
 h3 {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-stretch: 112%;
+  font-weight: 700;
 }
 
 button,
@@ -69,20 +76,21 @@ a {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--green) 22%, transparent);
+  background: color-mix(in oklab, var(--brand) 28%, transparent);
   color: var(--ink);
 }
 
 :focus-visible {
-  outline: 2px solid color-mix(in oklab, var(--green) 55%, transparent);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
+@layer components {
 .rz-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--card);
-  box-shadow: 0 1px 2px rgba(26, 32, 24, 0.03);
+  box-shadow: none;
 }
 
 .rz-button-primary,
@@ -91,11 +99,12 @@ a {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-radius: 8px;
-  padding: 7px 12px;
-  font-size: 12px;
+  border-radius: 2px;
+  padding: 8px 12px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.1;
+  letter-spacing: 0.02em;
   transition:
     background 120ms ease,
     border-color 120ms ease,
@@ -104,14 +113,14 @@ a {
 }
 
 .rz-button-primary {
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--paper);
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: var(--ink);
 }
 
 .rz-button-primary:hover {
-  background: #2a3028;
-  border-color: #2a3028;
+  background: color-mix(in oklab, var(--brand) 82%, var(--ink));
+  border-color: color-mix(in oklab, var(--brand) 82%, var(--ink));
 }
 
 .rz-button-primary:active {
@@ -120,23 +129,26 @@ a {
 
 .rz-button-secondary {
   border: 1px solid var(--line-strong);
-  background: #fff;
+  background: transparent;
   color: var(--ink);
 }
 
 .rz-button-secondary:hover {
-  background: var(--sage);
-  border-color: color-mix(in oklab, var(--ink) 18%, transparent);
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
 }
 
 .rz-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 9px;
+  font-weight: 600;
   line-height: 1;
-  color: var(--green);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .rz-eyebrow::before {
@@ -144,16 +156,31 @@ a {
   display: inline-block;
   width: 5px;
   height: 5px;
-  border-radius: 999px;
-  background: var(--lime);
+  background: var(--brand);
+}
+
+.rz-display {
+  font-family: var(--font-display);
+  font-stretch: 118%;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.rz-font-display {
+  font-family: var(--font-display);
+  font-stretch: 112%;
 }
 
 .rz-page-title {
   font-family: var(--font-display);
-  font-size: clamp(1.75rem, 2.6vw, 2.25rem);
-  font-weight: 600;
-  letter-spacing: -0.045em;
-  line-height: 1.05;
+  font-size: clamp(2.15rem, 4.2vw, 3.5rem);
+  font-stretch: 118%;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 0.92;
+  text-transform: uppercase;
   color: var(--ink);
 }
 
@@ -161,20 +188,22 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  background: var(--brand);
   color: var(--ink);
 }
 
 .rz-section-title {
   font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 13px;
+  font-stretch: 112%;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
   color: var(--ink);
 }
 
@@ -187,42 +216,44 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: 2px;
   border: 1px solid var(--line);
-  padding: 4px 8px;
-  font-size: 10px;
-  font-weight: 500;
+  padding: 5px 8px;
+  font-size: 9px;
+  font-weight: 600;
   line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   color: var(--muted);
-  background: #fff;
+  background: var(--card);
 }
 
 .rz-pill-positive {
-  border-color: color-mix(in oklab, var(--green) 22%, transparent);
+  border-color: color-mix(in oklab, var(--green) 30%, transparent);
   background: var(--green-soft);
   color: var(--green);
 }
 
 .rz-pill-warning {
-  border-color: #eadfc4;
+  border-color: #dfcfab;
   background: #fbf6e9;
   color: var(--warning);
 }
 
 .rz-pill-danger {
-  border-color: #f0d7c8;
-  background: #fff6f1;
-  color: #9a3f1b;
+  border-color: color-mix(in oklab, var(--danger) 26%, transparent);
+  background: var(--accent-soft);
+  color: var(--danger);
 }
 
 .rz-pill-accent {
-  border-color: color-mix(in oklab, var(--accent) 24%, transparent);
-  background: var(--accent-soft);
-  color: #b74716;
+  border-color: color-mix(in oklab, var(--brand) 30%, transparent);
+  background: var(--brand-soft);
+  color: #9a3007;
 }
 
 .rz-dot-grid {
-  background-image: radial-gradient(color-mix(in oklab, var(--ink) 12%, transparent) 1px, transparent 1px);
+  background-image: radial-gradient(color-mix(in oklab, var(--ink) 16%, transparent) 1px, transparent 1px);
   background-size: 16px 16px;
   -webkit-mask-image: linear-gradient(to bottom, black, transparent);
   mask-image: linear-gradient(to bottom, black, transparent);
@@ -230,6 +261,7 @@ a {
 
 .rz-hairline {
   border-color: var(--line);
+}
 }
 
 @media (max-width: 1023px) {

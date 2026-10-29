@@ -68,10 +68,11 @@ pnpm --filter @resolvezero/console typecheck
 
 ## Design direction
 
-- Ink/paper base with one signal accent
-- Monospace for domains, IPs, and logs
-- Dense but calm security dashboard
-- The `RØ` mark is the brand anchor; favicon variants are generated from it.
+- Editorial ink/cream/orange system with hard 1px rules and numbered sections
+- Archivo Variable for expanded display type; Inter for body; monospace for domains, IPs, and logs
+- Orange for brand and primary actions, green for healthy states, red for blocked/alerts
+- Dense but calm data surfaces; the console should not become a marketing page
+- The `RØ` mark and orange favicon are the brand anchors
 
 ## Next
 
