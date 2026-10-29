@@ -115,7 +115,7 @@ a {
 .rz-button-primary {
   border: 1px solid var(--brand);
   background: var(--brand);
-  color: var(--ink);
+  color: #fff;
 }
 
 .rz-button-primary:hover {
