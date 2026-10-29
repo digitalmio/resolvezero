@@ -1,7 +1,10 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 export interface QueryChartPoint {
+  key: string
   time: string
+  day: string
+  full: string
   total: number
   blocked: number
 }
@@ -31,12 +34,17 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
           </defs>
           <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 5" />
           <XAxis
-            dataKey="time"
+            dataKey="key"
             tickLine={false}
             axisLine={false}
             tick={{ fontSize: 10, fill: 'var(--muted)' }}
             interval="preserveStartEnd"
             minTickGap={32}
+            tickFormatter={(value: string) => {
+              const point = data.find((entry) => entry.key === value)
+              if (!point) return value
+              return point.time === '00:00' ? point.day : point.time
+            }}
           />
           <YAxis
             width={42}
@@ -60,6 +68,10 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
             }}
             labelStyle={{ color: 'var(--muted)', marginBottom: 2, lineHeight: 1.2 }}
             itemStyle={{ padding: 0, lineHeight: 1.3 }}
+            labelFormatter={(label, payload) => {
+              const point = payload?.[0]?.payload as QueryChartPoint | undefined
+              return point?.full ?? label
+            }}
             formatter={(value, name) => [Number(value).toLocaleString('en-GB'), name === 'total' ? 'Queries' : 'Blocked']}
           />
           <Area
