@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, Ban, House, Monitor, Router } from 'lucide-react'
 
+import { Button } from '../ui/button'
+
 export function TopBlockedCard({ items }: { items: { domain: string; label: string; count: string; share: number }[] }) {
   return (
     <div className="rz-card min-w-0 p-5">
@@ -53,9 +55,9 @@ export function DevicesCard({
           <h2 className="rz-section-title">Devices</h2>
           <p className="mt-1.5 text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Most active on this profile</p>
         </div>
-        <Link to="/devices" className="rz-button-secondary !px-2 !py-1.5 !text-[9px]">
-          Manage
-        </Link>
+        <Button asChild variant="secondary" size="sm">
+          <Link to="/devices">Manage</Link>
+        </Button>
       </div>
       <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
         {devices.length === 0 ? (

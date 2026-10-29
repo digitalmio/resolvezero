@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getRulesData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { Button } from '../components/ui/button'
 import { Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 
@@ -34,10 +35,10 @@ function Rules() {
         title="Rules"
         description="Block, allow, and override names. Changes reach every edge in seconds."
         actions={
-          <button className="rz-button-primary">
+          <Button>
             <Plus size={14} />
             Add rule
-          </button>
+          </Button>
         }
       />
 
@@ -67,14 +68,14 @@ function Rules() {
             <Search size={14} />
             <span>Search rules and domains</span>
           </div>
-          <button className="rz-button-secondary !py-2">
+          <Button variant="secondary">
             <Filter size={13} />
             Filter
-          </button>
-          <button className="rz-button-secondary !py-2">
+          </Button>
+          <Button variant="secondary">
             <Network size={13} />
             Import
-          </button>
+          </Button>
         </div>
 
         <div className="overflow-x-auto">

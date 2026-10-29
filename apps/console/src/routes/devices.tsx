@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getOverview } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { Button } from '../components/ui/button'
 import { Info, Monitor, Plus, Router, Search, Smartphone } from 'lucide-react'
 
 export const Route = createFileRoute('/devices')({ component: Devices })
@@ -22,10 +23,10 @@ function Devices() {
         title="Devices"
         description="Know what is talking to your resolver, and how much."
         actions={
-          <button className="rz-button-primary">
+          <Button>
             <Plus size={14} />
             Tag a device
-          </button>
+          </Button>
         }
       />
 

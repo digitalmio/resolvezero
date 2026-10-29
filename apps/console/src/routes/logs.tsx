@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { getLogsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { Button } from '../components/ui/button'
 import { Switch } from '../components/ui/switch'
 
 export const Route = createFileRoute('/logs')({ component: Logs })
@@ -62,14 +63,14 @@ function Logs() {
         title="Query log"
         description={`${profileLabel} · latest 100 archived queries · 1-minute flush`}
         actions={
-          <button
+          <Button
             type="button"
-            className="rz-button-secondary"
+            variant="secondary"
             onClick={() => void refetch()}
             disabled={isFetching}
           >
             <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} /> Refresh
-          </button>
+          </Button>
         }
       />
 

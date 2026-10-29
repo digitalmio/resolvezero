@@ -9,7 +9,7 @@ TanStack Start console for ResolveZero — profiles, rules, local DNS, query log
 - TanStack Query
 - React 19
 - Tailwind CSS 4
-- shadcn-style Radix primitives for Select, Switch, and DropdownMenu
+- shadcn-style Radix primitives for Button, Select, Switch, and DropdownMenu
 - lucide-react
 
 The edge keeps its own Hono HTTP app; this app is the control-plane UI.

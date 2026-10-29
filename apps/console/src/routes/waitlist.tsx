@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, ExternalLink, Server } from 'lucide-react'
 
 import logo from '../assets/logo-square.svg'
+import { Button } from '../components/ui/button'
 
 export const Route = createFileRoute('/waitlist')({ component: WaitlistPage })
 
@@ -57,17 +58,20 @@ function WaitlistPage() {
               </div>
 
               <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-                <a
-                  href="https://github.com/digitalmio/resolvezero"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rz-button-primary flex-1"
-                >
-                  <ExternalLink size={13} /> View on GitHub
-                </a>
-                <Link to="/login" className="rz-button-secondary flex-1">
-                  <ArrowLeft size={13} /> Sign in
-                </Link>
+                <Button asChild className="flex-1">
+                  <a
+                    href="https://github.com/digitalmio/resolvezero"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink size={13} /> View on GitHub
+                  </a>
+                </Button>
+                <Button asChild variant="secondary" className="flex-1">
+                  <Link to="/login">
+                    <ArrowLeft size={13} /> Sign in
+                  </Link>
+                </Button>
               </div>
             </div>
 

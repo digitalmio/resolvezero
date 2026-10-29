@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { Button } from '../components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
 const PURGE_TYPES = [
@@ -92,13 +93,12 @@ function SettingsPage() {
               ))}
             </SelectContent>
           </Select>
-          <button
-            className="rz-button-primary disabled:cursor-not-allowed disabled:opacity-50"
+          <Button
             disabled={!domain.trim() || purge.isPending}
             onClick={() => purge.mutate()}
           >
             {purge.isPending ? 'Purging…' : 'Purge'}
-          </button>
+          </Button>
         </div>
         {purge.isError ? <p className="mt-2 text-[11px] text-[var(--danger)]">{purge.error.message}</p> : null}
         {purge.isSuccess ? <p className="mt-2 text-[11px] text-[var(--green)]">Queued for {purge.data.name}{purge.data.type ? ` (${purge.data.type})` : ''}.</p> : null}

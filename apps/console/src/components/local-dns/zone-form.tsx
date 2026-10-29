@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react'
 import type { FormEvent } from 'react'
 
 import { ZONE_RECORD_TYPES, type ZoneRecordType } from '../../lib/zone'
+import { Button } from '../ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 export type ZoneFormState = {
@@ -121,17 +122,17 @@ export function ZoneForm({
       ) : null}
 
       <div className="mt-4 flex gap-2">
-        <button
+        <Button
           type="submit"
           disabled={saving || !form.domain.trim() || !form.values.trim()}
-          className="rz-button-primary flex-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1"
         >
           {saving ? 'Saving…' : editing ? 'Update record' : 'Add record'}
-        </button>
+        </Button>
         {editing ? (
-          <button type="button" onClick={onCancel} className="rz-button-secondary">
+          <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         ) : null}
       </div>
     </form>

@@ -11,6 +11,7 @@ import { ageLabel, displayDomain, formatNumber, greetingForHour, regionLabel } f
 import { OverviewSkeleton, PulseMetric } from '../components/overview/pulse'
 import { QueryChart } from '../components/overview/query-chart'
 import { LiveTrafficCard, PostureCard } from '../components/overview/traffic'
+import { Button } from '../components/ui/button'
 import { OVERVIEW_RANGES, overviewRange, type OverviewRangeKey } from '../lib/overview-range'
 import { getOverview, getQueryVolume } from '../server/dashboard'
 
@@ -93,10 +94,12 @@ function Overview() {
             </>
           }
           actions={
-            <Link to="/logs" className="rz-button-secondary">
-              <FileText size={13} />
-              Open query log
-            </Link>
+            <Button asChild variant="secondary">
+              <Link to="/logs">
+                <FileText size={13} />
+                Open query log
+              </Link>
+            </Button>
           }
         />
       </div>
