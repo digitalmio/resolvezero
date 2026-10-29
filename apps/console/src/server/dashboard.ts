@@ -10,11 +10,19 @@ const MAX_LOCAL_DNS_VALUES = 8;
 const MAX_LOCAL_DNS_VALUE_LENGTH = 255;
 const MAX_LOCAL_DNS_RAW_LENGTH = 4096;
 
+function validateProfileId(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw !== "string") throw new Error("Invalid profile id");
+  const value = raw.trim();
+  if (!/^[0-9a-f-]{12,64}$/i.test(value)) throw new Error("Invalid profile id");
+  return value;
+}
+
 /**
  * Structural only: cheap length checks before auth, no mapping/dedup work.
  * Full DNS validation runs in the authenticated handler.
  */
-function validateLocalDnsShape(data: unknown): ZoneInput {
+function validateLocalDnsShape(data: unknown): ZoneInput & { profileId?: string } {
   if (!data || typeof data !== "object") throw new Error("Invalid local DNS input");
   const input = data as Record<string, unknown>;
   if (typeof input.domain !== "string" || input.domain.length > MAX_DOMAIN_LENGTH) {
@@ -44,10 +52,11 @@ function validateLocalDnsShape(data: unknown): ZoneInput {
     recordType: input.recordType,
     values: values as string[] | string,
     ttl: input.ttl as string | number | undefined,
+    profileId: validateProfileId(input.profileId),
   };
 }
 
-function validateZoneKeyShape(data: unknown): { domain: string; recordType: string } {
+function validateZoneKeyShape(data: unknown): { domain: string; recordType: string; profileId?: string } {
   if (!data || typeof data !== "object") throw new Error("Invalid local DNS input");
   const input = data as Record<string, unknown>;
   if (typeof input.domain !== "string" || input.domain.length > MAX_DOMAIN_LENGTH) {
@@ -56,7 +65,11 @@ function validateZoneKeyShape(data: unknown): { domain: string; recordType: stri
   if (typeof input.recordType !== "string" || input.recordType.length > MAX_RECORD_TYPE_LENGTH) {
     throw new Error("Invalid record type");
   }
-  return { domain: input.domain, recordType: input.recordType };
+  return {
+    domain: input.domain,
+    recordType: input.recordType,
+    profileId: validateProfileId(input.profileId),
+  };
 }
 
 export const getOverview = createServerFn({ method: "GET" }).handler(async () => {
@@ -94,7 +107,7 @@ export const saveLocalDnsZone = createServerFn({ method: "POST" })
       import("./dashboard.server"),
     ]);
     const user = await requireSessionUser();
-    return upsertLocalDnsZone(user.id, normalizeZoneInput(data));
+    return upsertLocalDnsZone(user.id, normalizeZoneInput(data), data.profileId);
   });
 
 export const deleteLocalDnsZone = createServerFn({ method: "POST" })
@@ -105,7 +118,12 @@ export const deleteLocalDnsZone = createServerFn({ method: "POST" })
       import("./dashboard.server"),
     ]);
     const user = await requireSessionUser();
-    return removeLocalDnsZone(user.id, normalizeDomain(data.domain), normalizeRecordType(data.recordType));
+    return removeLocalDnsZone(
+      user.id,
+      normalizeDomain(data.domain),
+      normalizeRecordType(data.recordType),
+      data.profileId,
+    );
   });
 
 export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async () => {
@@ -145,7 +163,7 @@ export const getLogsData = createServerFn({ method: "GET" }).handler(async () =>
 });
 
 export const purgeCache = createServerFn({ method: "POST" })
-  .validator((data: { domain: string; type?: string }) => {
+  .validator((data: { domain: string; type?: string; profileId?: string }) => {
     const domain = String(data?.domain ?? "").trim().toLowerCase().replace(/\.+$/, "");
     if (
       !domain ||
@@ -156,7 +174,7 @@ export const purgeCache = createServerFn({ method: "POST" })
       throw new Error("Enter a valid DNS name");
     }
     const type = data?.type ? String(data.type).toUpperCase() : undefined;
-    return { domain, type };
+    return { domain, type, profileId: validateProfileId(data?.profileId) };
   })
   .handler(async ({ data }) => {
     const [{ requireSessionUser }, { purgeCache: runPurge }] = await Promise.all([
@@ -164,7 +182,7 @@ export const purgeCache = createServerFn({ method: "POST" })
       import("./dashboard.server"),
     ]);
     const user = await requireSessionUser();
-    return runPurge(user.id, data.domain, data.type);
+    return runPurge(user.id, data.domain, data.type, data.profileId);
   });
 
 export const checkDnsProbe = createServerFn({ method: "POST" })

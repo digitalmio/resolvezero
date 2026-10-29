@@ -23,7 +23,7 @@ export function ProfileMenu({
   function choose(id: string) {
     setOpen(false)
     if (id === activeId) return
-    document.cookie = `rz_profile_id=${encodeURIComponent(id)}; Path=/; Max-Age=31536000; SameSite=Lax`
+    document.cookie = `rz_profile_id=${encodeURIComponent(id)}; Path=/; Max-Age=31536000; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}`
     window.location.reload()
   }
 

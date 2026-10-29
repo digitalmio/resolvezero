@@ -11,8 +11,8 @@ import type { LocalDnsZone } from "../../lib/zone";
 import { findProfile } from "./profile.server";
 import type { LocalDnsData, RulesData } from "./types";
 
-export async function loadRules(ownerUserId: string): Promise<RulesData> {
-  const profile = await findProfile(ownerUserId);
+export async function loadRules(ownerUserId: string, profileId?: string): Promise<RulesData> {
+  const profile = await findProfile(ownerUserId, profileId);
   const [rules, zones, lists, configRows] = await Promise.all([
     db
       .select({ domain: profileRules.domain, action: profileRules.action })
@@ -71,8 +71,8 @@ export async function loadRules(ownerUserId: string): Promise<RulesData> {
   return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };
 }
 
-export async function loadLocalDns(ownerUserId: string): Promise<LocalDnsData> {
-  const profile = await findProfile(ownerUserId);
+export async function loadLocalDns(ownerUserId: string, profileId?: string): Promise<LocalDnsData> {
+  const profile = await findProfile(ownerUserId, profileId);
   const rows = await db
     .select({
       domain: profileZones.domain,
@@ -96,8 +96,12 @@ export async function loadLocalDns(ownerUserId: string): Promise<LocalDnsData> {
   };
 }
 
-export async function upsertLocalDnsZone(ownerUserId: string, zone: LocalDnsZone): Promise<LocalDnsZone> {
-  const profile = await findProfile(ownerUserId);
+export async function upsertLocalDnsZone(
+  ownerUserId: string,
+  zone: LocalDnsZone,
+  profileId?: string,
+): Promise<LocalDnsZone> {
+  const profile = await findProfile(ownerUserId, profileId);
   await db
     .insert(profileZones)
     .values({
@@ -118,8 +122,9 @@ export async function removeLocalDnsZone(
   ownerUserId: string,
   domain: string,
   recordType: LocalDnsZone["recordType"],
+  profileId?: string,
 ): Promise<{ ok: true }> {
-  const profile = await findProfile(ownerUserId);
+  const profile = await findProfile(ownerUserId, profileId);
   await db
     .delete(profileZones)
     .where(

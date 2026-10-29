@@ -35,6 +35,7 @@ function LocalDnsPage() {
           recordType: form.recordType,
           values: form.values,
           ttl: Number(form.ttl),
+          profileId: data?.profileId,
         },
       }),
     onSuccess: () => {
@@ -46,7 +47,9 @@ function LocalDnsPage() {
 
   const remove = useMutation({
     mutationFn: (zone: LocalDnsZone) =>
-      deleteLocalDnsZone({ data: { domain: zone.domain, recordType: zone.recordType } }),
+      deleteLocalDnsZone({
+        data: { domain: zone.domain, recordType: zone.recordType, profileId: data?.profileId },
+      }),
     onSuccess: invalidate,
   })
 

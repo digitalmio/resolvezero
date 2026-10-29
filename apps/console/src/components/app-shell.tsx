@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Command, Search, ShieldCheck } from 'lucide-react'
+import { useEffect } from 'react'
 
 import logo from '../assets/logo-square.svg'
 import type { SessionUser } from '../server/auth'
@@ -13,6 +14,18 @@ import { getOverview } from '../server/dashboard'
 export function AppShell({ session }: { session: SessionUser | null }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const { data } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+
+  // Persist the server's deterministic fallback so later reads and mutations
+  // stay on the same profile even before the user opens the switcher.
+  useEffect(() => {
+    const profileId = data?.profileId
+    if (!profileId) return
+    const current = document.cookie.match(/(?:^|;\s*)rz_profile_id=([^;]+)/)?.[1]
+    if (current === profileId) return
+    const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+    document.cookie = `rz_profile_id=${encodeURIComponent(profileId)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`
+  }, [data?.profileId])
+
   const deviceCount = data ? Math.max(data.activeDevices, data.topClients.length) : 0
   const queriesLabel = data
     ? new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(data.totalQueries)

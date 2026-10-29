@@ -38,8 +38,8 @@ export async function loadDnsProbe(ownerUserId: string, nonce: string): Promise<
   };
 }
 
-export async function loadLogs(ownerUserId: string): Promise<{ profileId: string; profileName: string; entries: LogEntry[] }> {
-  const profile = await findProfile(ownerUserId);
+export async function loadLogs(ownerUserId: string, profileId?: string): Promise<{ profileId: string; profileName: string; entries: LogEntry[] }> {
+  const profile = await findProfile(ownerUserId, profileId);
   const [token, lists] = await Promise.all([
     db
       .select({ token: profiles.dohToken })

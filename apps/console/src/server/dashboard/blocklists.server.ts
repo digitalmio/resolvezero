@@ -5,8 +5,8 @@ import { profileBlocklists } from "@resolvezero/db/schema";
 import { findProfile } from "./profile.server";
 import type { BlocklistsData } from "./types";
 
-export async function loadBlocklists(ownerUserId: string): Promise<BlocklistsData> {
-  const profile = await findProfile(ownerUserId);
+export async function loadBlocklists(ownerUserId: string, profileId?: string): Promise<BlocklistsData> {
+  const profile = await findProfile(ownerUserId, profileId);
   const lists = await db
     .select({
       id: profileBlocklists.id,

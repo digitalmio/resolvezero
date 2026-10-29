@@ -17,7 +17,8 @@ function SettingsPage() {
   const [domain, setDomain] = useState('')
   const [recordType, setRecordType] = useState('')
   const purge = useMutation({
-    mutationFn: () => purgeCache({ data: { domain, type: recordType || undefined } }),
+    mutationFn: () =>
+      purgeCache({ data: { domain, type: recordType || undefined, profileId: data?.profileId } }),
   })
 
   if (isPending) return <PageLoading label="Loading settings…" />

@@ -12,8 +12,8 @@ import { edgeBaseUrl } from "./edge.server";
 import { findProfile } from "./profile.server";
 import type { CachePurgeResult, SettingsData } from "./types";
 
-export async function loadSettings(ownerUserId: string): Promise<SettingsData> {
-  const profile = await findProfile(ownerUserId);
+export async function loadSettings(ownerUserId: string, profileId?: string): Promise<SettingsData> {
+  const profile = await findProfile(ownerUserId, profileId);
   const [full, sourceIps, rules, zones, lists] = await Promise.all([
     db
       .select({
@@ -53,8 +53,9 @@ export async function purgeCache(
   ownerUserId: string,
   domain: string,
   type?: string,
+  profileId?: string,
 ): Promise<CachePurgeResult> {
-  const profile = await findProfile(ownerUserId);
+  const profile = await findProfile(ownerUserId, profileId);
   const token = await db
     .select({ token: profiles.dohToken })
     .from(profiles)

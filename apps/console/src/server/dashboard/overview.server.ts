@@ -13,14 +13,14 @@ import { loadEdgeHealth } from "./edge.server";
 import { findProfile, ownedProfiles } from "./profile.server";
 import { HOUR, type OverviewData, type Viewer } from "./types";
 
-export async function loadOverview(ownerUserId: string, viewer: Viewer): Promise<OverviewData> {
+export async function loadOverview(ownerUserId: string, viewer: Viewer, profileId?: string): Promise<OverviewData> {
   const now = new Date();
   // Align the query and the plotted series to the same floored hour. Filtering
   // from `now - 24h` while plotting from the floored hour made the first
   // bucket look like a real zero even when it had queries.
   const start = Math.floor((now.getTime() - 24 * HOUR) / HOUR) * HOUR;
   const end = Math.floor(now.getTime() / HOUR) * HOUR;
-  const profile = await findProfile(ownerUserId);
+  const profile = await findProfile(ownerUserId, profileId);
 
   const [rows, configRows, rules, zones, edge, profiles] = await Promise.all([
     db

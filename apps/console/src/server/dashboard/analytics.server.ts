@@ -6,8 +6,8 @@ import { merge, top } from "./aggregate";
 import { findProfile } from "./profile.server";
 import { HOUR, type AnalyticsData } from "./types";
 
-export async function loadAnalytics(ownerUserId: string): Promise<AnalyticsData> {
-  const profile = await findProfile(ownerUserId);
+export async function loadAnalytics(ownerUserId: string, profileId?: string): Promise<AnalyticsData> {
+  const profile = await findProfile(ownerUserId, profileId);
   const now = new Date();
   const since = new Date(now.getTime() - 30 * 24 * HOUR);
   const rows = await db
