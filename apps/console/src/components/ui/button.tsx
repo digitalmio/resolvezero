@@ -5,7 +5,7 @@ import { forwardRef, type ComponentPropsWithoutRef } from "react"
 import { cn } from "../../lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-1.5 rounded-none font-semibold leading-[1.1] tracking-[0.02em] whitespace-nowrap transition-[background-color,border-color,color,transform] active:translate-y-px disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-1.5 rounded-none font-semibold leading-[1.1] tracking-[0.02em] whitespace-nowrap transition-[background-color,border-color,color,transform] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50",
   {
     variants: {
       variant: {
