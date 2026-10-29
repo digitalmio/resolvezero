@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
-import { CheckCircle2, Copy, KeyRound, Network, Settings, ShieldCheck, Trash2 } from 'lucide-react'
+import { CheckCircle2, Copy, KeyRound, Network, ShieldCheck, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
@@ -32,7 +32,6 @@ function SettingsPage() {
         eyebrow="Account"
         title="Settings"
         description={`${profileLabel} · profile and resolver configuration.`}
-        icon={<Settings size={20} />}
       />
 
       <div className="grid gap-4 xl:grid-cols-2">
