@@ -31,7 +31,7 @@ If an exception is used, keep the reason obvious in the file or the PR descripti
 - Every private server function re-checks the session and scopes queries to the owning user. Never add a global "latest profile" fallback.
 - UI data must be real and tenant-scoped. No dummy metrics or placeholder numbers.
 - DNS names accepted by the console stay validated in `apps/console/src/lib/zone.ts`.
-- Preserve the Cadence design language: sage page, bone cards, white nav/sidebar, deep-green data, lime accents, orange only for blocked/alerts.
+- Preserve the editorial ink/cream/orange design language: ink sidebar, cream canvas, bone cards, Archivo expanded display type, orange brand/CTA, green healthy states, red blocked/alerts.
 - Prefer existing components and tokens in `apps/console/src/styles.css` over new one-off styles.
 - Do not expose the console without auth.
 
