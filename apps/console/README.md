@@ -38,7 +38,11 @@ long-lived profile-scoped API key (`Authorization: Bearer rz_…`).
 
 Implemented:
 
-- GitHub OAuth via Better Auth, a root route guard, and session-scoped server functions
+- Email OTP sign-in via Better Auth (no passwords): 6-digit codes, hashed at
+  rest, 10-minute TTL, 5 attempts, sent over any SMTP endpoint (`SMTP_URL`).
+  Dev without SMTP logs the code; production refuses to boot without it.
+  GitHub OAuth remains as an alternative. A root route guard protects every
+  screen and all server functions are session-scoped.
 - Owner-scoped profile selection, a real profile switcher, and `rz_profile_id` preference cookie
 - Overview with live traffic, KPIs, query chart, top blocked domains, devices, and Local DNS summary
 - Query-volume chart ranges: 1H / 24H / 7D / 30D (KPIs remain fixed to 24h)

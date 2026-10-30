@@ -4,10 +4,12 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { apiKey } from "@better-auth/api-key";
+import { emailOTP } from "better-auth/plugins";
 import { db } from "@resolvezero/db/client";
 import { account, apikey, session, user, verification } from "@resolvezero/db/schema";
 
 import { requiredEnv } from "./env.server";
+import { sendOtpEmail } from "./mail.server";
 
 export type SessionUser = {
   id: string;
@@ -43,6 +45,28 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24,
   },
   plugins: [
+    // Email OTP is the only human sign-in method: no passwords to steal, reuse,
+    // or reset. The code is stored hashed and expires quickly.
+    emailOTP({
+      otpLength: 6,
+      expiresIn: Number(process.env.EMAIL_OTP_TTL_SECONDS ?? 600),
+      allowedAttempts: 5,
+      storeOTP: "hashed",
+      // Hosted can close signup (AUTH_ALLOW_SIGNUP=0) and stay invite-only.
+      disableSignUp: process.env.AUTH_ALLOW_SIGNUP === "0",
+      async sendVerificationOTP({ email, otp, type }) {
+        // Fire-and-forget: keeps the endpoint response time independent of SMTP.
+        void sendOtpEmail(email, otp, type).catch((err) =>
+          console.error(
+            JSON.stringify({
+              level: "error",
+              msg: "otp email failed",
+              err: err instanceof Error ? err.message : String(err),
+            }),
+          ),
+        );
+      },
+    }),
     // Machine-to-machine keys for the control-plane API. The bound profile and
     // scope live in `metadata`; ownership is always re-checked against the key's
     // user before any query runs.
