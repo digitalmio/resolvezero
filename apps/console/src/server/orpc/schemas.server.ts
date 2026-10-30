@@ -51,10 +51,7 @@ export const queryVolumeSchema = z.object({
 
 export const ruleRowSchema = z.object({
   domain: z.string(),
-  action: z.string(),
-  scope: z.string(),
-  source: z.string(),
-  updated: z.string(),
+  action: z.enum(["block", "allow"]),
   enabled: z.boolean(),
 });
 
@@ -63,7 +60,7 @@ export const rulesSchema = z.object({
   profileName: z.string(),
   configVersion: z.number(),
   rules: z.array(ruleRowSchema),
-  counts: z.object({ block: z.number(), allow: z.number(), lists: z.number() }),
+  counts: z.object({ block: z.number(), allow: z.number() }),
 });
 
 export const zoneSchema = z.object({

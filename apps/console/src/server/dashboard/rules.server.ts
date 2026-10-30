@@ -2,7 +2,6 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
   edgeConfigState,
-  profileBlocklists,
   profileRules,
   profileZones,
 } from "@resolvezero/db/schema";
@@ -14,16 +13,12 @@ import type { LocalDnsData, RulesData } from "./types";
 
 export async function loadRules(ownerUserId: string, profileId?: string): Promise<RulesData> {
   const profile = await findProfile(ownerUserId, profileId);
-  const [rules, lists, configRows] = await Promise.all([
+  const [rules, configRows] = await Promise.all([
     db
       .select({ domain: profileRules.domain, action: profileRules.action, enabled: profileRules.enabled })
       .from(profileRules)
       .where(eq(profileRules.profileId, profile.id))
       .orderBy(asc(profileRules.domain)),
-    db
-      .select({ url: profileBlocklists.url, format: profileBlocklists.format })
-      .from(profileBlocklists)
-      .where(eq(profileBlocklists.profileId, profile.id)),
     db
       .select({ configVersion: edgeConfigState.configVersion })
       .from(edgeConfigState)
@@ -31,30 +26,21 @@ export async function loadRules(ownerUserId: string, profileId?: string): Promis
       .limit(1),
   ]);
 
-  const rows = [
-    ...rules.map((r) => ({
-      domain: r.domain,
-      action: r.action,
-      scope: "Custom",
-      source: "Explicit rule",
-      updated: "live",
-      enabled: r.enabled,
-    })),
-    ...lists.map((l) => ({
-      domain: l.url,
-      action: "list",
-      scope: "Blocklist",
-      source: l.format.toUpperCase(),
-      updated: "live",
-      enabled: true,
-    })),
-  ];
   const counts = {
     block: rules.filter((r) => r.action === "block").length,
     allow: rules.filter((r) => r.action === "allow").length,
-    lists: lists.length,
   };
-  return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };
+  return {
+    profileId: profile.id,
+    profileName: profile.name,
+    configVersion: configRows[0]?.configVersion ?? 0,
+    rules: rules.map((r) => ({
+      domain: r.domain,
+      action: r.action as "block" | "allow",
+      enabled: r.enabled,
+    })),
+    counts,
+  };
 }
 
 export async function createRule(
