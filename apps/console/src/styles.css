@@ -149,11 +149,11 @@ textarea:focus-visible,
 
 .rz-page-title {
   font-family: var(--font-display);
-  font-size: clamp(2.15rem, 4.2vw, 3.5rem);
+  font-size: clamp(1.95rem, 3.75vw, 3.1rem);
   font-stretch: 118%;
   font-weight: 800;
   letter-spacing: -0.055em;
-  line-height: 0.92;
+  line-height: 0.95;
   text-transform: uppercase;
   color: var(--ink);
 }
