@@ -76,8 +76,8 @@ function Overview() {
         <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute -inset-x-3 -top-6 h-36 opacity-60" />
         <PageHeader
           eyebrow={`01 / Network · ${profileLabel} profile`}
-          title="Overview"
-          description={`${greeting}, ${firstName}. Here’s how your network is doing over the last 24 hours.`}
+          title={`${greeting}, ${firstName}`}
+          description="Here’s how your network is doing over the last 24 hours."
           meta={
             <>
               <span className={['rz-pill', data.edge.ok ? 'rz-pill-positive' : 'rz-pill-warning'].join(' ')}>
