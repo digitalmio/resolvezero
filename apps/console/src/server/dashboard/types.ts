@@ -46,7 +46,7 @@ export interface RulesData {
   profileName: string;
   configVersion: number;
   rules: { domain: string; action: string; scope: string; source: string; updated: string; enabled: boolean }[];
-  counts: { block: number; allow: number; zones: number; lists: number };
+  counts: { block: number; allow: number; lists: number };
 }
 
 export interface LocalDnsData {

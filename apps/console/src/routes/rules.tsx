@@ -12,7 +12,7 @@ import { useState } from 'react'
 export const Route = createFileRoute('/rules')({ component: Rules })
 
 function Rules() {
-  const [activeTab, setActiveTab] = useState<'Block' | 'Allow' | 'Zones' | 'Blocklists'>('Block')
+  const [activeTab, setActiveTab] = useState<'Block' | 'Allow' | 'Blocklists'>('Block')
   const [adding, setAdding] = useState(false)
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
   if (isPending) return <PageLoading label="Loading rules…" />
@@ -21,13 +21,11 @@ function Rules() {
   const tabs = [
     { label: 'Block', count: data.counts.block },
     { label: 'Allow', count: data.counts.allow },
-    { label: 'Zones', count: data.counts.zones },
     { label: 'Blocklists', count: data.counts.lists },
   ]
   const visibleRules = rules.filter((rule) => {
     if (activeTab === 'Block') return rule.action === 'block'
     if (activeTab === 'Allow') return rule.action === 'allow'
-    if (activeTab === 'Zones') return rule.action === 'zone'
     return rule.action === 'list'
   })
 

@@ -14,21 +14,12 @@ import type { LocalDnsData, RulesData } from "./types";
 
 export async function loadRules(ownerUserId: string, profileId?: string): Promise<RulesData> {
   const profile = await findProfile(ownerUserId, profileId);
-  const [rules, zones, lists, configRows] = await Promise.all([
+  const [rules, lists, configRows] = await Promise.all([
     db
       .select({ domain: profileRules.domain, action: profileRules.action, enabled: profileRules.enabled })
       .from(profileRules)
       .where(eq(profileRules.profileId, profile.id))
       .orderBy(asc(profileRules.domain)),
-    db
-      .select({
-        domain: profileZones.domain,
-        recordType: profileZones.recordType,
-        values: profileZones.values,
-      })
-      .from(profileZones)
-      .where(eq(profileZones.profileId, profile.id))
-      .orderBy(asc(profileZones.domain)),
     db
       .select({ url: profileBlocklists.url, format: profileBlocklists.format })
       .from(profileBlocklists)
@@ -49,14 +40,6 @@ export async function loadRules(ownerUserId: string, profileId?: string): Promis
       updated: "live",
       enabled: r.enabled,
     })),
-    ...zones.map((z) => ({
-      domain: z.domain,
-      action: "zone",
-      scope: "Zone record",
-      source: `${z.recordType} · ${z.values.join(", ")}`,
-      updated: "live",
-      enabled: true,
-    })),
     ...lists.map((l) => ({
       domain: l.url,
       action: "list",
@@ -69,7 +52,6 @@ export async function loadRules(ownerUserId: string, profileId?: string): Promis
   const counts = {
     block: rules.filter((r) => r.action === "block").length,
     allow: rules.filter((r) => r.action === "allow").length,
-    zones: zones.length,
     lists: lists.length,
   };
   return { profileId: profile.id, profileName: profile.name, configVersion: configRows[0]?.configVersion ?? 0, rules: rows, counts };

@@ -63,7 +63,7 @@ export const rulesSchema = z.object({
   profileName: z.string(),
   configVersion: z.number(),
   rules: z.array(ruleRowSchema),
-  counts: z.object({ block: z.number(), allow: z.number(), zones: z.number(), lists: z.number() }),
+  counts: z.object({ block: z.number(), allow: z.number(), lists: z.number() }),
 });
 
 export const zoneSchema = z.object({
