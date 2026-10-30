@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle2, ExternalLink, Layers3, Plus, RefreshCw } fro
 import { getBlocklistsData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { Button } from '../components/ui/button'
 
 export const Route = createFileRoute('/blocklists')({ component: Blocklists })
 
@@ -29,12 +30,12 @@ function Blocklists() {
         description={`${profileLabel} · public lists and sync health across the edge fleet.`}
         actions={
           <>
-            <button className="rz-button-secondary" onClick={() => void refetch()}>
+            <Button variant="secondary" onClick={() => void refetch()}>
               <RefreshCw size={13} /> Refresh
-            </button>
-            <button className="rz-button-primary">
+            </Button>
+            <Button>
               <Plus size={14} /> Add list
-            </button>
+            </Button>
           </>
         }
       />

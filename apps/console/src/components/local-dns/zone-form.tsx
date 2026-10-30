@@ -2,6 +2,8 @@ import { Plus } from 'lucide-react'
 import type { FormEvent } from 'react'
 
 import { ZONE_RECORD_TYPES, type ZoneRecordType } from '../../lib/zone'
+import { Button } from '../ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 export type ZoneFormState = {
   domain: string
@@ -65,18 +67,21 @@ export function ZoneForm({
           <label htmlFor="zone-type" className="rz-field-label">
             Type
           </label>
-          <select
-            id="zone-type"
+          <Select
             value={form.recordType}
-            onChange={(event) => onChange({ ...form, recordType: event.target.value as ZoneRecordType })}
-            className="rz-input mt-1.5"
+            onValueChange={(value) => onChange({ ...form, recordType: value as ZoneRecordType })}
           >
-            {ZONE_RECORD_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="zone-type" className="mt-1.5">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ZONE_RECORD_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {type}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div>
           <label htmlFor="zone-ttl" className="rz-field-label">
@@ -117,17 +122,17 @@ export function ZoneForm({
       ) : null}
 
       <div className="mt-4 flex gap-2">
-        <button
+        <Button
           type="submit"
           disabled={saving || !form.domain.trim() || !form.values.trim()}
-          className="rz-button-primary flex-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex-1"
         >
           {saving ? 'Saving…' : editing ? 'Update record' : 'Add record'}
-        </button>
+        </Button>
         {editing ? (
-          <button type="button" onClick={onCancel} className="rz-button-secondary">
+          <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         ) : null}
       </div>
     </form>

@@ -1,3 +1,5 @@
+import { Button } from './ui/button'
+
 export function PageLoading({ label = "Loading live data…" }: { label?: string }) {
   return (
     <div className="rz-card flex min-h-[280px] items-center justify-center p-8" aria-busy="true">
@@ -17,7 +19,7 @@ export function PageError({ title, onRetry }: { title: string; onRetry: () => vo
       <p className="mt-2 text-[13px] leading-6 text-[var(--muted)]">
         Check the console server logs for the Postgres or edge error.
       </p>
-      <button className="rz-button-primary mt-5" onClick={onRetry}>Try again</button>
+      <Button className="mt-5" onClick={onRetry}>Try again</Button>
     </div>
   )
 }

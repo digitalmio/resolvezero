@@ -3,6 +3,7 @@ import { Ban, FileText, House, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import logo from '../assets/logo-square.svg'
+import { Button } from '../components/ui/button'
 import { authClient } from '../lib/auth-client'
 import { getSession } from '../server/auth'
 
@@ -134,15 +135,16 @@ function LoginPage() {
                 Continue with GitHub to manage your resolver, local DNS, and query history.
               </p>
 
-              <button
+              <Button
                 type="button"
+                size="lg"
                 onClick={() => void signIn()}
                 disabled={pending}
-                className="rz-button-primary mt-7 w-full !py-3 !text-[12px] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-7 w-full disabled:opacity-60"
               >
                 {pending ? <LoaderCircle size={16} className="animate-spin" /> : <GitHubMark />}
                 {pending ? 'Opening GitHub…' : 'Continue with GitHub'}
-              </button>
+              </Button>
 
               {error ? (
                 <p role="alert" className="mt-4 border border-[#e7b4ae] bg-[var(--accent-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--danger)]">
