@@ -99,7 +99,8 @@ export async function startRuleSync(
           domain: profileRules.domain,
           action: profileRules.action,
         })
-        .from(profileRules),
+        .from(profileRules)
+        .where(eq(profileRules.enabled, true)),
       db
         .select({
           ipAddress: profileSourceIps.ipAddress,

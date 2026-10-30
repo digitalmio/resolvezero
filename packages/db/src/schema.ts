@@ -129,6 +129,8 @@ export const profileRules = pgTable(
       .references(() => profiles.id),
     domain: varchar("domain", { length: 255 }).notNull(),
     action: varchar("action", { length: 20 }).notNull(), // 'block' | 'allow'
+    /** Disabled rules stay stored (and visible in the console) but never reach the edge. */
+    enabled: boolean("enabled").notNull().default(true),
   },
   (t) => [primaryKey({ columns: [t.profileId, t.domain] })],
 );

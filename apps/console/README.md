@@ -22,10 +22,10 @@ Implemented:
 - Owner-scoped profile selection, a real profile switcher, and `rz_profile_id` preference cookie
 - Overview with live traffic, KPIs, query chart, top blocked domains, devices, and Local DNS summary
 - Query-volume chart ranges: 1H / 24H / 7D / 30D (KPIs remain fixed to 24h)
-- Rules screen backed by Postgres rules, zones, and blocklist subscriptions
+- Rules screen backed by Postgres rules, zones, and blocklist subscriptions, with add/disable/delete for block and allow rules (validated domains, subdomain matching)
 - Devices screen backed by stats rollups: DoH tags and UDP source-IP counts
 - Local DNS CRUD for `.lan` records (A/AAAA/CNAME/TXT, exact and wildcard)
-- Blocklists screen backed by `profile_blocklists` (read-only subscription/status view)
+- Blocklists screen backed by `profile_blocklists`: add a list (http/https validation, hosts/domains/abp), enable/disable, and remove
 - Analytics screen backed by 24h/7d/30d `stats_hourly` rollups
 - Logs screen backed by the edge log archive (latest 100 entries)
 - Settings screen backed by profile, upstream, linked IPs, and capacity counts

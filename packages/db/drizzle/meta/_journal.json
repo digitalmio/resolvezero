@@ -64,6 +64,13 @@
       "when": 1792958411305,
       "tag": "0008_sweet_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793045000000,
+      "tag": "0009_rule_enabled",
+      "breakpoints": true
     }
   ]
 }

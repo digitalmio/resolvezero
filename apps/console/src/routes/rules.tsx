@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { getRulesData } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { AddRuleForm } from '../components/rules/add-rule-form'
+import { RuleRowActions } from '../components/rules/rule-row-actions'
 import { Button } from '../components/ui/button'
 import { Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
@@ -11,6 +13,7 @@ export const Route = createFileRoute('/rules')({ component: Rules })
 
 function Rules() {
   const [activeTab, setActiveTab] = useState<'Block' | 'Allow' | 'Zones' | 'Blocklists'>('Block')
+  const [adding, setAdding] = useState(false)
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
   if (isPending) return <PageLoading label="Loading rules…" />
   if (isError || !data) return <PageError title="Could not load rules." onRetry={() => void refetch()} />
@@ -35,7 +38,7 @@ function Rules() {
         title="Rules"
         description="Block, allow, and override names. Changes reach every edge in seconds."
         actions={
-          <Button>
+          <Button onClick={() => setAdding((open) => !open)} aria-expanded={adding}>
             <Plus size={14} />
             Add rule
           </Button>
@@ -63,6 +66,7 @@ function Rules() {
       </div>
 
       <div className="rz-card overflow-hidden">
+        {adding ? <AddRuleForm profileId={data.profileId} onDone={() => setAdding(false)} /> : null}
         <div className="flex flex-col gap-3 border-b border-[var(--line)] p-4 sm:flex-row sm:items-center">
           <div className="flex flex-1 items-center gap-2 rounded-none border border-[var(--line-strong)] bg-transparent px-3 py-2 text-[11px] text-[var(--muted)]">
             <Search size={14} />
@@ -93,13 +97,22 @@ function Rules() {
             <tbody className="divide-y divide-[var(--line)]">
               {visibleRules.length === 0 ? <tr><td colSpan={6} className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No {activeTab.toLowerCase()} entries yet.</td></tr> : null}
               {visibleRules.map((rule) => (
-                <tr key={`${rule.domain}-${rule.action}`} className="group hover:bg-white/60">
+                <tr
+                  key={`${rule.domain}-${rule.action}`}
+                  className={['group transition-opacity hover:bg-white/60', rule.enabled ? '' : 'opacity-55'].join(' ')}
+                >
                   <td className="px-5 py-3.5 font-mono text-[12px]">{rule.domain}</td>
                   <td className="px-4 py-3.5"><ActionPill action={rule.action} /></td>
                   <td className="px-4 py-3.5 text-[11px] text-[var(--muted)]">{rule.scope}</td>
                   <td className="px-4 py-3.5 text-[11px] text-[var(--muted)]">{rule.source}</td>
                   <td className="px-4 py-3.5 font-mono text-[10px] text-[var(--muted)]">{rule.updated}</td>
-                  <td className="px-4 py-3.5 text-right text-[var(--muted)]"><MoreHorizontal size={16} className="ml-auto" /></td>
+                  <td className="px-4 py-3.5">
+                    {rule.action === 'block' || rule.action === 'allow' ? (
+                      <RuleRowActions domain={rule.domain} enabled={rule.enabled} profileId={data.profileId} />
+                    ) : (
+                      <MoreHorizontal size={16} className="ml-auto text-[var(--muted)]" />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
