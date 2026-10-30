@@ -12,7 +12,24 @@ TanStack Start console for ResolveZero — profiles, rules, local DNS, query log
 - shadcn-style Radix primitives for Button, Select, Switch, and DropdownMenu
 - lucide-react
 
-The edge keeps its own Hono HTTP app; this app is the control-plane UI.
+The edge keeps its own Hono HTTP app; this app is the control-plane UI and API.
+
+## Control-plane API
+
+Every profile operation the console performs is also available as an oRPC
+procedure at `/rpc`, authenticated either by the session cookie or by a
+long-lived profile-scoped API key (`Authorization: Bearer rz_…`).
+
+- `GET /openapi.json` — generated OpenAPI 3.1 document
+- `GET /docs` — Scalar reference UI
+- Keys are profile-scoped (`read` or `read-write`) and stored hashed by
+  `@better-auth/api-key`; the raw value is shown once at creation.
+- Key management (`/api-keys` in the console) is **session-only** and is not
+  mounted on the public router, so a key can never mint or revoke another key.
+- Mutating calls append a row to `api_audit_log` (actor, key id, procedure,
+  short summary, IP, user agent).
+- The edge data plane (UDP/TCP 53, DoH, `/readyz`, `/metrics`) stays outside
+  this API.
 
 ## Status
 

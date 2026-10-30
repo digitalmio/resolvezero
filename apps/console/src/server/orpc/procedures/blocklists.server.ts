@@ -8,6 +8,7 @@ import { requireScope } from "../context.server";
 import { auditWrite } from "../audit.server";
 import {
   createBlocklist,
+  loadBlocklists,
   removeBlocklist,
   setBlocklistEnabled,
 } from "../../dashboard/blocklists.server";
@@ -38,6 +39,13 @@ function badRequest(err: unknown): never {
 }
 
 export const blocklists = {
+  list: base
+    .route({ method: "GET", path: "/blocklists", summary: "List blocklist subscriptions" })
+    .handler(({ context }) => {
+      requireScope(context, "read");
+      return loadBlocklists(context.principal.userId, context.profileId);
+    }),
+
   create: base
     .route({ method: "POST", path: "/blocklists", summary: "Subscribe to a blocklist" })
     .input(listInput)

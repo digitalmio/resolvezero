@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
+import { ORPCError } from "@orpc/server";
 
 import { resolveContext } from "../../server/orpc/context.server";
 import { router } from "../../server/orpc/router.server";
@@ -10,8 +11,10 @@ async function handle(request: Request): Promise<Response> {
   let context;
   try {
     context = await resolveContext(request.headers);
-  } catch {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  } catch (err) {
+    const status = err instanceof ORPCError ? err.status : 401;
+    const message = err instanceof Error ? err.message : "Unauthorized";
+    return Response.json({ error: message }, { status });
   }
 
   const { matched, response } = await handler.handle(request, { prefix: "/rpc", context });

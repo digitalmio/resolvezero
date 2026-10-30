@@ -8,6 +8,7 @@ import { requireScope } from "../context.server";
 import { auditWrite } from "../audit.server";
 import { purgeCache } from "../../dashboard/settings.server";
 import {
+  loadLocalDns,
   removeLocalDnsZone,
   upsertLocalDnsZone,
 } from "../../dashboard/rules.server";
@@ -37,6 +38,13 @@ function badRequest(err: unknown): never {
 }
 
 export const localDns = {
+  list: base
+    .route({ method: "GET", path: "/local-dns", summary: "List local DNS records" })
+    .handler(({ context }) => {
+      requireScope(context, "read");
+      return loadLocalDns(context.principal.userId, context.profileId);
+    }),
+
   upsert: base
     .route({ method: "PUT", path: "/local-dns", summary: "Create or update a local DNS record" })
     .input(zoneInput)

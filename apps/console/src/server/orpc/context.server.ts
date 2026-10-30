@@ -2,6 +2,10 @@ import "@tanstack/react-start/server-only";
 
 import { ORPCError } from "@orpc/server";
 
+import { db } from "@resolvezero/db/client";
+import { user } from "@resolvezero/db/schema";
+import { eq } from "drizzle-orm";
+
 import { auth } from "../auth.server";
 import { findProfile } from "../dashboard/profile.server";
 
@@ -17,6 +21,7 @@ export interface ApiContext {
   principal: Principal;
   profileId: string;
   profileName: string;
+  viewer: { name: string; email: string | null; image: string | null };
   request: {
     ip: string | null;
     userAgent: string | null;
@@ -50,6 +55,11 @@ export async function resolveContext(headers: Headers): Promise<ApiContext> {
       principal: { via: "session", userId: session.user.id, keyId: null, scope: "read-write" },
       profileId: profile.id,
       profileName: profile.name,
+      viewer: {
+        name: session.user.name || "Account",
+        email: session.user.email ?? null,
+        image: session.user.image ?? null,
+      },
       request: requestMeta(headers),
     };
   }
@@ -83,11 +93,22 @@ async function resolveKeyContext(rawKey: string, headers: Headers): Promise<ApiC
 
   const userId = result.key.referenceId;
   const profile = await findProfile(userId, profileId);
+  const viewer = await db
+    .select({ name: user.name, email: user.email, image: user.image })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1)
+    .then((rows) => rows[0]);
 
   return {
     principal: { via: "key", userId, keyId: result.key.id, scope },
     profileId: profile.id,
     profileName: profile.name,
+    viewer: {
+      name: viewer?.name || "Account",
+      email: viewer?.email ?? null,
+      image: viewer?.image ?? null,
+    },
     request: requestMeta(headers),
   };
 }

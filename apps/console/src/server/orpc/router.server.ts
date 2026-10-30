@@ -5,6 +5,7 @@ import { z } from "zod";
 import { base } from "./router-base.server";
 import { blocklists } from "./procedures/blocklists.server";
 import { cache, localDns } from "./procedures/local-dns.server";
+import { reads } from "./procedures/read.server";
 import { rules } from "./procedures/rules.server";
 
 /** Identity probe: lets a client confirm its key and profile binding. */
@@ -35,6 +36,12 @@ const whoami = base
  */
 export const router = {
   whoami,
+  overview: reads.overview,
+  queryVolume: reads.queryVolume,
+  analytics: reads.analytics,
+  logs: reads.logs,
+  settings: reads.settings,
+  edge: reads.edge,
   rules,
   blocklists,
   localDns,

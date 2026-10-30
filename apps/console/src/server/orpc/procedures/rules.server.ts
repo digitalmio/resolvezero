@@ -7,7 +7,7 @@ import { ORPCError } from "@orpc/server";
 import { base } from "../router-base.server";
 import { requireScope } from "../context.server";
 import { auditWrite } from "../audit.server";
-import { createRule, removeRule, setRuleEnabled } from "../../dashboard/rules.server";
+import { createRule, loadRules, removeRule, setRuleEnabled } from "../../dashboard/rules.server";
 import { normalizeRuleAction, normalizeRuleDomain } from "../../../lib/policy";
 
 const ruleInput = z.object({
@@ -34,6 +34,13 @@ function badRequest(err: unknown): never {
 }
 
 export const rules = {
+  list: base
+    .route({ method: "GET", path: "/rules", summary: "List rules, zones, and blocklists" })
+    .handler(({ context }) => {
+      requireScope(context, "read");
+      return loadRules(context.principal.userId, context.profileId);
+    }),
+
   create: base
     .route({ method: "POST", path: "/rules", summary: "Add or replace a rule" })
     .input(ruleInput)

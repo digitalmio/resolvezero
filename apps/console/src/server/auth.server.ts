@@ -49,6 +49,12 @@ export const auth = betterAuth({
     apiKey({
       enableMetadata: true,
       defaultPrefix: "rz_",
+      // Plugin defaults are 10 requests per DAY — far too low for an API.
+      rateLimit: {
+        enabled: true,
+        maxRequests: Number(process.env.API_KEY_RATE_MAX ?? 600),
+        timeWindow: Number(process.env.API_KEY_RATE_WINDOW_MS ?? 60_000),
+      },
     }),
     // Must be the last plugin: it forwards better-auth's Set-Cookie headers
     // through TanStack Start's response helpers.

@@ -75,12 +75,8 @@ function validateZoneKeyShape(data: unknown): { domain: string; recordType: stri
 }
 
 export const getOverview = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser, toViewer }, { loadOverview }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadOverview(user.id, toViewer(user));
+  const client = await sessionClient();
+  return client.overview();
 });
 
 export const getQueryVolume = createServerFn({ method: "GET" })
@@ -90,30 +86,18 @@ export const getQueryVolume = createServerFn({ method: "GET" })
     return { range };
   })
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { loadQueryVolume }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return loadQueryVolume(user.id, data.range);
+    const client = await sessionClient();
+    return client.queryVolume({ range: data.range });
   });
 
 export const getRulesData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadRules }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadRules(user.id);
+  const client = await sessionClient();
+  return client.rules.list();
 });
 
 export const getLocalDnsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadLocalDns }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadLocalDns(user.id);
+  const client = await sessionClient();
+  return client.localDns.list();
 });
 
 export const saveLocalDnsZone = createServerFn({ method: "POST" })
@@ -140,39 +124,23 @@ export const deleteLocalDnsZone = createServerFn({ method: "POST" })
   });
 
 export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadBlocklists }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadBlocklists(user.id);
+  const client = await sessionClient();
+  return client.blocklists.list();
 });
 
 export const getAnalyticsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadAnalytics }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadAnalytics(user.id);
+  const client = await sessionClient();
+  return client.analytics();
 });
 
 export const getSettingsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadSettings }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadSettings(user.id);
+  const client = await sessionClient();
+  return client.settings();
 });
 
 export const getLogsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadLogs }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadLogs(user.id);
+  const client = await sessionClient();
+  return client.logs();
 });
 
 export const purgeCache = createServerFn({ method: "POST" })
