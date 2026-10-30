@@ -13,6 +13,7 @@ export async function loadBlocklists(ownerUserId: string, profileId?: string): P
       id: profileBlocklists.id,
       url: profileBlocklists.url,
       format: profileBlocklists.format,
+      detectedFormat: profileBlocklists.detectedFormat,
       enabled: profileBlocklists.enabled,
       entries: profileBlocklists.entryCount,
       lastSyncedAt: profileBlocklists.lastSyncedAt,
@@ -56,6 +57,7 @@ export async function createBlocklist(
       id: profileBlocklists.id,
       url: profileBlocklists.url,
       format: profileBlocklists.format,
+      detectedFormat: profileBlocklists.detectedFormat,
       enabled: profileBlocklists.enabled,
     });
   if (!row) throw new Error("Could not save blocklist");

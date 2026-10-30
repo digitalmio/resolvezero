@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { fetchListText, parseList } from "./blocklists";
+import { detectFormat, fetchListText, parseList } from "./blocklists";
 import { RuleStore } from "./ruleStore";
 import { SuffixFingerprintBuilder } from "./fingerprint";
 
@@ -45,6 +45,59 @@ tracker2.pl
     expect(blocks.has("notadomain")).toBe(false);
     expect(blocks.has("bad") || blocks.has(".bad")).toBe(false);
     expect(blocks.has("ok.example.com")).toBe(true);
+  });
+});
+
+describe("detectFormat", () => {
+  test("hosts files (IP + domain lines)", () => {
+    expect(
+      detectFormat(`# hosts
+127.0.0.1 localhost
+0.0.0.0 ads.example.com
+0.0.0.0 tracker.example.net # note
+`),
+    ).toBe("hosts");
+  });
+
+  test("bare domain lists", () => {
+    expect(
+      detectFormat(`# domains
+ads.example.com
+tracker.example.net
+cdn.example.org
+`),
+    ).toBe("domains");
+  });
+
+  test("adblock syntax, including exceptions", () => {
+    expect(
+      detectFormat(`! title
+||ads.example.com^
+||cdn.example.net^$third-party
+@@||good.example.org^
+`),
+    ).toBe("abp");
+  });
+
+  test("ignores comments and blank lines when sampling", () => {
+    expect(detectFormat(`# comment\n\n! header\n||ads.example.com^\n`)).toBe("abp");
+  });
+
+  test("empty or unrecognised input falls back to domains", () => {
+    expect(detectFormat("")).toBe("domains");
+    expect(detectFormat("# only comments\n")).toBe("domains");
+  });
+
+  test("auto format parses through detection", () => {
+    const abp = parseList("||ads.example.com^\n@@||ok.example.com^\n", "auto");
+    expect(abp.blocks.has("ads.example.com")).toBe(true);
+    expect(abp.allows.has("ok.example.com")).toBe(true);
+
+    const hosts = parseList("0.0.0.0 ads.example.com\n", "auto");
+    expect(hosts.blocks.has("ads.example.com")).toBe(true);
+
+    const domains = parseList("ads.example.com\ntracker.example.net\n", "auto");
+    expect(domains.blocks.size).toBe(2);
   });
 });
 

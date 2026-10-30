@@ -140,7 +140,8 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
         }
         try {
           const text = await fetchListText(url);
-          const parsed = parseList(text, format);
+          const resolvedFormat = resolveListFormat(text, format);
+          const parsed = parseList(text, resolvedFormat);
           const builder = new SuffixFingerprintBuilder();
           for (const d of parsed.blocks) builder.add(d, "block");
           for (const d of parsed.allows) builder.add(d, "allow");
@@ -157,7 +158,7 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
           for (const profileRowGroups of enabledByProfile.values()) {
             for (const row of profileRowGroups) {
               if (row.url === url) {
-                await writeStatus(row.id, "ok", table.entryCount).catch((err) =>
+                await writeStatus(row.id, "ok", table.entryCount, resolvedFormat).catch((err) =>
                   log.warn({ err, url }, "blocklist status write failed"),
                 );
               }
@@ -252,10 +253,20 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
   };
 }
 
-async function writeStatus(id: string, status: string, count: number): Promise<void> {
+async function writeStatus(
+  id: string,
+  status: string,
+  count: number,
+  detectedFormat?: string,
+): Promise<void> {
   await db
     .update(profileBlocklists)
-    .set({ lastSyncedAt: new Date(), lastStatus: status, entryCount: count })
+    .set({
+      lastSyncedAt: new Date(),
+      lastStatus: status,
+      entryCount: count,
+      ...(detectedFormat ? { detectedFormat } : {}),
+    })
     .where(and(eq(profileBlocklists.id, id)));
 }
 
@@ -282,14 +293,56 @@ export async function fetchListText(url: string): Promise<string> {
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\.?$/;
 const PUNCT_HOSTS_RE = /^[\s#&+|!'"]*$/;
 
+/**
+ * Sniff the list syntax from its content so users never have to pick a format.
+ * Samples real (non-comment) lines and scores the three shapes we parse:
+ * ABP rules (`||host^`), hosts files (`0.0.0.0 host`), and bare domains.
+ */
+export function detectFormat(text: string): "abp" | "hosts" | "domains" {
+  let abp = 0;
+  let hosts = 0;
+  let domains = 0;
+  let sampled = 0;
+
+  for (const raw of text.split("\n")) {
+    if (sampled >= 2_000) break;
+    const line = raw.trim().toLowerCase();
+    if (!line || line.startsWith("#") || line.startsWith("!") || line.startsWith("//")) continue;
+    sampled += 1;
+
+    if (/^(@@)?\|\|[a-z0-9.-]+\^/.test(line)) {
+      abp += 1;
+      continue;
+    }
+    const tokens = line.split("#")[0].trim().split(/\s+/).filter(Boolean);
+    if (tokens.length > 1 && isIpLiteral(tokens[0]!)) {
+      hosts += 1;
+      continue;
+    }
+    if (tokens.length === 1 && DOMAIN_RE.test(tokens[0]!) && tokens[0]!.includes(".")) {
+      domains += 1;
+    }
+  }
+
+  if (abp >= hosts && abp >= domains && abp > 0) return "abp";
+  if (hosts > domains) return "hosts";
+  return "domains";
+}
+
+/** Resolve a stored format, sniffing the payload when it is `auto`. */
+export function resolveListFormat(text: string, format: string): string {
+  return format === "auto" ? detectFormat(text) : format;
+}
+
 export function parseList(text: string, format: string): ParsedList {
+  const resolved = resolveListFormat(text, format);
   const blocks = new Set<string>();
   const allows = new Set<string>();
   const lines = text.split("\n");
   for (const raw of lines) {
     const line = raw.trim().toLowerCase();
     if (!line || line.startsWith("#") || line.startsWith("!") || line.startsWith("//")) continue;
-    if (format === "abp") {
+    if (resolved === "abp") {
       // @@||host^  → allow  |  ||host^  → block. Cosmetic/CSS selectors ignored.
       if (line.startsWith("@@||")) {
         const d = extractAbpDomain(line);

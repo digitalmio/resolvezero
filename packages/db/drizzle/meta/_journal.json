@@ -71,6 +71,13 @@
       "when": 1793045000000,
       "tag": "0009_rule_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793048600000,
+      "tag": "0010_blocklist_detected_format",
+      "breakpoints": true
     }
   ]
 }

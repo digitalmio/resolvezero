@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 export function AddListForm({ profileId, onDone }: { profileId: string; onDone: () => void }) {
   const queryClient = useQueryClient()
   const [url, setUrl] = useState('')
-  const [format, setFormat] = useState<BlocklistFormat>('hosts')
+  const [format, setFormat] = useState<BlocklistFormat>('auto')
 
   const mutation = useMutation({
     mutationFn: () => createBlocklist({ data: { url: url.trim(), format, profileId } }),
@@ -60,7 +60,8 @@ export function AddListForm({ profileId, onDone }: { profileId: string; onDone: 
         </Button>
       </div>
       <p className="mt-2 text-[10px] leading-4 text-[var(--muted)]">
-        https only. The edge fetches and parses the list on its next sync — usually within seconds.
+        https only. Auto-detect sniffs hosts, domains, and adblock syntax from the file; override it only if a list
+        mixes formats. The edge fetches it on its next sync — usually within seconds.
       </p>
       {mutation.isError ? (
         <p role="alert" className="mt-2 text-[11px] text-[var(--danger)]">

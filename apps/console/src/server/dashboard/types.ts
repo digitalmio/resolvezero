@@ -62,6 +62,8 @@ export interface BlocklistsData {
     id: string;
     url: string;
     format: string;
+    /** What the edge saw in the payload when `format` is `auto`. */
+    detectedFormat: string | null;
     enabled: boolean;
     entries: number;
     lastSyncedAt: string | null;

@@ -4,6 +4,7 @@ export const RULE_ACTIONS = ["block", "allow"] as const
 export type RuleAction = (typeof RULE_ACTIONS)[number]
 
 export const BLOCKLIST_FORMATS = [
+  { value: "auto", label: "Auto-detect" },
   { value: "hosts", label: "Hosts (0.0.0.0 …)" },
   { value: "domains", label: "Domains (one per line)" },
   { value: "abp", label: "Adblock (||domain^)" },
@@ -41,7 +42,7 @@ export function normalizeRuleDomain(raw: unknown): string {
 export function normalizeBlocklistFormat(raw: unknown): BlocklistFormat {
   const format = String(raw ?? "").trim().toLowerCase()
   if (!BLOCKLIST_FORMATS.some((option) => option.value === format)) {
-    throw new Error("Format must be hosts, domains, or abp")
+    throw new Error("Format must be auto, hosts, domains, or abp")
   }
   return format as BlocklistFormat
 }

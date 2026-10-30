@@ -308,6 +308,8 @@ export const profileBlocklists = pgTable(
       .references(() => profiles.id),
     url: varchar("url", { length: 1024 }).notNull(),
     format: varchar("format", { length: 16 }).notNull().default("hosts"),
+    /** Format the edge detected from the payload when `format` is `auto`. */
+    detectedFormat: varchar("detected_format", { length: 16 }),
     enabled: boolean("enabled").notNull().default(true),
     /** Write-back from the edge sync loop. */
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),

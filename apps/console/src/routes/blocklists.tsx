@@ -80,7 +80,20 @@ function Blocklists() {
                       <ExternalLink size={11} className="shrink-0 text-[var(--muted)]" />
                     </a>
                   </td>
-                  <td className="px-4 py-4 text-[11px] uppercase text-[var(--muted)]">{list.format}</td>
+                  <td className="px-4 py-4 text-[11px] uppercase text-[var(--muted)]">
+                    {list.format === 'auto' ? (
+                      <span className="flex items-center gap-1.5">
+                        auto
+                        {list.detectedFormat ? (
+                          <span className="rounded-none bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[9px] normal-case text-[var(--ink)]">
+                            {list.detectedFormat}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : (
+                      list.format
+                    )}
+                  </td>
                   <td className="px-4 py-4 font-mono text-[12px]">{new Intl.NumberFormat('en-GB').format(list.entries)}</td>
                   <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">{list.lastSyncedAt ? format(parseISO(list.lastSyncedAt), 'dd MMM yyyy, HH:mm') : 'never'}</td>
                   <td className="px-4 py-4">

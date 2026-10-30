@@ -51,13 +51,14 @@ describe("normalizeRuleAction", () => {
 
 describe("normalizeBlocklistFormat", () => {
   test("accepts supported formats", () => {
+    expect(normalizeBlocklistFormat("auto")).toBe("auto")
     expect(normalizeBlocklistFormat("hosts")).toBe("hosts")
     expect(normalizeBlocklistFormat("Domains")).toBe("domains")
     expect(normalizeBlocklistFormat("abp")).toBe("abp")
   })
 
   test("rejects unknown formats", () => {
-    expect(() => normalizeBlocklistFormat("csv")).toThrow(/hosts, domains, or abp/)
+    expect(() => normalizeBlocklistFormat("csv")).toThrow(/auto, hosts, domains, or abp/)
     expect(() => normalizeBlocklistFormat("")).toThrow()
   })
 })
