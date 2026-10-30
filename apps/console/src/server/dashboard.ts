@@ -135,8 +135,30 @@ export const getAnalyticsData = createServerFn({ method: "GET" }).handler(async 
 
 export const getSettingsData = createServerFn({ method: "GET" }).handler(async () => {
   const client = await sessionClient();
-  return client.settings();
+  return client.settings.get();
 });
+
+export const updateSettings = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    if (!data || typeof data !== "object") throw new Error("Invalid settings input");
+    const input = data as Record<string, unknown>;
+    if (typeof input.logQueries !== "boolean") throw new Error("Invalid log setting");
+    if (typeof input.logRetentionDays !== "number") throw new Error("Invalid retention");
+    if (input.upstream !== null && typeof input.upstream !== "string") throw new Error("Invalid upstream");
+    if (input.upstreamUrl !== null && typeof input.upstreamUrl !== "string") {
+      throw new Error("Invalid upstream URL");
+    }
+    return {
+      upstream: input.upstream as "cloudflare" | "google" | "quad9" | null,
+      upstreamUrl: input.upstreamUrl as string | null,
+      logQueries: input.logQueries,
+      logRetentionDays: input.logRetentionDays,
+    };
+  })
+  .handler(async ({ data }) => {
+    const client = await sessionClient();
+    return client.settings.update(data);
+  });
 
 export const getLogsData = createServerFn({ method: "GET" }).handler(async () => {
   const client = await sessionClient();

@@ -13,6 +13,7 @@ import {
   upsertLocalDnsZone,
 } from "../../dashboard/rules.server";
 import { normalizeDomain, normalizeZoneInput } from "../../../lib/zone";
+import { localDnsSchema } from "../schemas.server";
 
 const zoneInput = z.object({
   domain: z.string().min(1).max(253).describe("Must end in .lan"),
@@ -40,6 +41,7 @@ function badRequest(err: unknown): never {
 export const localDns = {
   list: base
     .route({ method: "GET", path: "/local-dns", summary: "List local DNS records" })
+    .output(localDnsSchema)
     .handler(({ context }) => {
       requireScope(context, "read");
       return loadLocalDns(context.principal.userId, context.profileId);

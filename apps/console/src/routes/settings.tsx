@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { ResolverForm } from '../components/settings/resolver-form'
 import { Button } from '../components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
@@ -56,10 +57,14 @@ function SettingsPage() {
         </Section>
 
         <Section title="Upstream" icon={<Network size={16} />}>
-          <Row label="Preset" value={data.upstream ?? 'edge default'} />
-          <Row label="Custom URL" value={data.upstreamUrl ?? '—'} mono />
-          <Row label="Log queries" value={data.logQueries ? 'enabled' : 'disabled'} />
-          <Row label="Log retention" value={`${data.logRetentionDays} days`} />
+          <ResolverForm
+            initial={{
+              upstream: data.upstream,
+              upstreamUrl: data.upstreamUrl,
+              logQueries: data.logQueries,
+              logRetentionDays: data.logRetentionDays,
+            }}
+          />
         </Section>
       </div>
 

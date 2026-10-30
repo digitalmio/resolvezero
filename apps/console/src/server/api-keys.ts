@@ -19,15 +19,35 @@ export interface ApiKeySummary {
  * Server-only imports stay dynamic so this module can be imported by the route.
  */
 async function serverDeps() {
-  const [{ auth }, { requireSessionUser }, { findProfile }, { getRequestHeaders }] = await Promise.all([
-    import("./auth.server"),
-    import("./auth.server"),
-    import("./dashboard/profile.server"),
-    import("@tanstack/react-start/server"),
-  ]);
+  const [{ auth }, { requireSessionUser }, { findProfile }, { getRequestHeaders }, { recordAudit }] =
+    await Promise.all([
+      import("./auth.server"),
+      import("./auth.server"),
+      import("./dashboard/profile.server"),
+      import("@tanstack/react-start/server"),
+      import("./orpc/audit.server"),
+    ]);
   const user = await requireSessionUser();
   const profile = await findProfile(user.id);
-  return { auth, headers: getRequestHeaders(), user, profile };
+  const headers = getRequestHeaders();
+  const ip =
+    headers.get("fly-client-ip")?.trim() ||
+    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    null;
+
+  const audit = (procedure: string, summary: string) =>
+    recordAudit({
+      profileId: profile.id,
+      userId: user.id,
+      keyId: null,
+      via: "session",
+      procedure,
+      summary,
+      ip,
+      userAgent: headers.get("user-agent"),
+    });
+
+  return { auth, headers, user, profile, audit };
 }
 
 function scopeOf(metadata: unknown): ApiKeyScope | null {
@@ -70,7 +90,7 @@ export const createApiKey = createServerFn({ method: "POST" })
     return { name: input.name.trim(), scope: input.scope as ApiKeyScope };
   })
   .handler(async ({ data }) => {
-    const { auth, headers, user, profile } = await serverDeps();
+    const { auth, headers, user, profile, audit } = await serverDeps();
     const created = await auth.api.createApiKey({
       body: {
         userId: user.id,
@@ -79,6 +99,7 @@ export const createApiKey = createServerFn({ method: "POST" })
       },
       headers,
     });
+    await audit("apiKeys.create", `key ${data.name} (${data.scope}) created`);
     // The raw key is returned exactly once; it is stored hashed.
     return { id: created.id, key: created.key, start: created.start ?? null, name: data.name, scope: data.scope };
   });
@@ -91,12 +112,14 @@ export const revokeApiKey = createServerFn({ method: "POST" })
     return { id };
   })
   .handler(async ({ data }) => {
-    const { auth, headers, profile } = await serverDeps();
+    const { auth, headers, profile, audit } = await serverDeps();
     const result = await auth.api.listApiKeys({ headers, query: { limit: 100 } });
     const owned = result.apiKeys.filter((key) => profileOf(key.metadata) === profile.id);
     if (!owned.some((key) => key.id === data.id)) {
       throw new Error("API key not found.");
     }
+    const revoked = owned.find((key) => key.id === data.id);
     await auth.api.deleteApiKey({ body: { keyId: data.id }, headers });
+    await audit("apiKeys.revoke", `key ${revoked?.name ?? data.id} revoked`);
     return { ok: true as const };
   });

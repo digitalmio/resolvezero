@@ -9,6 +9,7 @@ import { requireScope } from "../context.server";
 import { auditWrite } from "../audit.server";
 import { createRule, loadRules, removeRule, setRuleEnabled } from "../../dashboard/rules.server";
 import { normalizeRuleAction, normalizeRuleDomain } from "../../../lib/policy";
+import { rulesSchema } from "../schemas.server";
 
 const ruleInput = z.object({
   domain: z.string().min(1).max(253).describe("Domain; subdomains match automatically."),
@@ -36,6 +37,7 @@ function badRequest(err: unknown): never {
 export const rules = {
   list: base
     .route({ method: "GET", path: "/rules", summary: "List rules, zones, and blocklists" })
+    .output(rulesSchema)
     .handler(({ context }) => {
       requireScope(context, "read");
       return loadRules(context.principal.userId, context.profileId);

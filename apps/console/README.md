@@ -22,12 +22,15 @@ long-lived profile-scoped API key (`Authorization: Bearer rz_…`).
 
 - `GET /openapi.json` — generated OpenAPI 3.1 document
 - `GET /docs` — Scalar reference UI
-- Keys are profile-scoped (`read` or `read-write`) and stored hashed by
-  `@better-auth/api-key`; the raw value is shown once at creation.
+- Keys are profile-scoped (`read` or `read-write`), stored hashed by
+  `@better-auth/api-key`, rate limited at 60 req/min per key, and the raw value
+  is shown once at creation.
 - Key management (`/api-keys` in the console) is **session-only** and is not
   mounted on the public router, so a key can never mint or revoke another key.
-- Mutating calls append a row to `api_audit_log` (actor, key id, procedure,
-  short summary, IP, user agent).
+- Mutating calls — including key create/revoke — append a row to
+  `api_audit_log` (actor, key id, procedure, short summary, IP, user agent).
+- `PATCH /rpc/settings` updates the upstream preset/custom URL, query logging,
+  and retention; the console's Settings form uses the same procedure.
 - The edge data plane (UDP/TCP 53, DoH, `/readyz`, `/metrics`) stays outside
   this API.
 

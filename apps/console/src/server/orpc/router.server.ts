@@ -7,6 +7,7 @@ import { blocklists } from "./procedures/blocklists.server";
 import { cache, localDns } from "./procedures/local-dns.server";
 import { reads } from "./procedures/read.server";
 import { rules } from "./procedures/rules.server";
+import { settings } from "./procedures/settings.server";
 
 /** Identity probe: lets a client confirm its key and profile binding. */
 const whoami = base
@@ -40,7 +41,7 @@ export const router = {
   queryVolume: reads.queryVolume,
   analytics: reads.analytics,
   logs: reads.logs,
-  settings: reads.settings,
+  settings,
   edge: reads.edge,
   rules,
   blocklists,

@@ -13,6 +13,7 @@ import {
   setBlocklistEnabled,
 } from "../../dashboard/blocklists.server";
 import { normalizeBlocklistFormat, normalizeBlocklistUrl } from "../../../lib/policy";
+import { blocklistsSchema } from "../schemas.server";
 
 const listInput = z.object({
   url: z.string().min(8).max(1024).describe("Raw list URL (http or https)."),
@@ -41,6 +42,7 @@ function badRequest(err: unknown): never {
 export const blocklists = {
   list: base
     .route({ method: "GET", path: "/blocklists", summary: "List blocklist subscriptions" })
+    .output(blocklistsSchema)
     .handler(({ context }) => {
       requireScope(context, "read");
       return loadBlocklists(context.principal.userId, context.profileId);

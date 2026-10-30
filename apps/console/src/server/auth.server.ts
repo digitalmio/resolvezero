@@ -52,7 +52,7 @@ export const auth = betterAuth({
       // Plugin defaults are 10 requests per DAY — far too low for an API.
       rateLimit: {
         enabled: true,
-        maxRequests: Number(process.env.API_KEY_RATE_MAX ?? 600),
+        maxRequests: Number(process.env.API_KEY_RATE_MAX ?? 60),
         timeWindow: Number(process.env.API_KEY_RATE_WINDOW_MS ?? 60_000),
       },
     }),
