@@ -3,8 +3,9 @@ import { getRequestHeaders } from "@tanstack/react-start/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { apiKey } from "@better-auth/api-key";
 import { db } from "@resolvezero/db/client";
-import { account, session, user, verification } from "@resolvezero/db/schema";
+import { account, apikey, session, user, verification } from "@resolvezero/db/schema";
 
 import { requiredEnv } from "./env.server";
 
@@ -29,7 +30,7 @@ export const auth = betterAuth({
     .filter(Boolean),
   database: drizzleAdapter(db, {
     provider: "pg",
-    schema: { user, session, account, verification },
+    schema: { user, session, account, verification, apikey },
   }),
   socialProviders: {
     github: {
@@ -41,9 +42,18 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
   },
-  // Must be the last plugin: it forwards better-auth's Set-Cookie headers
-  // through TanStack Start's response helpers.
-  plugins: [tanstackStartCookies()],
+  plugins: [
+    // Machine-to-machine keys for the control-plane API. The bound profile and
+    // scope live in `metadata`; ownership is always re-checked against the key's
+    // user before any query runs.
+    apiKey({
+      enableMetadata: true,
+      defaultPrefix: "rz_",
+    }),
+    // Must be the last plugin: it forwards better-auth's Set-Cookie headers
+    // through TanStack Start's response helpers.
+    tanstackStartCookies(),
+  ],
 });
 
 /** Read the current session inside a server function/route handler. */

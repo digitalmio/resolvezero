@@ -1,12 +1,25 @@
-import { os } from "@orpc/server";
+import "@tanstack/react-start/server-only";
 
-import type { ApiContext } from "./context.server";
+import { z } from "zod";
 
-/** Root builder: every procedure receives the resolved ApiContext. */
-export const base = os.$context<ApiContext>();
+import { base } from "./router-base.server";
+import { blocklists } from "./procedures/blocklists.server";
+import { cache, localDns } from "./procedures/local-dns.server";
+import { rules } from "./procedures/rules.server";
 
+/** Identity probe: lets a client confirm its key and profile binding. */
 const whoami = base
   .route({ method: "GET", path: "/whoami", summary: "Who is calling?" })
+  .output(
+    z.object({
+      via: z.enum(["session", "key"]),
+      scope: z.enum(["read", "read-write"]),
+      userId: z.string(),
+      keyId: z.string().nullable(),
+      profileId: z.string(),
+      profileName: z.string(),
+    }),
+  )
   .handler(({ context }) => ({
     via: context.principal.via,
     scope: context.principal.scope,
@@ -16,6 +29,16 @@ const whoami = base
     profileName: context.profileName,
   }));
 
-export const router = { whoami };
+/**
+ * Public control-plane router. Mounted at /rpc and exposed in /openapi.json.
+ * Internal procedures (API key management, account ops) are not mounted here.
+ */
+export const router = {
+  whoami,
+  rules,
+  blocklists,
+  localDns,
+  cache,
+};
 
 export type ApiRouter = typeof router;

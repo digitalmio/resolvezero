@@ -17,6 +17,18 @@ export interface ApiContext {
   principal: Principal;
   profileId: string;
   profileName: string;
+  request: {
+    ip: string | null;
+    userAgent: string | null;
+  };
+}
+
+function requestMeta(headers: Headers): ApiContext["request"] {
+  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return {
+    ip: headers.get("fly-client-ip")?.trim() || forwarded || null,
+    userAgent: headers.get("user-agent"),
+  };
 }
 
 /**
@@ -25,6 +37,11 @@ export interface ApiContext {
  * and the session path keeps the `rz_profile_id` switcher working.
  */
 export async function resolveContext(headers: Headers): Promise<ApiContext> {
+  const bearer = headers.get("authorization");
+  if (bearer?.toLowerCase().startsWith("bearer ")) {
+    return resolveKeyContext(bearer.slice(7).trim(), headers);
+  }
+
   const session = await auth.api.getSession({ headers });
 
   if (session?.user) {
@@ -33,10 +50,46 @@ export async function resolveContext(headers: Headers): Promise<ApiContext> {
       principal: { via: "session", userId: session.user.id, keyId: null, scope: "read-write" },
       profileId: profile.id,
       profileName: profile.name,
+      request: requestMeta(headers),
     };
   }
 
   throw new ORPCError("UNAUTHORIZED", { message: "Sign in or supply an API key." });
+}
+
+/**
+ * A key resolves to `{ profileId, scope }` from its metadata, and to its owner
+ * through `referenceId`. The profile is then re-checked against that owner, so a
+ * key can never reach a profile the user does not own.
+ */
+async function resolveKeyContext(rawKey: string, headers: Headers): Promise<ApiContext> {
+  if (!rawKey) throw new ORPCError("UNAUTHORIZED", { message: "Empty API key." });
+
+  const result = await auth.api.verifyApiKey({ body: { key: rawKey } });
+  if (!result.valid || !result.key) {
+    const reason = result.error?.message;
+    throw new ORPCError("UNAUTHORIZED", {
+      message: typeof reason === "string" ? reason : "Invalid or expired API key.",
+    });
+  }
+
+  const metadata = (result.key.metadata ?? {}) as Record<string, unknown>;
+  const profileId = typeof metadata.profileId === "string" ? metadata.profileId : null;
+  const scope: Scope | null =
+    metadata.scope === "read" ? "read" : metadata.scope === "read-write" ? "read-write" : null;
+  if (!profileId || !scope) {
+    throw new ORPCError("UNAUTHORIZED", { message: "API key is missing its profile binding." });
+  }
+
+  const userId = result.key.referenceId;
+  const profile = await findProfile(userId, profileId);
+
+  return {
+    principal: { via: "key", userId, keyId: result.key.id, scope },
+    profileId: profile.id,
+    profileName: profile.name,
+    request: requestMeta(headers),
+  };
 }
 
 export function requireScope(context: ApiContext, scope: Scope): void {

@@ -24,6 +24,9 @@ export const Route = createFileRoute("/rpc/$")({
     handlers: {
       GET: ({ request }) => handle(request),
       POST: ({ request }) => handle(request),
+      PUT: ({ request }) => handle(request),
+      PATCH: ({ request }) => handle(request),
+      DELETE: ({ request }) => handle(request),
     },
   },
 });

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { DEFAULT_OVERVIEW_RANGE, isOverviewRange } from "../lib/overview-range";
 import { normalizeDomain, normalizeRecordType, normalizeZoneInput, type ZoneInput } from "../lib/zone";
+import { sessionClient } from "./orpc/call.server";
 
 export type { OverviewData, RulesData, LocalDnsData } from "./dashboard.server";
 
@@ -118,28 +119,24 @@ export const getLocalDnsData = createServerFn({ method: "GET" }).handler(async (
 export const saveLocalDnsZone = createServerFn({ method: "POST" })
   .validator(validateLocalDnsShape)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { upsertLocalDnsZone }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return upsertLocalDnsZone(user.id, normalizeZoneInput(data), data.profileId);
+    const zone = normalizeZoneInput(data);
+    const client = await sessionClient();
+    return client.localDns.upsert({
+      domain: zone.domain,
+      recordType: zone.recordType,
+      values: zone.values,
+      ttl: zone.ttl,
+    });
   });
 
 export const deleteLocalDnsZone = createServerFn({ method: "POST" })
   .validator(validateZoneKeyShape)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { removeLocalDnsZone }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return removeLocalDnsZone(
-      user.id,
-      normalizeDomain(data.domain),
-      normalizeRecordType(data.recordType),
-      data.profileId,
-    );
+    const client = await sessionClient();
+    return client.localDns.delete({
+      domain: normalizeDomain(data.domain),
+      recordType: normalizeRecordType(data.recordType),
+    });
   });
 
 export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async () => {
@@ -193,12 +190,8 @@ export const purgeCache = createServerFn({ method: "POST" })
     return { domain, type, profileId: validateProfileId(data?.profileId) };
   })
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { purgeCache: runPurge }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return runPurge(user.id, data.domain, data.type, data.profileId);
+    const client = await sessionClient();
+    return client.cache.purge({ domain: data.domain, type: data.type });
   });
 
 export const checkDnsProbe = createServerFn({ method: "POST" })

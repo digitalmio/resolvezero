@@ -8,6 +8,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  text,
   timestamp,
   uuid,
   varchar,
@@ -86,6 +87,65 @@ export const verification = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("verification_identifier_idx").on(t.identifier)],
+);
+
+/**
+ * Better Auth API keys (`@better-auth/api-key`). `referenceId` is the owning
+ * user; the bound profile and scope live in `metadata` as JSON:
+ *   { "profileId": "<uuid>", "scope": "read" | "read-write" }
+ * Keys are stored hashed by the plugin — never store the raw value.
+ */
+export const apikey = pgTable(
+  "apikey",
+  {
+    id: baText("id").primaryKey(),
+    configId: baText("config_id").notNull().default("default"),
+    name: baText("name"),
+    start: baText("start"),
+    prefix: baText("prefix"),
+    key: baText("key").notNull(),
+    referenceId: baText("reference_id").notNull(),
+    refillInterval: integer("refill_interval"),
+    refillAmount: integer("refill_amount"),
+    lastRefillAt: timestamp("last_refill_at", { withTimezone: true }),
+    enabled: boolean("enabled").notNull().default(true),
+    rateLimitEnabled: boolean("rate_limit_enabled").notNull().default(true),
+    rateLimitTimeWindow: integer("rate_limit_time_window"),
+    rateLimitMax: integer("rate_limit_max"),
+    requestCount: integer("request_count").notNull().default(0),
+    remaining: integer("remaining"),
+    lastRequest: timestamp("last_request", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    permissions: text("permissions"),
+    metadata: text("metadata"),
+  },
+  (t) => [index("apikey_key_idx").on(t.key), index("apikey_reference_idx").on(t.referenceId)],
+);
+
+/** Append-only trail of mutating API calls (session or key). */
+export const apiAuditLog = pgTable(
+  "api_audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 255 }).notNull(),
+    /** Null for session calls. */
+    keyId: varchar("key_id", { length: 255 }),
+    /** How the caller authenticated: 'session' | 'key'. */
+    via: varchar("via", { length: 16 }).notNull(),
+    procedure: varchar("procedure", { length: 120 }).notNull(),
+    /** Short human-readable description, never the raw payload. */
+    summary: varchar("summary", { length: 255 }),
+    status: varchar("status", { length: 16 }).notNull(), // 'ok' | 'error'
+    ip: varchar("ip", { length: 64 }),
+    userAgent: varchar("user_agent", { length: 255 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("api_audit_log_profile_created_idx").on(t.profileId, t.createdAt)],
 );
 
 export const profiles = pgTable("profiles", {
