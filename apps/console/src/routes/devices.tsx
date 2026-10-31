@@ -4,7 +4,7 @@ import { getOverview } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
 import { Button } from '../components/ui/button'
-import { Info, Monitor, Plus, Router, Search, Smartphone } from 'lucide-react'
+import { Info, Monitor, Plus, Router, Smartphone } from 'lucide-react'
 
 export const Route = createFileRoute('/devices')({ component: Devices })
 
@@ -28,15 +28,16 @@ function Devices() {
   if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading devices…" /></div>
   if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load devices." onRetry={() => void refetch()} /></div>
 
-  const dohDevices = data.topDevices.map((d, index) => ({ name: d.device, tag: d.device, queries: String(d.count), lastSeen: 'last 24h', kind: 'DoH', status: index < 4 ? 'online' : 'unknown' }))
-  const clientIps = data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: String(c.count), lastSeen: 'last 24h' }))
+  const count = new Intl.NumberFormat('en-GB')
+  const dohDevices = data.topDevices.map((d) => ({ name: d.device, tag: d.device, queries: count.format(d.count) }))
+  const clientIps = data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: count.format(c.count) }))
 
   return (
     <div className="space-y-6">
       {header}
 
-      <div className="rz-card flex items-start gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-none bg-white text-[var(--ink)] ring-1 ring-[var(--line)]"><Info size={14} /></span>
+      <div className="rz-card flex items-center gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-none bg-white text-[var(--ink)] ring-1 ring-[var(--line)]"><Info size={14} /></span>
         <p className="text-[12px] leading-5 text-[var(--muted)]">
           Client IPs are shared by UDP and DoH traffic. Downstream devices are opaque, so queries from the same public IP are grouped together. Use the device-tagged DoH URL for per-device attribution.
         </p>
@@ -64,7 +65,7 @@ function Devices() {
                 </div>
                 <div className="ml-auto text-right">
                   <p className="font-mono text-[11px]">{device.queries}</p>
-                  <p className="text-[10px] text-[var(--muted)]">{device.lastSeen}</p>
+                  <p className="text-[10px] text-[var(--muted)]">queries · 24h</p>
                 </div>
                 <span className="size-1.5 rounded-full bg-[var(--green)]" />
               </div>
@@ -91,7 +92,7 @@ function Devices() {
                 </div>
                 <div className="ml-auto text-right">
                   <p className="font-mono text-[11px]">{source.queries}</p>
-                  <p className="text-[10px] text-[var(--muted)]">{source.lastSeen}</p>
+                  <p className="text-[10px] text-[var(--muted)]">queries · 24h</p>
                 </div>
                 <span className={['size-1.5 rounded-full', source.name === 'Unknown device' ? 'bg-[var(--warning)]' : 'bg-[var(--green)]'].join(' ')} />
               </div>
@@ -101,17 +102,10 @@ function Devices() {
       </div>
 
       <div className="rz-card overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-[var(--line)] p-4 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-none border border-[var(--line-strong)] bg-transparent px-3 py-2 text-[11px] text-[var(--muted)]">
-            <Search size={14} />
-            <span>Search devices or source IPs</span>
-          </div>
-          <span className="text-[11px] text-[var(--muted)]">{dohDevices.length + clientIps.length} devices/sources · last 24h</span>
-        </div>
         <div className="grid gap-px bg-[var(--line)] sm:grid-cols-3">
           <DeviceStat label="DoH devices" value={String(dohDevices.length)} detail="Attributed" />
           <DeviceStat label="Client IPs" value={String(clientIps.length)} detail="UDP + DoH" />
-          <DeviceStat label="Queries today" value={new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(data.totalQueries)} detail="Across all devices" />
+          <DeviceStat label="Queries / 24h" value={new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(data.totalQueries)} detail="Across all devices" />
         </div>
       </div>
     </div>
