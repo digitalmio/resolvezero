@@ -12,13 +12,40 @@ TanStack Start console for ResolveZero — profiles, rules, local DNS, query log
 - shadcn-style Radix primitives for Button, Select, Switch, and DropdownMenu
 - lucide-react
 
-The edge keeps its own Hono HTTP app; this app is the control-plane UI.
+The edge keeps its own Hono HTTP app; this app is the control-plane UI and API.
+
+## Control-plane API
+
+Every profile operation the console performs is also available as an oRPC
+procedure at `/rpc`, authenticated either by the session cookie or by a
+long-lived profile-scoped API key (`Authorization: Bearer rz_…`).
+
+- `GET /openapi.json` — generated OpenAPI 3.1 document
+- `GET /docs` — Scalar reference UI
+- Keys are profile-scoped (`read` or `read-write`), stored hashed by
+  `@better-auth/api-key`, rate limited at 60 req/min per key, and the raw value
+  is shown once at creation.
+- Key management (`/api-keys` in the console) is **session-only** and is not
+  mounted on the public router, so a key can never mint or revoke another key.
+- Mutating calls — including key create/revoke — append a row to
+  `api_audit_log` (actor, key id, procedure, short summary, IP, user agent).
+- `PATCH /rpc/settings` updates the upstream preset/custom URL, query logging,
+  and retention; the console's Settings form uses the same procedure.
+- The edge data plane (UDP/TCP 53, DoH, `/readyz`, `/metrics`) stays outside
+  this API.
 
 ## Status
 
 Implemented:
 
-- GitHub OAuth via Better Auth, a root route guard, and session-scoped server functions
+- Email OTP sign-in via Better Auth (no passwords): 6-digit codes, hashed at
+  rest, 10-minute TTL, 5 attempts, sent over any SMTP endpoint (`SMTP_URL`).
+  Dev without SMTP logs the code; production refuses to boot without it.
+  GitHub OAuth remains as an alternative. A root route guard protects every
+  screen and all server functions are session-scoped. Sign-in emails are capped
+  three ways: 5 requests/min per IP (Better Auth), 3 codes/15 min per address,
+  and 100 sends/hour per instance — a blocked request still answers `200` so it
+  never reveals whether an account exists.
 - Owner-scoped profile selection, a real profile switcher, and `rz_profile_id` preference cookie
 - Overview with live traffic, KPIs, query chart, top blocked domains, devices, and Local DNS summary
 - Query-volume chart ranges: 1H / 24H / 7D / 30D (KPIs remain fixed to 24h)

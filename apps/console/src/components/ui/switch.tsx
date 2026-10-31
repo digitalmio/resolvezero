@@ -10,7 +10,7 @@ const Switch = forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      "relative inline-flex h-4 w-8 shrink-0 items-center rounded-none border transition-colors data-[state=checked]:border-[var(--accent)] data-[state=checked]:bg-[var(--accent)] data-[state=unchecked]:border-[var(--line-strong)] data-[state=unchecked]:bg-transparent",
+      "relative inline-flex h-4 w-8 shrink-0 items-center rounded-none border transition-colors data-[state=checked]:border-[var(--ink)] data-[state=checked]:bg-[var(--ink)] data-[state=unchecked]:border-[var(--line-strong)] data-[state=unchecked]:bg-transparent",
       className,
     )}
     {...props}

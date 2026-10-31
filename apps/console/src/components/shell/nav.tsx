@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Activity, FileText, House, Layers3, ListFilter, Monitor, Settings } from 'lucide-react'
+import { Activity, FileText, House, KeyRound, Layers3, ListFilter, Monitor, Settings } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 export type NavItem = {
@@ -36,7 +36,10 @@ export const navGroups: NavGroup[] = [
   },
 ]
 
-export const accountNav: NavItem[] = [{ label: 'Settings', to: '/settings', icon: <Settings size={16} /> }]
+export const accountNav: NavItem[] = [
+  { label: 'API keys', to: '/api-keys', icon: <KeyRound size={16} /> },
+  { label: 'Settings', to: '/settings', icon: <Settings size={16} /> },
+]
 
 export function SidebarLink({ item, active }: { item: NavItem; active: boolean }) {
   return (

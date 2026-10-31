@@ -47,10 +47,27 @@ function Logs() {
     refetchOnWindowFocus: true,
   })
 
-  if (isPending) return <PageLoading label="Loading recent queries…" />
-  if (isError || !data) return <PageError title="Could not load query logs." onRetry={() => void refetch()} />
+  const header = (
+    <PageHeader
+      eyebrow="Observe"
+      title="Query log"
+      description={`${data?.profileName ?? 'Profile'} · latest 100 archived queries · 1-minute flush`}
+      actions={
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+        >
+          <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} /> Refresh
+        </Button>
+      }
+    />
+  )
 
-  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading recent queries…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load query logs." onRetry={() => void refetch()} /></div>
+
   const filtered = data.entries.filter((entry) => {
     if (blockedOnly && entry.action !== 'block') return false
     return search.trim() ? entry.domain.toLowerCase().includes(search.toLowerCase()) : true
@@ -58,21 +75,7 @@ function Logs() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Network activity"
-        title="Query log"
-        description={`${profileLabel} · latest 100 archived queries · 1-minute flush`}
-        actions={
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void refetch()}
-            disabled={isFetching}
-          >
-            <RefreshCw size={13} className={isFetching ? 'animate-spin' : ''} /> Refresh
-          </Button>
-        }
-      />
+      {header}
 
       <div className="rz-card overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-[var(--paper)]/50 px-4 py-3 sm:flex-row sm:items-center">

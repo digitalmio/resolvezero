@@ -1,10 +1,9 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
-import { Ban, FileText, House, LoaderCircle, ShieldCheck } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Ban, FileText, House, ShieldCheck } from 'lucide-react'
+import type { ReactNode } from 'react'
 
 import logo from '../assets/logo-square.svg'
-import { Button } from '../components/ui/button'
-import { authClient } from '../lib/auth-client'
+import { SignInCard } from '../components/auth/sign-in-card'
 import { getSession } from '../server/auth'
 
 export const Route = createFileRoute('/login')({
@@ -14,14 +13,6 @@ export const Route = createFileRoute('/login')({
   },
   component: LoginPage,
 })
-
-function GitHubMark() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 fill-current">
-      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-    </svg>
-  )
-}
 
 function Proof({ index, icon, title, detail }: { index: string; icon: ReactNode; title: string; detail: string }) {
   return (
@@ -39,27 +30,6 @@ function Proof({ index, icon, title, detail }: { index: string; icon: ReactNode;
 }
 
 function LoginPage() {
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function signIn() {
-    setPending(true)
-    setError(null)
-    try {
-      const result = await authClient.signIn.social({
-        provider: 'github',
-        callbackURL: '/',
-      })
-      if (result.error) {
-        setError(result.error.message ?? 'GitHub sign-in failed.')
-        setPending(false)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'GitHub sign-in failed.')
-      setPending(false)
-    }
-  }
-
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)] lg:grid lg:grid-cols-2">
       <section className="relative flex flex-col overflow-hidden bg-[var(--sidebar)] px-5 py-5 text-[var(--sidebar-text)] lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
@@ -128,30 +98,7 @@ function LoginPage() {
 
         <main className="flex flex-1 items-center justify-center py-10 lg:py-14">
           <div className="w-full max-w-[420px]">
-            <div className="border border-[var(--line-strong)] border-t-4 border-t-[var(--brand)] bg-[var(--card)] p-7 sm:p-8">
-              <p className="rz-eyebrow">Welcome back</p>
-              <h2 className="rz-display mt-3 text-[2.6rem]">Sign in</h2>
-              <p className="mt-3 text-[12px] leading-6 text-[var(--muted)]">
-                Continue with GitHub to manage your resolver, local DNS, and query history.
-              </p>
-
-              <Button
-                type="button"
-                size="lg"
-                onClick={() => void signIn()}
-                disabled={pending}
-                className="mt-7 w-full disabled:opacity-60"
-              >
-                {pending ? <LoaderCircle size={16} className="animate-spin" /> : <GitHubMark />}
-                {pending ? 'Opening GitHub…' : 'Continue with GitHub'}
-              </Button>
-
-              {error ? (
-                <p role="alert" className="mt-4 border border-[#e7b4ae] bg-[var(--accent-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--danger)]">
-                  {error}
-                </p>
-              ) : null}
-            </div>
+            <SignInCard />
 
             <p className="mt-4 text-center text-[11px] leading-5 text-[var(--muted)]">
               Don’t have an account yet?{' '}

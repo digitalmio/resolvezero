@@ -10,6 +10,7 @@ import {
 
 import { edgeBaseUrl } from "./edge.server";
 import { findProfile } from "./profile.server";
+import type { SettingsInput } from "../../lib/settings";
 import type { CachePurgeResult, SettingsData } from "./types";
 
 export async function loadSettings(ownerUserId: string, profileId?: string): Promise<SettingsData> {
@@ -49,6 +50,25 @@ export async function loadSettings(ownerUserId: string, profileId?: string): Pro
 }
 
 /** Queue an edge-cache purge. Upstream resolver caches remain TTL-bound. */
+/** Persist resolver/logging settings for a profile. */
+export async function updateSettings(
+  ownerUserId: string,
+  input: SettingsInput,
+  profileId?: string,
+): Promise<SettingsData> {
+  const profile = await findProfile(ownerUserId, profileId);
+  await db
+    .update(profiles)
+    .set({
+      upstream: input.upstream,
+      upstreamUrl: input.upstreamUrl,
+      logQueries: input.logQueries,
+      logRetentionDays: input.logRetentionDays,
+    })
+    .where(eq(profiles.id, profile.id));
+  return loadSettings(ownerUserId, profile.id);
+}
+
 export async function purgeCache(
   ownerUserId: string,
   domain: string,

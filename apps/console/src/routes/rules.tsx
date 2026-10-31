@@ -1,125 +1,112 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { getRulesData } from '../server/dashboard'
+import { Plus, Search } from 'lucide-react'
+import { useState } from 'react'
+
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
 import { AddRuleForm } from '../components/rules/add-rule-form'
 import { RuleRowActions } from '../components/rules/rule-row-actions'
 import { Button } from '../components/ui/button'
-import { Filter, MoreHorizontal, Network, Plus, Search } from 'lucide-react'
-import { useState } from 'react'
+import { getRulesData } from '../server/dashboard'
 
 export const Route = createFileRoute('/rules')({ component: Rules })
 
 function Rules() {
-  const [activeTab, setActiveTab] = useState<'Block' | 'Allow' | 'Zones' | 'Blocklists'>('Block')
   const [adding, setAdding] = useState(false)
+  const [search, setSearch] = useState('')
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
-  if (isPending) return <PageLoading label="Loading rules…" />
-  if (isError || !data) return <PageError title="Could not load rules." onRetry={() => void refetch()} />
-  const rules = data.rules
-  const tabs = [
-    { label: 'Block', count: data.counts.block },
-    { label: 'Allow', count: data.counts.allow },
-    { label: 'Zones', count: data.counts.zones },
-    { label: 'Blocklists', count: data.counts.lists },
-  ]
-  const visibleRules = rules.filter((rule) => {
-    if (activeTab === 'Block') return rule.action === 'block'
-    if (activeTab === 'Allow') return rule.action === 'allow'
-    if (activeTab === 'Zones') return rule.action === 'zone'
-    return rule.action === 'list'
-  })
+
+  const header = (
+    <PageHeader
+      eyebrow="Protection"
+      title="Rules"
+      description="Block or allow individual names. Allow beats every blocklist; rules match subdomains too."
+      actions={
+        <Button onClick={() => setAdding((open) => !open)} aria-expanded={adding}>
+          <Plus size={14} />
+          Add rule
+        </Button>
+      }
+    />
+  )
+
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading rules…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load rules." onRetry={() => void refetch()} /></div>
+
+  const query = search.trim().toLowerCase()
+  const visible = query ? data.rules.filter((rule) => rule.domain.includes(query)) : data.rules
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Policy"
-        title="Rules"
-        description="Block, allow, and override names. Changes reach every edge in seconds."
-        actions={
-          <Button onClick={() => setAdding((open) => !open)} aria-expanded={adding}>
-            <Plus size={14} />
-            Add rule
-          </Button>
-        }
-      />
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)]">
-        {tabs.map((tab) => {
-          const active = tab.label === activeTab
-          return (
-            <button
-              key={tab.label}
-              onClick={() => setActiveTab(tab.label as typeof activeTab)}
-              className={[
-                'relative flex items-center gap-2 px-3 py-3 text-[12px] font-medium transition-colors',
-                active ? 'text-[var(--ink)]' : 'text-[var(--muted)] hover:text-[var(--ink)]',
-              ].join(' ')}
-            >
-              {tab.label}
-              <span className="rounded-none bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{tab.count}</span>
-              {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 bg-[var(--brand)]" /> : null}
-            </button>
-          )
-        })}
-      </div>
+      {header}
 
       <div className="rz-card overflow-hidden">
         {adding ? <AddRuleForm profileId={data.profileId} onDone={() => setAdding(false)} /> : null}
+
         <div className="flex flex-col gap-3 border-b border-[var(--line)] p-4 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-none border border-[var(--line-strong)] bg-transparent px-3 py-2 text-[11px] text-[var(--muted)]">
-            <Search size={14} />
-            <span>Search rules and domains</span>
-          </div>
-          <Button variant="secondary">
-            <Filter size={13} />
-            Filter
-          </Button>
-          <Button variant="secondary">
-            <Network size={13} />
-            Import
-          </Button>
+          <label className="flex flex-1 items-center gap-2 border border-[var(--line-strong)] bg-transparent px-3 py-2">
+            <Search size={14} className="text-[var(--muted)]" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Filter by domain"
+              aria-label="Filter rules"
+              spellCheck={false}
+              className="w-full bg-transparent text-[11px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+            />
+          </label>
+          <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--muted)]">
+            {data.counts.block} block · {data.counts.allow} allow
+          </span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left">
+          <table className="w-full min-w-[560px] text-left">
             <thead>
               <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
                 <th className="px-5 py-3 font-medium">Domain</th>
                 <th className="px-4 py-3 font-medium">Action</th>
-                <th className="px-4 py-3 font-medium">Scope</th>
-                <th className="px-4 py-3 font-medium">Source</th>
-                <th className="px-4 py-3 font-medium">Updated</th>
-                <th className="px-4 py-3" />
+                <th className="px-4 py-3 font-medium text-right">Enabled</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--line)]">
-              {visibleRules.length === 0 ? <tr><td colSpan={6} className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No {activeTab.toLowerCase()} entries yet.</td></tr> : null}
-              {visibleRules.map((rule) => (
+              {visible.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">
+                    {data.rules.length === 0
+                      ? 'No rules yet. Add one to block or allow a name.'
+                      : `No rules match “${search.trim()}”.`}
+                  </td>
+                </tr>
+              ) : null}
+              {visible.map((rule) => (
                 <tr
-                  key={`${rule.domain}-${rule.action}`}
-                  className={['group transition-opacity hover:bg-white/60', rule.enabled ? '' : 'opacity-55'].join(' ')}
+                  key={rule.domain}
+                  className={['transition-opacity hover:bg-white/60', rule.enabled ? '' : 'opacity-55'].join(' ')}
                 >
                   <td className="px-5 py-3.5 font-mono text-[12px]">{rule.domain}</td>
-                  <td className="px-4 py-3.5"><ActionPill action={rule.action} /></td>
-                  <td className="px-4 py-3.5 text-[11px] text-[var(--muted)]">{rule.scope}</td>
-                  <td className="px-4 py-3.5 text-[11px] text-[var(--muted)]">{rule.source}</td>
-                  <td className="px-4 py-3.5 font-mono text-[10px] text-[var(--muted)]">{rule.updated}</td>
                   <td className="px-4 py-3.5">
-                    {rule.action === 'block' || rule.action === 'allow' ? (
-                      <RuleRowActions domain={rule.domain} enabled={rule.enabled} profileId={data.profileId} />
-                    ) : (
-                      <MoreHorizontal size={16} className="ml-auto text-[var(--muted)]" />
-                    )}
+                    <ActionPill action={rule.action} />
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <RuleRowActions
+                      domain={rule.domain}
+                      enabled={rule.enabled}
+                      profileId={data.profileId}
+                    />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
         <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-3 text-[11px] text-[var(--muted)]">
-          <span>{visibleRules.length} {activeTab.toLowerCase()}</span>
+          <span>
+            {visible.length} {visible.length === 1 ? 'rule' : 'rules'}
+            {query && visible.length !== data.rules.length ? ` of ${data.rules.length}` : ''}
+          </span>
           <span className="font-mono">synced to edge</span>
         </div>
       </div>
@@ -131,8 +118,10 @@ function ActionPill({ action }: { action: string }) {
   const style =
     action === 'block'
       ? 'bg-[var(--accent-soft)] text-[#b74716] ring-[var(--line)]'
-      : action === 'allow'
-        ? 'bg-[var(--green-soft)] text-[var(--green)] ring-[var(--line)]'
-        : 'bg-[var(--sage)] text-[var(--ink)] ring-[var(--line)]'
-  return <span className={`inline-flex items-center rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ring-1 ${style}`}>{action}</span>
+      : 'bg-[var(--green-soft)] text-[var(--green)] ring-[var(--line)]'
+  return (
+    <span className={`inline-flex items-center rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ring-1 ${style}`}>
+      {action}
+    </span>
+  )
 }

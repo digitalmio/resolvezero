@@ -11,6 +11,7 @@ import { profiles, statsHourly } from "@resolvezero/db/schema";
 export async function findProfile(
   ownerUserId: string,
   requestedProfileId?: string | null,
+  cookieHeader?: string,
 ): Promise<{ id: string; name: string }> {
   const owned = await db
     .select({ id: profiles.id, name: profiles.name })
@@ -28,7 +29,7 @@ export async function findProfile(
     return requested;
   }
 
-  const preferred = preferredProfileId();
+  const preferred = preferredProfileId(cookieHeader);
   if (preferred) {
     const match = owned.find((profile) => profile.id === preferred);
     if (match) return match;
@@ -59,9 +60,9 @@ export async function findProfile(
 }
 
 /** Profile selection is a UI preference; ownership is re-checked in findProfile. */
-function preferredProfileId(): string | null {
+function preferredProfileId(explicitCookieHeader?: string): string | null {
   try {
-    const cookie = getRequestHeaders().get("cookie") ?? "";
+    const cookie = explicitCookieHeader ?? getRequestHeaders().get("cookie") ?? "";
     const match = cookie.match(/(?:^|;\s*)rz_profile_id=([^;]+)/);
     return match?.[1] ? decodeURIComponent(match[1]) : null;
   } catch {

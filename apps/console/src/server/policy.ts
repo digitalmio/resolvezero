@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { sessionClient } from "./orpc/call.server";
+
 const MAX_DOMAIN_LENGTH = 253;
 const MAX_URL_LENGTH = 1024;
 const MAX_ACTION_LENGTH = 16;
@@ -78,65 +80,44 @@ function validateListToggle(data: unknown): { id: string; enabled: boolean; prof
 export const createRule = createServerFn({ method: "POST" })
   .validator(validateRuleInput)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { createRule: create }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return create(user.id, { domain: data.domain, action: data.action, profileId: data.profileId });
+    const client = await sessionClient();
+    return client.rules.create({ domain: data.domain, action: data.action as "block" | "allow" });
   });
 
 export const setRuleEnabled = createServerFn({ method: "POST" })
   .validator(validateRuleToggle)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { setRuleEnabled: toggle }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return toggle(user.id, data.domain, data.enabled, data.profileId);
+    const client = await sessionClient();
+    return client.rules.setEnabled({ domain: data.domain, enabled: data.enabled });
   });
 
 export const deleteRule = createServerFn({ method: "POST" })
   .validator(validateRuleKey)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { removeRule }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return removeRule(user.id, data.domain, data.profileId);
+    const client = await sessionClient();
+    return client.rules.delete({ domain: data.domain });
   });
 
 export const createBlocklist = createServerFn({ method: "POST" })
   .validator(validateBlocklistInput)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { createBlocklist: create }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return create(user.id, { url: data.url, format: data.format, profileId: data.profileId });
+    const client = await sessionClient();
+    return client.blocklists.create({
+      url: data.url,
+      format: data.format as "auto" | "hosts" | "domains" | "abp",
+    });
   });
 
 export const setBlocklistEnabled = createServerFn({ method: "POST" })
   .validator(validateListToggle)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { setBlocklistEnabled: toggle }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return toggle(user.id, data.id, data.enabled, data.profileId);
+    const client = await sessionClient();
+    return client.blocklists.setEnabled({ id: data.id, enabled: data.enabled });
   });
 
 export const deleteBlocklist = createServerFn({ method: "POST" })
   .validator(validateListId)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { removeBlocklist }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return removeBlocklist(user.id, data.id, data.profileId);
+    const client = await sessionClient();
+    return client.blocklists.delete({ id: data.id });
   });

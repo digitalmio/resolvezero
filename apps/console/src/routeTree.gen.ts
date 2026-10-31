@@ -11,14 +11,18 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
+import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as BlocklistsRouteImport } from './routes/blocklists'
 import { Route as DevicesRouteImport } from './routes/devices'
+import { Route as DocsRouteImport } from './routes/docs'
 import { Route as LocalDnsRouteImport } from './routes/local-dns'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogsRouteImport } from './routes/logs'
+import { Route as OpenapiDotjsonRouteImport } from './routes/openapi[.]json'
 import { Route as RulesRouteImport } from './routes/rules'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as WaitlistRouteImport } from './routes/waitlist'
+import { Route as RpcSplatRouteImport } from './routes/rpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -31,6 +35,11 @@ const AnalyticsRoute = AnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiKeysRoute = ApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BlocklistsRoute = BlocklistsRouteImport.update({
   id: '/blocklists',
   path: '/blocklists',
@@ -39,6 +48,11 @@ const BlocklistsRoute = BlocklistsRouteImport.update({
 const DevicesRoute = DevicesRouteImport.update({
   id: '/devices',
   path: '/devices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LocalDnsRoute = LocalDnsRouteImport.update({
@@ -56,6 +70,11 @@ const LogsRoute = LogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OpenapiDotjsonRoute = OpenapiDotjsonRouteImport.update({
+  id: '/openapi.json',
+  path: '/openapi.json',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RulesRoute = RulesRouteImport.update({
   id: '/rules',
   path: '/rules',
@@ -71,6 +90,11 @@ const WaitlistRoute = WaitlistRouteImport.update({
   path: '/waitlist',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RpcSplatRoute = RpcSplatRouteImport.update({
+  id: '/rpc/$',
+  path: '/rpc/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -80,41 +104,53 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/api-keys': typeof ApiKeysRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/docs': typeof DocsRoute
   '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/openapi.json': typeof OpenapiDotjsonRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
   '/waitlist': typeof WaitlistRoute
+  '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/api-keys': typeof ApiKeysRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/docs': typeof DocsRoute
   '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/openapi.json': typeof OpenapiDotjsonRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
   '/waitlist': typeof WaitlistRoute
+  '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
+  '/api-keys': typeof ApiKeysRoute
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
+  '/docs': typeof DocsRoute
   '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/openapi.json': typeof OpenapiDotjsonRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
   '/waitlist': typeof WaitlistRoute
+  '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -122,54 +158,70 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/analytics'
+    | '/api-keys'
     | '/blocklists'
     | '/devices'
+    | '/docs'
     | '/local-dns'
     | '/login'
     | '/logs'
+    | '/openapi.json'
     | '/rules'
     | '/settings'
     | '/waitlist'
+    | '/rpc/$'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/analytics'
+    | '/api-keys'
     | '/blocklists'
     | '/devices'
+    | '/docs'
     | '/local-dns'
     | '/login'
     | '/logs'
+    | '/openapi.json'
     | '/rules'
     | '/settings'
     | '/waitlist'
+    | '/rpc/$'
     | '/api/auth/$'
   id:
     | '__root__'
     | '/'
     | '/analytics'
+    | '/api-keys'
     | '/blocklists'
     | '/devices'
+    | '/docs'
     | '/local-dns'
     | '/login'
     | '/logs'
+    | '/openapi.json'
     | '/rules'
     | '/settings'
     | '/waitlist'
+    | '/rpc/$'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRoute
+  ApiKeysRoute: typeof ApiKeysRoute
   BlocklistsRoute: typeof BlocklistsRoute
   DevicesRoute: typeof DevicesRoute
+  DocsRoute: typeof DocsRoute
   LocalDnsRoute: typeof LocalDnsRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
+  OpenapiDotjsonRoute: typeof OpenapiDotjsonRoute
   RulesRoute: typeof RulesRoute
   SettingsRoute: typeof SettingsRoute
   WaitlistRoute: typeof WaitlistRoute
+  RpcSplatRoute: typeof RpcSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -189,6 +241,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api-keys': {
+      id: '/api-keys'
+      path: '/api-keys'
+      fullPath: '/api-keys'
+      preLoaderRoute: typeof ApiKeysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/blocklists': {
       id: '/blocklists'
       path: '/blocklists'
@@ -201,6 +260,13 @@ declare module '@tanstack/react-router' {
       path: '/devices'
       fullPath: '/devices'
       preLoaderRoute: typeof DevicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/local-dns': {
@@ -224,6 +290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/openapi.json': {
+      id: '/openapi.json'
+      path: '/openapi.json'
+      fullPath: '/openapi.json'
+      preLoaderRoute: typeof OpenapiDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/rules': {
       id: '/rules'
       path: '/rules'
@@ -245,6 +318,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WaitlistRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/rpc/$': {
+      id: '/rpc/$'
+      path: '/rpc/$'
+      fullPath: '/rpc/$'
+      preLoaderRoute: typeof RpcSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -258,14 +338,18 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRoute,
+  ApiKeysRoute: ApiKeysRoute,
   BlocklistsRoute: BlocklistsRoute,
   DevicesRoute: DevicesRoute,
+  DocsRoute: DocsRoute,
   LocalDnsRoute: LocalDnsRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
+  OpenapiDotjsonRoute: OpenapiDotjsonRoute,
   RulesRoute: RulesRoute,
   SettingsRoute: SettingsRoute,
   WaitlistRoute: WaitlistRoute,
+  RpcSplatRoute: RpcSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

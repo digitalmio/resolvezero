@@ -19,31 +19,34 @@ function Blocklists() {
     queryFn: () => getBlocklistsData(),
   })
 
-  if (isPending) return <PageLoading label="Loading blocklists…" />
-  if (isError || !data) return <PageError title="Could not load blocklists." onRetry={() => void refetch()} />
+  const header = (
+    <PageHeader
+      eyebrow="Protection"
+      title="Blocklists"
+      description={`${data?.profileName ?? 'Profile'} · public lists and sync health across the edge fleet.`}
+      actions={
+        <>
+          <Button variant="secondary" onClick={() => void refetch()}>
+            <RefreshCw size={13} /> Refresh
+          </Button>
+          <Button onClick={() => setAdding((open) => !open)} aria-expanded={adding}>
+            <Plus size={14} /> Add list
+          </Button>
+        </>
+      }
+    />
+  )
 
-  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading blocklists…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load blocklists." onRetry={() => void refetch()} /></div>
+
   const totalEntries = data.lists.reduce((sum, list) => sum + (list.enabled ? list.entries : 0), 0)
   const enabledCount = data.lists.filter((list) => list.enabled).length
   const healthy = data.lists.filter((list) => list.enabled && list.lastStatus === 'ok').length
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Policy"
-        title="Blocklists"
-        description={`${profileLabel} · public lists and sync health across the edge fleet.`}
-        actions={
-          <>
-            <Button variant="secondary" onClick={() => void refetch()}>
-              <RefreshCw size={13} /> Refresh
-            </Button>
-            <Button onClick={() => setAdding((open) => !open)} aria-expanded={adding}>
-              <Plus size={14} /> Add list
-            </Button>
-          </>
-        }
-      />
+      {header}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Subscriptions" value={String(data.lists.length)} detail={`${enabledCount} enabled`} />

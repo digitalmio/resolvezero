@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { DEFAULT_OVERVIEW_RANGE, isOverviewRange } from "../lib/overview-range";
 import { normalizeDomain, normalizeRecordType, normalizeZoneInput, type ZoneInput } from "../lib/zone";
+import { sessionClient } from "./orpc/call.server";
 
 export type { OverviewData, RulesData, LocalDnsData } from "./dashboard.server";
 
@@ -74,12 +75,8 @@ function validateZoneKeyShape(data: unknown): { domain: string; recordType: stri
 }
 
 export const getOverview = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser, toViewer }, { loadOverview }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadOverview(user.id, toViewer(user));
+  const client = await sessionClient();
+  return client.overview();
 });
 
 export const getQueryVolume = createServerFn({ method: "GET" })
@@ -89,93 +86,83 @@ export const getQueryVolume = createServerFn({ method: "GET" })
     return { range };
   })
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { loadQueryVolume }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return loadQueryVolume(user.id, data.range);
+    const client = await sessionClient();
+    return client.queryVolume({ range: data.range });
   });
 
 export const getRulesData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadRules }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadRules(user.id);
+  const client = await sessionClient();
+  return client.rules.list();
 });
 
 export const getLocalDnsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadLocalDns }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadLocalDns(user.id);
+  const client = await sessionClient();
+  return client.localDns.list();
 });
 
 export const saveLocalDnsZone = createServerFn({ method: "POST" })
   .validator(validateLocalDnsShape)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { upsertLocalDnsZone }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return upsertLocalDnsZone(user.id, normalizeZoneInput(data), data.profileId);
+    const zone = normalizeZoneInput(data);
+    const client = await sessionClient();
+    return client.localDns.upsert({
+      domain: zone.domain,
+      recordType: zone.recordType,
+      values: zone.values,
+      ttl: zone.ttl,
+    });
   });
 
 export const deleteLocalDnsZone = createServerFn({ method: "POST" })
   .validator(validateZoneKeyShape)
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { removeLocalDnsZone }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return removeLocalDnsZone(
-      user.id,
-      normalizeDomain(data.domain),
-      normalizeRecordType(data.recordType),
-      data.profileId,
-    );
+    const client = await sessionClient();
+    return client.localDns.delete({
+      domain: normalizeDomain(data.domain),
+      recordType: normalizeRecordType(data.recordType),
+    });
   });
 
 export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadBlocklists }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadBlocklists(user.id);
+  const client = await sessionClient();
+  return client.blocklists.list();
 });
 
 export const getAnalyticsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadAnalytics }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadAnalytics(user.id);
+  const client = await sessionClient();
+  return client.analytics();
 });
 
 export const getSettingsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadSettings }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadSettings(user.id);
+  const client = await sessionClient();
+  return client.settings.get();
 });
 
+export const updateSettings = createServerFn({ method: "POST" })
+  .validator((data: unknown) => {
+    if (!data || typeof data !== "object") throw new Error("Invalid settings input");
+    const input = data as Record<string, unknown>;
+    if (typeof input.logQueries !== "boolean") throw new Error("Invalid log setting");
+    if (typeof input.logRetentionDays !== "number") throw new Error("Invalid retention");
+    if (input.upstream !== null && typeof input.upstream !== "string") throw new Error("Invalid upstream");
+    if (input.upstreamUrl !== null && typeof input.upstreamUrl !== "string") {
+      throw new Error("Invalid upstream URL");
+    }
+    return {
+      upstream: input.upstream as "cloudflare" | "google" | "quad9" | null,
+      upstreamUrl: input.upstreamUrl as string | null,
+      logQueries: input.logQueries,
+      logRetentionDays: input.logRetentionDays,
+    };
+  })
+  .handler(async ({ data }) => {
+    const client = await sessionClient();
+    return client.settings.update(data);
+  });
+
 export const getLogsData = createServerFn({ method: "GET" }).handler(async () => {
-  const [{ requireSessionUser }, { loadLogs }] = await Promise.all([
-    import("./auth.server"),
-    import("./dashboard.server"),
-  ]);
-  const user = await requireSessionUser();
-  return loadLogs(user.id);
+  const client = await sessionClient();
+  return client.logs();
 });
 
 export const purgeCache = createServerFn({ method: "POST" })
@@ -193,12 +180,8 @@ export const purgeCache = createServerFn({ method: "POST" })
     return { domain, type, profileId: validateProfileId(data?.profileId) };
   })
   .handler(async ({ data }) => {
-    const [{ requireSessionUser }, { purgeCache: runPurge }] = await Promise.all([
-      import("./auth.server"),
-      import("./dashboard.server"),
-    ]);
-    const user = await requireSessionUser();
-    return runPurge(user.id, data.domain, data.type, data.profileId);
+    const client = await sessionClient();
+    return client.cache.purge({ domain: data.domain, type: data.type });
   });
 
 export const checkDnsProbe = createServerFn({ method: "POST" })

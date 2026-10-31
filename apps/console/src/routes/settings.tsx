@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { ResolverForm } from '../components/settings/resolver-form'
 import { Button } from '../components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
@@ -34,18 +35,21 @@ function SettingsPage() {
       purgeCache({ data: { domain, type: recordType || undefined, profileId: data?.profileId } }),
   })
 
-  if (isPending) return <PageLoading label="Loading settings…" />
-  if (isError || !data) return <PageError title="Could not load settings." onRetry={() => void refetch()} />
+  const header = (
+    <PageHeader
+      eyebrow="Account"
+      title="Settings"
+      description={`${data?.profileName ?? 'Profile'} · profile and resolver configuration.`}
+    />
+  )
 
-  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading settings…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load settings." onRetry={() => void refetch()} /></div>
+
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Account"
-        title="Settings"
-        description={`${profileLabel} · profile and resolver configuration.`}
-      />
+      {header}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Section title="Profile" icon={<ShieldCheck size={16} />}>
@@ -56,10 +60,14 @@ function SettingsPage() {
         </Section>
 
         <Section title="Upstream" icon={<Network size={16} />}>
-          <Row label="Preset" value={data.upstream ?? 'edge default'} />
-          <Row label="Custom URL" value={data.upstreamUrl ?? '—'} mono />
-          <Row label="Log queries" value={data.logQueries ? 'enabled' : 'disabled'} />
-          <Row label="Log retention" value={`${data.logRetentionDays} days`} />
+          <ResolverForm
+            initial={{
+              upstream: data.upstream,
+              upstreamUrl: data.upstreamUrl,
+              logQueries: data.logQueries,
+              logRetentionDays: data.logRetentionDays,
+            }}
+          />
         </Section>
       </div>
 

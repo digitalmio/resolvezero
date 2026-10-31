@@ -17,10 +17,30 @@ function Analytics() {
     queryFn: () => getAnalyticsData(),
   })
 
-  if (isPending) return <PageLoading label="Loading analytics…" />
-  if (isError || !data) return <PageError title="Could not load analytics." onRetry={() => void refetch()} />
+  const header = (
+    <PageHeader
+      eyebrow="Observe"
+      title="Analytics"
+      description={`${data?.profileName ?? 'Profile'} · long-range rollups from Postgres.`}
+      actions={
+        <div className="flex items-center rounded-none border border-[var(--line-strong)] bg-[var(--paper)] p-0.5 text-[11px]">
+          {(['24h', '7d', '30d'] as Range[]).map((value) => (
+            <button
+              key={value}
+              onClick={() => setRange(value)}
+              className={['rounded-none px-2.5 py-1.5', range === value ? 'bg-[var(--card)] font-medium' : 'text-[var(--muted)]'].join(' ')}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      }
+    />
+  )
 
-  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading analytics…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load analytics." onRetry={() => void refetch()} /></div>
+
   const series = data.series[range]
   const total = series.reduce((sum, point) => sum + point.total, 0)
   const blocked = series.reduce((sum, point) => sum + point.blocked, 0)
@@ -28,24 +48,7 @@ function Analytics() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Observability"
-        title="Analytics"
-        description={`${profileLabel} · long-range rollups from Postgres.`}
-        actions={
-          <div className="flex items-center rounded-none border border-[var(--line-strong)] bg-[var(--paper)] p-0.5 text-[11px]">
-            {(['24h', '7d', '30d'] as Range[]).map((value) => (
-              <button
-                key={value}
-                onClick={() => setRange(value)}
-                className={['rounded-none px-2.5 py-1.5', range === value ? 'bg-[var(--card)] font-medium' : 'text-[var(--muted)]'].join(' ')}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-        }
-      />
+      {header}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label={`Queries · ${range}`} value={new Intl.NumberFormat('en-GB').format(total)} detail="Rollup total" />
