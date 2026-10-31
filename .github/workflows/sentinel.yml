@@ -75,12 +75,42 @@ jobs:
             echo "::error::${failed} blocklist(s) failed on the last sync"
             exit 1
           fi
+          # DNS ingress probe. UDP is lossy by nature: a single packet to a
+          # single anycast IP produced false alarms. Try every edge IP twice and
+          # only alert when *no* attempt answers.
+          edge_ips=$(dig +short resolvezero-edge.fly.dev A | tr -d '\r' | sort -u)
+          [ -n "$edge_ips" ] || edge_ips="37.16.24.24
+          37.16.24.46
+          37.16.24.212"
+          echo "edge ips: $(echo "$edge_ips" | tr '\n' ' ')"
+
+          probe_dns() {
+            proto=$1
+            args=""
+            [ "$proto" = "tcp" ] && args="+tcp"
+            ok=0
+            for ip in $edge_ips; do
+              for attempt in 1 2; do
+                out=$(dig +time=4 +tries=1 $args example.com @"$ip" 2>&1 || true)
+                line=$(echo "$out" | grep -m1 'status:')
+                if [ -n "$line" ]; then
+                  echo "${proto} 53 @${ip} attempt ${attempt}: ${line}"
+                  ok=$((ok + 1))
+                  break
+                fi
+                echo "${proto} 53 @${ip} attempt ${attempt}: no answer"
+                sleep 1
+              done
+            done
+            [ "$ok" -gt 0 ]
+          }
+
           for proto in udp tcp; do
-            if [ "$proto" = "tcp" ]; then args="+tcp"; else args=""; fi
-            out=$(dig +time=3 +tries=1 $args example.com @37.16.24.46 2>&1 || true)
-            if ! echo "$out" | grep -q "status:"; then
-              echo "::error::${proto} 53 did not answer"
+            if ! probe_dns "$proto"; then
+              echo "::error::${proto} 53 did not answer from any edge IP"
+              echo "--- edge metrics (drops) ---"
+              curl -sS -m 15 https://resolvezero-edge.fly.dev/metrics \
+                | grep -Ei 'drop|rate.?limit' | head -20 || true
               exit 1
             fi
-            echo "${proto} 53: $(echo "$out" | grep -m1 'status:')"
           done
