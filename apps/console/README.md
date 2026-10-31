@@ -42,7 +42,10 @@ Implemented:
   rest, 10-minute TTL, 5 attempts, sent over any SMTP endpoint (`SMTP_URL`).
   Dev without SMTP logs the code; production refuses to boot without it.
   GitHub OAuth remains as an alternative. A root route guard protects every
-  screen and all server functions are session-scoped.
+  screen and all server functions are session-scoped. Sign-in emails are capped
+  three ways: 5 requests/min per IP (Better Auth), 3 codes/15 min per address,
+  and 100 sends/hour per instance — a blocked request still answers `200` so it
+  never reveals whether an account exists.
 - Owner-scoped profile selection, a real profile switcher, and `rz_profile_id` preference cookie
 - Overview with live traffic, KPIs, query chart, top blocked domains, devices, and Local DNS summary
 - Query-volume chart ranges: 1H / 24H / 7D / 30D (KPIs remain fixed to 24h)
