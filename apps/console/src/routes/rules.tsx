@@ -17,25 +17,29 @@ function Rules() {
   const [search, setSearch] = useState('')
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['rules'], queryFn: () => getRulesData() })
 
-  if (isPending) return <PageLoading label="Loading rules…" />
-  if (isError || !data) return <PageError title="Could not load rules." onRetry={() => void refetch()} />
+  const header = (
+    <PageHeader
+      eyebrow="Protection"
+      title="Rules"
+      description="Block or allow individual names. Allow beats every blocklist; rules match subdomains too."
+      actions={
+        <Button onClick={() => setAdding((open) => !open)} aria-expanded={adding}>
+          <Plus size={14} />
+          Add rule
+        </Button>
+      }
+    />
+  )
+
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading rules…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load rules." onRetry={() => void refetch()} /></div>
 
   const query = search.trim().toLowerCase()
   const visible = query ? data.rules.filter((rule) => rule.domain.includes(query)) : data.rules
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Policy"
-        title="Rules"
-        description="Block or allow individual names. Allow beats every blocklist; rules match subdomains too."
-        actions={
-          <Button onClick={() => setAdding((open) => !open)} aria-expanded={adding}>
-            <Plus size={14} />
-            Add rule
-          </Button>
-        }
-      />
+      {header}
 
       <div className="rz-card overflow-hidden">
         {adding ? <AddRuleForm profileId={data.profileId} onDone={() => setAdding(false)} /> : null}

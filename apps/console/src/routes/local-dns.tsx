@@ -53,10 +53,6 @@ function LocalDnsPage() {
     onSuccess: invalidate,
   })
 
-  if (isPending) return <PageLoading label="Loading local DNS records…" />
-  if (isError || !data) return <PageError title="Could not load local DNS records." onRetry={() => void refetch()} />
-
-  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
   const error = save.isError ? save.error.message : remove.isError ? remove.error.message : null
 
   function startEdit(zone: LocalDnsZone) {
@@ -86,17 +82,24 @@ function LocalDnsPage() {
     if (window.confirm(`Delete ${zone.domain} (${zone.recordType})?`)) remove.mutate(zone)
   }
 
+  const header = (
+    <PageHeader
+      eyebrow="Network"
+      title="Local DNS"
+      description={
+        <>
+          {data?.profileName ?? 'Profile'} profile · answer <span className="font-mono">.lan</span> names before blocklists and upstream.
+        </>
+      }
+    />
+  )
+
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading local DNS records…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load local DNS records." onRetry={() => void refetch()} /></div>
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Network"
-        title="Local DNS"
-        description={
-          <>
-            {profileLabel} profile · answer <span className="font-mono">.lan</span> names before blocklists and upstream.
-          </>
-        }
-      />
+      {header}
 
       <div className="rz-card flex items-start gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-none bg-white text-[var(--ink)] ring-1 ring-[var(--line)]">

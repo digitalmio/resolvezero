@@ -35,7 +35,6 @@ export function PulseMetric({
 export function OverviewSkeleton() {
   return (
     <div className="space-y-7" aria-busy="true" aria-label="Loading dashboard">
-      <div className="h-[88px] w-[340px] animate-pulse rounded-none bg-[var(--paper-2)]" />
       <div className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
         <div className="rz-card h-[380px] animate-pulse bg-[var(--card)]/60" />
         <div className="flex flex-col gap-4">

@@ -10,25 +10,30 @@ export const Route = createFileRoute('/devices')({ component: Devices })
 
 function Devices() {
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
-  if (isPending) return <PageLoading label="Loading devices…" />
-  if (isError || !data) return <PageError title="Could not load devices." onRetry={() => void refetch()} />
+
+  const header = (
+    <PageHeader
+      eyebrow="Network"
+      title="Devices"
+      description="Know what is talking to your resolver, and how much."
+      actions={
+        <Button>
+          <Plus size={14} />
+          Tag a device
+        </Button>
+      }
+    />
+  )
+
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading devices…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load devices." onRetry={() => void refetch()} /></div>
 
   const dohDevices = data.topDevices.map((d, index) => ({ name: d.device, tag: d.device, queries: String(d.count), lastSeen: 'last 24h', kind: 'DoH', status: index < 4 ? 'online' : 'unknown' }))
   const clientIps = data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: String(c.count), lastSeen: 'last 24h' }))
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Network"
-        title="Devices"
-        description="Know what is talking to your resolver, and how much."
-        actions={
-          <Button>
-            <Plus size={14} />
-            Tag a device
-          </Button>
-        }
-      />
+      {header}
 
       <div className="rz-card flex items-start gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-none bg-white text-[var(--ink)] ring-1 ring-[var(--line)]"><Info size={14} /></span>

@@ -41,22 +41,26 @@ function ApiKeys() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['api-keys'] }),
   })
 
-  if (isPending) return <PageLoading label="Loading API keys…" />
-  if (isError || !data) return <PageError title="Could not load API keys." onRetry={() => void refetch()} />
+  const header = (
+    <PageHeader
+      eyebrow="Account"
+      title="API keys"
+      description="Machine credentials for this profile. Everything the console can do is available at /rpc — see /docs for the OpenAPI specification."
+      actions={
+        <Button onClick={() => setCreating((open) => !open)} aria-expanded={creating}>
+          <Plus size={14} />
+          Create key
+        </Button>
+      }
+    />
+  )
+
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading API keys…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load API keys." onRetry={() => void refetch()} /></div>
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Account"
-        title="API keys"
-        description="Machine credentials for this profile. Everything the console can do is available at /rpc — see /docs for the OpenAPI specification."
-        actions={
-          <Button onClick={() => setCreating((open) => !open)} aria-expanded={creating}>
-            <Plus size={14} />
-            Create key
-          </Button>
-        }
-      />
+      {header}
 
       {issued ? (
         <div className="rz-card border-l-4 border-l-[var(--brand)] p-5">

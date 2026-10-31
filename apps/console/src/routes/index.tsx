@@ -33,8 +33,48 @@ function Overview() {
     setGreeting(greetingForHour(getHours(new Date())))
   }, [])
 
-  if (isPending) return <OverviewSkeleton />
-  if (isError || !data) return <PageError title="Could not load live stats." onRetry={() => void refetch()} />
+  const profileLabel = data ? data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1) : ''
+  const firstName = data ? data.viewer.name.split(/\s+/)[0] || 'there' : ''
+  const region = data ? regionLabel(data.edge.region) : ''
+  const updateAge = data ? ageLabel(data.edge.configPollAgeMs) : ''
+
+  const header = (
+    <div className="relative">
+      <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute -inset-x-3 -top-6 h-36 opacity-60" />
+      <PageHeader
+        eyebrow={data ? `Network · ${profileLabel} profile` : 'Network'}
+        title={data ? `${greeting}, ${firstName}` : greeting}
+        description="Here’s how your network is doing over the last 24 hours."
+        meta={
+          data ? (
+            <>
+              <span className={['rz-pill', data.edge.ok ? 'rz-pill-positive' : 'rz-pill-warning'].join(' ')}>
+                <ShieldCheck size={11} />
+                {data.edge.ok ? 'Protected' : 'Attention needed'}
+              </span>
+              <span className="rz-pill">
+                <Clock3 size={11} /> Updated {updateAge} ago
+              </span>
+              <span className="rz-pill">
+                <Globe2 size={11} /> {region}
+              </span>
+            </>
+          ) : undefined
+        }
+        actions={
+          <Button asChild variant="secondary">
+            <Link to="/logs">
+              <FileText size={13} />
+              Open query log
+            </Link>
+          </Button>
+        }
+      />
+    </div>
+  )
+
+  if (isPending) return <div className="space-y-7">{header}<OverviewSkeleton /></div>
+  if (isError || !data) return <div className="space-y-7">{header}<PageError title="Could not load live stats." onRetry={() => void refetch()} /></div>
 
   const chartData = (volume?.range === range ? volume.series : range === '24h' ? data.series : []).map((point) => ({
     key: point.bucket,
@@ -66,43 +106,10 @@ function Overview() {
   const activeSources = Math.max(data.activeDevices, data.topClients.length)
   const qps = totalQueries / 86_400
   const qpsLabel = qps >= 10 ? formatNumber(Math.round(qps)) : qps.toFixed(1)
-  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
-  const firstName = data.viewer.name.split(/\s+/)[0] || 'there'
-  const region = regionLabel(data.edge.region)
-  const updateAge = ageLabel(data.edge.configPollAgeMs)
 
   return (
     <div className="space-y-7">
-      <div className="relative">
-        <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute -inset-x-3 -top-6 h-36 opacity-60" />
-        <PageHeader
-          eyebrow={`01 / Network · ${profileLabel} profile`}
-          title={`${greeting}, ${firstName}`}
-          description="Here’s how your network is doing over the last 24 hours."
-          meta={
-            <>
-              <span className={['rz-pill', data.edge.ok ? 'rz-pill-positive' : 'rz-pill-warning'].join(' ')}>
-                <ShieldCheck size={11} />
-                {data.edge.ok ? 'Protected' : 'Attention needed'}
-              </span>
-              <span className="rz-pill">
-                <Clock3 size={11} /> Updated {updateAge} ago
-              </span>
-              <span className="rz-pill">
-                <Globe2 size={11} /> {region}
-              </span>
-            </>
-          }
-          actions={
-            <Button asChild variant="secondary">
-              <Link to="/logs">
-                <FileText size={13} />
-                Open query log
-              </Link>
-            </Button>
-          }
-        />
-      </div>
+      {header}
 
       <section className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
         <div className="rz-card flex flex-col border-t-2 border-t-[var(--brand)] p-5 xl:p-6">

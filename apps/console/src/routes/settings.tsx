@@ -35,18 +35,21 @@ function SettingsPage() {
       purgeCache({ data: { domain, type: recordType || undefined, profileId: data?.profileId } }),
   })
 
-  if (isPending) return <PageLoading label="Loading settings…" />
-  if (isError || !data) return <PageError title="Could not load settings." onRetry={() => void refetch()} />
+  const header = (
+    <PageHeader
+      eyebrow="Account"
+      title="Settings"
+      description={`${data?.profileName ?? 'Profile'} · profile and resolver configuration.`}
+    />
+  )
 
-  const profileLabel = data.profileName.charAt(0).toUpperCase() + data.profileName.slice(1)
+  if (isPending) return <div className="space-y-6">{header}<PageLoading label="Loading settings…" /></div>
+  if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load settings." onRetry={() => void refetch()} /></div>
+
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Account"
-        title="Settings"
-        description={`${profileLabel} · profile and resolver configuration.`}
-      />
+      {header}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Section title="Profile" icon={<ShieldCheck size={16} />}>
