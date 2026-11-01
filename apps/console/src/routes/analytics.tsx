@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { BarChart3, TrendingUp } from 'lucide-react'
 import { useState } from 'react'
 import { getAnalyticsData } from '../server/dashboard'
+import { DomainLabel } from '../components/domain-label'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
 
@@ -83,7 +84,9 @@ function Analytics() {
               return (
                 <div key={item.domain}>
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="truncate font-mono text-[12px]" title={item.domain}>{item.domain}</span>
+                    <span className="min-w-0 flex-1 font-mono text-[12px]">
+                      <DomainLabel domain={item.domain} />
+                    </span>
                     <span className="shrink-0 font-mono text-[11px] text-[var(--muted)]">{new Intl.NumberFormat('en-GB').format(item.count)}</span>
                   </div>
                   <div className="h-1 overflow-hidden rounded-full bg-[var(--paper-2)]">

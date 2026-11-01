@@ -2,8 +2,9 @@ import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, Ban, House, Monitor, Router } from 'lucide-react'
 
 import { Button } from '../ui/button'
+import { DomainLabel } from '../domain-label'
 
-export function TopBlockedCard({ items }: { items: { domain: string; label: string; count: string; share: number }[] }) {
+export function TopBlockedCard({ items }: { items: { domain: string; count: string; share: number }[] }) {
   return (
     <div className="rz-card min-w-0 p-5">
       <div className="flex items-start justify-between">
@@ -20,8 +21,8 @@ export function TopBlockedCard({ items }: { items: { domain: string; label: stri
         {items.map((item) => (
           <div key={item.domain}>
             <div className="mb-1.5 flex min-w-0 items-center justify-between gap-3">
-              <span className="min-w-0 truncate font-mono text-[10px] text-[var(--ink)]" title={item.domain}>
-                {item.label}
+              <span className="min-w-0 font-mono text-[10px] text-[var(--ink)]">
+                <DomainLabel domain={item.domain} />
               </span>
               <span className="shrink-0 font-mono text-[9px] text-[var(--muted)]">{item.count}</span>
             </div>

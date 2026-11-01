@@ -4,6 +4,7 @@ import { FileText } from 'lucide-react'
 import type { LogEntry } from '../../server/dashboard/types'
 import { logEntryKey } from '../../lib/log-tail'
 import { popLabel } from '../../lib/pops'
+import { DomainLabel } from '../domain-label'
 
 function reasonLabel(entry: { reason: string | null; listLabel: string | null }): string {
   if (entry.reason === 'manual') return 'Manual rule'
@@ -55,8 +56,8 @@ export function LogTable({ entries }: { entries: LogEntry[] }) {
                 >
                   {entry.time ? format(parseISO(entry.time), 'dd MMM, HH:mm:ss') : '—'}
                 </td>
-                <td className="max-w-[360px] truncate px-4 py-2.5 font-mono text-[11px]" title={entry.domain}>
-                  {entry.domain}
+                <td className="max-w-[360px] px-4 py-2.5 font-mono text-[11px]">
+                  <DomainLabel domain={entry.domain} />
                 </td>
                 <td className="px-4 py-2.5">
                   <span

@@ -7,7 +7,7 @@ import { Ban, Clock3, FileText, Globe2, Monitor, ShieldCheck } from 'lucide-reac
 import { PageError } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
 import { DevicesCard, LocalDnsCard, TopBlockedCard } from '../components/overview/breakdown'
-import { ageLabel, displayDomain, formatNumber, greetingForHour, regionLabel } from '../components/overview/format'
+import { ageLabel, formatNumber, greetingForHour, regionLabel } from '../components/overview/format'
 import { OverviewSkeleton, PulseMetric } from '../components/overview/pulse'
 import { QueryChart } from '../components/overview/query-chart'
 import { LiveTrafficCard, PostureCard } from '../components/overview/traffic'
@@ -146,7 +146,6 @@ function Overview() {
   const maxBlocked = Math.max(...data.topBlocked.map((d) => d.count), 1)
   const topBlocked = data.topBlocked.map((d) => ({
     domain: d.domain,
-    label: displayDomain(d.domain),
     count: formatNumber(d.count),
     share: Math.round((d.count / maxBlocked) * 100),
   }))

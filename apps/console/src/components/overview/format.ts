@@ -27,15 +27,6 @@ export function greetingForHour(hour: number): string {
   return 'Good night'
 }
 
-/** Keep the meaningful suffix for long tracker hashes. */
-export function displayDomain(domain: string): string {
-  const [first, ...rest] = domain.split('.')
-  if (first && first.length >= 24 && /^[a-f0-9]+$/i.test(first) && rest.length > 2) {
-    return `${first.slice(0, 8)}…${rest.slice(-4).join('.')}`
-  }
-  return domain
-}
-
 export function formatNumber(n: number): string {
   return new Intl.NumberFormat('en-GB').format(n)
 }
