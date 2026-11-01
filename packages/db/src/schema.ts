@@ -1,3 +1,4 @@
+import { customAlphabet } from "nanoid";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -26,6 +27,9 @@ const inet = customType<{ data: string; driverData: string }>({
 // FK types, the adapter treats ids as text.
 
 const baText = (name: string) => varchar(name, { length: 255 });
+
+/** CSPRNG-backed 8-char lowercase base36 id (36^8 ≈ 2.8e12). */
+const newProfileId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 8);
 
 export const user = pgTable("user", {
   id: baText("id").primaryKey(),
@@ -150,7 +154,7 @@ export const apiAuditLog = pgTable(
 
 export const profiles = pgTable("profiles", {
   /** 8-char lowercase base36 id (url-safe); replaces the old uuid. */
-  id: varchar("id", { length: 8 }).primaryKey().default(sql`rz_short_id(8)`),
+  id: varchar("id", { length: 8 }).primaryKey().$defaultFn(() => newProfileId()),
   name: varchar("name", { length: 255 }).notNull(),
   dohToken: varchar("doh_token", { length: 255 }).unique(),
   logQueries: boolean("log_queries").notNull().default(true),

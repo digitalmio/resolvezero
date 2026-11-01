@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { customAlphabet } from "nanoid";
 
 export interface DeviceSetup {
   profileId: string;
@@ -12,15 +13,8 @@ export interface DeviceSetup {
 
 const DOT_SUFFIX = (process.env.DOT_SUFFIX ?? ".dot.resolvezero.com").toLowerCase();
 const DOH_BASE = (process.env.DOH_PUBLIC_URL ?? "https://doh.resolvezero.com").replace(/\/+$/, "");
-const DOT_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
-
-function randomDotId(length = 20): string {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  let out = "";
-  for (const byte of bytes) out += DOT_ALPHABET[byte % DOT_ALPHABET.length];
-  return out;
-}
+/** The DoT hostname is a capability: 20 chars from a CSPRNG. */
+const newDotId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 20);
 
 async function sessionProfile() {
   const [{ db }, { eq }, { requireSessionUser }, { findProfile }, { profiles }] = await Promise.all([
@@ -63,7 +57,7 @@ export const ensureDotId = createServerFn({ method: "POST" }).handler(async (): 
     .limit(1);
   if (row?.dotId) return { hostname: `${row.dotId}${DOT_SUFFIX}` };
 
-  const dotId = randomDotId();
+  const dotId = newDotId();
   await db.update(profiles).set({ dotId }).where(eq(profiles.id, profile.id));
   return { hostname: `${dotId}${DOT_SUFFIX}` };
 });
