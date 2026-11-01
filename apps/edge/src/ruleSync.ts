@@ -87,6 +87,7 @@ export async function startRuleSync(
       db
         .select({
           id: profiles.id,
+          dotId: profiles.dotId,
           dohToken: profiles.dohToken,
           logQueries: profiles.logQueries,
           upstream: profiles.upstream,
@@ -126,6 +127,7 @@ export async function startRuleSync(
       profileRows.map(
         (p): ProfileRow => ({
           id: p.id,
+          dotId: p.dotId ?? null,
           dohToken: p.dohToken,
           logQueries: p.logQueries,
           upstream: p.upstream,

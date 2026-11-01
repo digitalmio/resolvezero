@@ -95,3 +95,17 @@ kill_timeout = 30
   internal_port = 53
   [[services.ports]]
     port = 53
+
+# DNS-over-TLS (Android Private DNS, iOS/macOS TLS profiles).
+# TLS is terminated by Fly's proxy using the app's certificates; the PROXY v2
+# header carries the client address and the SNI authority TLV, which the app
+# maps to a profile. No TLS code or private keys in the app.
+[[services]]
+  protocol = "tcp"
+  internal_port = 853
+
+  [[services.ports]]
+    port = 853
+    handlers = ["tls", "proxy_proto"]
+    proxy_proto_options = { version = "v2" }
+    tls_options = { versions = ["TLSv1.2", "TLSv1.3"] }

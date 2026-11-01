@@ -12,7 +12,7 @@ export interface QueryLogEntry {
   reason?: "manual" | "blocklist" | "zone";
   /** profile_blocklists.id for blocklist hits (never the URL). */
   listId?: string;
-  transport?: "doh" | "udp" | "tcp";
+  transport?: "doh" | "udp" | "tcp" | "dot";
   /** Safe upstream label (preset, "custom", or "edge-default"). */
   upstream?: string;
 }

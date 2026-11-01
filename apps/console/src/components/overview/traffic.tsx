@@ -17,15 +17,15 @@ export function LiveTrafficCard({
     <div className="rz-card flex flex-1 flex-col border-white/10 bg-[var(--sidebar)] p-5 text-[var(--sidebar-text)]">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="rz-section-title text-[var(--sidebar-text)]">Live traffic</h2>
+          <h2 className="rz-section-title text-[var(--sidebar-text)]">Traffic</h2>
           <p className="mt-1.5 text-[10px] uppercase tracking-[0.1em] text-[var(--sidebar-muted)]">Rolling 24-hour window</p>
         </div>
         <Zap size={16} className="text-[var(--lime)]" />
       </div>
       <p className="mt-5 rz-font-display text-[3rem] font-extrabold leading-none tracking-[-0.055em]">
-        {qpsLabel}
+        {formatNumber(totalQueries)}
         <span className="ml-2 font-sans text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--sidebar-muted)]">
-          qps avg
+          queries / 24h
         </span>
       </p>
       <div className="mt-5">
@@ -43,8 +43,8 @@ export function LiveTrafficCard({
             <span className="rz-mono text-[var(--sidebar-text)]">{(blockRatio * 100).toFixed(1)}%</span>
           </span>
           <span className="flex items-center gap-1.5 text-[var(--sidebar-muted)]">
-            Total
-            <span className="rz-mono text-[var(--sidebar-text)]">{formatNumber(totalQueries)}</span>
+            Avg
+            <span className="rz-mono text-[var(--sidebar-text)]">{qpsLabel} qps</span>
           </span>
         </div>
       </div>

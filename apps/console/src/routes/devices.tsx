@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getOverview } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
+import { DeviceSetup } from '../components/devices/device-setup'
 import { PageHeader } from '../components/page-header'
 import { Button } from '../components/ui/button'
 import { Info, Monitor, Plus, Router, Smartphone } from 'lucide-react'
@@ -9,6 +11,7 @@ import { Info, Monitor, Plus, Router, Smartphone } from 'lucide-react'
 export const Route = createFileRoute('/devices')({ component: Devices })
 
 function Devices() {
+  const [setup, setSetup] = useState(false)
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
 
   const header = (
@@ -17,9 +20,9 @@ function Devices() {
       title="Devices"
       description="Know what is talking to your resolver, and how much."
       actions={
-        <Button>
+        <Button onClick={() => setSetup((open) => !open)} aria-expanded={setup}>
           <Plus size={14} />
-          Tag a device
+          Set up a device
         </Button>
       }
     />
@@ -35,6 +38,12 @@ function Devices() {
   return (
     <div className="space-y-6">
       {header}
+
+      {setup ? (
+        <div className="rz-card overflow-hidden">
+          <DeviceSetup onDone={() => setSetup(false)} />
+        </div>
+      ) : null}
 
       <div className="rz-card flex items-center gap-3 border-[var(--line)] bg-[var(--sage)] p-4">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-none bg-white text-[var(--ink)] ring-1 ring-[var(--line)]"><Info size={14} /></span>

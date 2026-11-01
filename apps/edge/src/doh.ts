@@ -34,7 +34,7 @@ export interface QueryLogEntry {
   reason?: QueryLogReason;
   /** profile_blocklists.id for blocklist hits (never the URL: it may contain secrets). */
   listId?: string;
-  transport?: "doh" | "udp" | "tcp";
+  transport?: "doh" | "udp" | "tcp" | "dot" | "dot";
   /** Safe upstream label (preset, "custom", or "edge-default"). */
   upstream?: string;
 }
@@ -62,7 +62,7 @@ export interface DohAppDeps {
   /** Resolver-presence canary suffix; no public record should exist for it. */
   probeDomain?: string | null;
   /** Called for a valid probe lookup, after profile auth. */
-  onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp"): void;
+  onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp" | "dot"): void;
 }
 
 /** Device tag charset: NextDNS-style url-safe short names. */

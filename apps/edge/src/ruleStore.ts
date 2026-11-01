@@ -16,6 +16,8 @@ export interface SourceIpRow {
 
 export interface ProfileRow {
   id: string;
+  /** Lowercase label for `<dot_id>.dot.resolvezero.com` (DoT). */
+  dotId?: string | null;
   dohToken: string | null;
   logQueries: boolean;
   /** Upstream selector ('cloudflare' | 'google' | 'quad9' | …) or custom URL. */
@@ -89,6 +91,9 @@ export class RuleStore {
    * by `upsertList` + `setSubscriptions` (see blocklists.ts, readme §4a).
    */
   private listCatalog = new Map<string, { table: SuffixFingerprintTable; entryCount: number; fingerprint: string }>();
+  /** Dot hostname label -> profile id. */
+  private dotIds = new Map<string, string>();
+
   /** profile_id -> enabled subscriptions (order: allow-precedence pass). */
   private subscriptions = new Map<string, ListSubscription[]>();
 
@@ -190,6 +195,11 @@ export class RuleStore {
     this.rules = rules;
 
     this.profileTokens = new Map(profileRows.map((p) => [p.id, p.dohToken]));
+    this.dotIds = new Map(
+      profileRows
+        .filter((p) => typeof p.dotId === "string" && p.dotId.length > 0)
+        .map((p) => [p.dotId as string, p.id]),
+    );
     this.logQueries = new Map(profileRows.map((p) => [p.id, p.logQueries]));
     this.profileUpstreams = new Map(profileRows.map((p) => [p.id, p.upstream ?? null]));
     this.profileUpstreamUrls = new Map(profileRows.map((p) => [p.id, p.upstreamUrl ?? null]));
@@ -249,6 +259,11 @@ export class RuleStore {
       this.rules.set(event.profile_id, profile);
     }
     profile.set(domain, event.action);
+  }
+
+  /** Resolve a DoT hostname label to its profile. */
+  authorizeDotId(dotId: string): string | undefined {
+    return this.dotIds.get(dotId);
   }
 
   /** Returns the action if the domain matches profile rules, else undefined.

@@ -24,6 +24,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as WaitlistRouteImport } from './routes/waitlist'
 import { Route as RpcSplatRouteImport } from './routes/rpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiProfileDeviceRouteImport } from './routes/api/profile/$device'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -100,6 +101,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProfileDeviceRoute = ApiProfileDeviceRouteImport.update({
+  id: '/api/profile/$device',
+  path: '/api/profile/$device',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/waitlist': typeof WaitlistRoute
   '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/profile/$device': typeof ApiProfileDeviceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/waitlist': typeof WaitlistRoute
   '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/profile/$device': typeof ApiProfileDeviceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/waitlist': typeof WaitlistRoute
   '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/profile/$device': typeof ApiProfileDeviceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/waitlist'
     | '/rpc/$'
     | '/api/auth/$'
+    | '/api/profile/$device'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/waitlist'
     | '/rpc/$'
     | '/api/auth/$'
+    | '/api/profile/$device'
   id:
     | '__root__'
     | '/'
@@ -205,6 +216,7 @@ export interface FileRouteTypes {
     | '/waitlist'
     | '/rpc/$'
     | '/api/auth/$'
+    | '/api/profile/$device'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -223,6 +235,7 @@ export interface RootRouteChildren {
   WaitlistRoute: typeof WaitlistRoute
   RpcSplatRoute: typeof RpcSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiProfileDeviceRoute: typeof ApiProfileDeviceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -332,6 +345,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/profile/$device': {
+      id: '/api/profile/$device'
+      path: '/api/profile/$device'
+      fullPath: '/api/profile/$device'
+      preLoaderRoute: typeof ApiProfileDeviceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -351,6 +371,7 @@ const rootRouteChildren: RootRouteChildren = {
   WaitlistRoute: WaitlistRoute,
   RpcSplatRoute: RpcSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiProfileDeviceRoute: ApiProfileDeviceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

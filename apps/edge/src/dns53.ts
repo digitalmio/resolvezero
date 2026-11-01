@@ -21,6 +21,7 @@ import { moduleLogger } from "./logger";
 import { localNameAnswer } from "@resolvezero/shared";
 import { matchProbeNonce } from "./probe";
 import { createRateLimiter, positiveInt, Semaphore } from "./limits";
+import type { Transport } from "./metrics";
 
 const log = moduleLogger("dns53");
 
@@ -57,13 +58,15 @@ export interface Dns53Deps {
   /** Resolver-presence canary suffix; no public record should exist for it. */
   probeDomain?: string | null;
   /** Called for a valid probe lookup, after source-IP auth. */
-  onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp"): void;
+  onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp" | "dot"): void;
 }
 
 export interface Dns53Handle {
   stop(): Promise<void>;
   udpPort: number;
   tcpPort?: number;
+  /** Run the policy pipeline for a caller already authenticated by another transport (DoT). */
+  resolve(wire: Uint8Array, sourceIp: string, transport: Transport, profileId: string): Promise<Uint8Array | null>;
 }
 
 /**
@@ -213,6 +216,8 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   return {
     udpPort,
     tcpPort: tcp ? port : undefined,
+    resolve: (wire, sourceIp, transport, profileId) =>
+      handlePacket(wire, sourceIp, transport, profileId),
     async stop() {
       await new Promise<void>((resolve) => udp!.close(() => resolve()));
       if (tcp) {
@@ -330,11 +335,13 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
   async function handlePacket(
     wire: Uint8Array,
     sourceIp: string,
-    transport: "udp" | "tcp",
+    transport: Transport,
+    profileOverride?: string,
   ): Promise<Uint8Array | null> {
     // 1. Source-IP auth — unknown source: REFUSED (default) or silent drop.
+    //    DoT passes a profile resolved from the SNI hostname instead.
     //    QueryLog events are NEVER emitted for unauthorized sources (privacy).
-    const profileId = deps.store.authorizeSourceIp(sourceIp);
+    const profileId = profileOverride ?? deps.store.authorizeSourceIp(sourceIp);
     if (!profileId) {
       deps.recorder?.recordDrop("unauthorized_source");
       if ((process.env.UDP_UNKNOWN_SOURCE ?? "refused") === "refused") {
