@@ -47,7 +47,6 @@ export async function loadOverview(
         rttCount: statsHourly.rttCount,
         topDomains: statsHourly.topDomains,
         topBlocked: statsHourly.topBlocked,
-        topDevices: statsHourly.topDevices,
         topClients: statsHourly.topClients,
       })
       .from(statsHourly)
@@ -84,11 +83,13 @@ export async function loadOverview(
     ownedProfiles(ownerUserId),
   ]);
 
-  // Device selector: the hourly `top_devices` counts are the same source the
-  // Devices card renders, so the selector labels can never disagree with it.
-  const selectorCounts = new Map<string, number>();
-  for (const row of rows) merge(selectorCounts, row.topDevices);
-  const devices = [...selectorCounts.entries()]
+  // Device list + selector come from the per-device rollups, so the Devices
+  // page, the selector and the scoped Overview all read the same numbers.
+  const perDevice = new Map<string, number>();
+  for (const row of deviceRows) {
+    perDevice.set(row.device, (perDevice.get(row.device) ?? 0) + row.totalQueries);
+  }
+  const devices = [...perDevice.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([slug, queries]) => ({ device: slug, queries }));
 
@@ -102,7 +103,6 @@ export async function loadOverview(
   let rttCount = 0;
   const domainCounts = new Map<string, number>();
   const blockedCounts = new Map<string, number>();
-  const deviceCounts = new Map<string, number>();
   const clientCounts = new Map<string, number>();
 
   for (const row of scopedRows) {
@@ -114,10 +114,7 @@ export async function loadOverview(
     merge(blockedCounts, row.topBlocked);
   }
   if (!activeDevice) {
-    for (const row of rows) {
-      merge(deviceCounts, row.topDevices);
-      merge(clientCounts, row.topClients as StatsTopEntry[]);
-    }
+    for (const row of rows) merge(clientCounts, row.topClients as StatsTopEntry[]);
   }
 
   const byHour = new Map<number, { total: number; blocked: number }>();
@@ -152,13 +149,13 @@ export async function loadOverview(
     blocked,
     blockRatio: totalQueries > 0 ? Number((blocked / totalQueries).toFixed(4)) : 0,
     avgRttMs: rttCount > 0 ? Math.round(rttSumMs / rttCount) : null,
-    activeDevices: activeDevice ? 1 : deviceCounts.size,
+    activeDevices: activeDevice ? 1 : perDevice.size,
     series,
     topBlocked: top(blockedCounts, 5).map(([domain, count]) => ({ domain, count })),
     topDomains: top(domainCounts, 5).map(([domain, count]) => ({ domain, count })),
     topDevices: activeDevice
-      ? [{ device: activeDevice, count: totalQueries }]
-      : top(deviceCounts, 6).map(([slug, count]) => ({ device: slug, count })),
+      ? [{ device: activeDevice, count: perDevice.get(activeDevice) ?? totalQueries }]
+      : top(perDevice, 6).map(([slug, count]) => ({ device: slug, count })),
     topClients: top(clientCounts, 6).map(([clientIp, count]) => ({ clientIp, count })),
   };
 }

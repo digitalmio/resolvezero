@@ -32,7 +32,7 @@ function Devices() {
   if (isError || !data) return <div className="space-y-6">{header}<PageError title="Could not load devices." onRetry={() => void refetch()} /></div>
 
   const count = new Intl.NumberFormat('en-GB')
-  const dohDevices = data.topDevices.map((d) => ({ name: d.device, tag: d.device, queries: count.format(d.count) }))
+  const dohDevices = data.devices.map((d) => ({ name: d.device, tag: d.device, queries: count.format(d.queries) }))
   const clientIps = data.topClients.map((c, index) => ({ name: index === 0 ? 'Primary source' : 'Source IP', ip: c.clientIp, queries: count.format(c.count) }))
 
   return (
