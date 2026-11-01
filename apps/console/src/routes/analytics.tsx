@@ -83,7 +83,7 @@ function Analytics() {
               return (
                 <div key={item.domain}>
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="truncate font-mono text-[12px]">{item.domain}</span>
+                    <span className="truncate font-mono text-[12px]" title={item.domain}>{item.domain}</span>
                     <span className="shrink-0 font-mono text-[11px] text-[var(--muted)]">{new Intl.NumberFormat('en-GB').format(item.count)}</span>
                   </div>
                   <div className="h-1 overflow-hidden rounded-full bg-[var(--paper-2)]">

@@ -55,7 +55,9 @@ export function LogTable({ entries }: { entries: LogEntry[] }) {
                 >
                   {entry.time ? format(parseISO(entry.time), 'dd MMM, HH:mm:ss') : '—'}
                 </td>
-                <td className="max-w-[360px] truncate px-4 py-2.5 font-mono text-[11px]">{entry.domain}</td>
+                <td className="max-w-[360px] truncate px-4 py-2.5 font-mono text-[11px]" title={entry.domain}>
+                  {entry.domain}
+                </td>
                 <td className="px-4 py-2.5">
                   <span
                     className={[
