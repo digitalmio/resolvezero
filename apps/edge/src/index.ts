@@ -58,8 +58,11 @@ const archive = s3Client
 
 const batcher = new QueryLogBatcher({
   insert: async (rows) => {
-    if (archive) archive.add(rows); // stage first: never lose raw events on rollup failure
-    await updateRollups(rows); // minute + hourly rollups (throws → batcher retries)
+    // Rollups first: if they fail the batcher retries, and the archive must not
+    // receive the same rows twice. archive.add is in-memory staging and does not
+    // throw, so a failure after it is not a realistic retry path.
+    await updateRollups(rows);
+    if (archive) archive.add(rows);
   },
 });
 batcher.start();

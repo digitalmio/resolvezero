@@ -4,6 +4,7 @@ import {
   hourFloor,
   mergeTopEntries,
   minuteFloor,
+  selectRunnableRows,
   toTopEntries,
 } from "./rollup";
 import type { QueryLogRow } from "./batcher";
@@ -97,5 +98,20 @@ describe("minute rollups", () => {
     expect(minuteFloor(new Date("2026-10-08T08:37:12.999Z")).toISOString()).toBe(
       "2026-10-08T08:37:00.000Z",
     );
+  });
+});
+
+describe("selectRunnableRows", () => {
+  const row = (profileId: string) =>
+    ({ profileId, domain: "example.com", action: "forward", rttMs: 1, clientIp: "1.2.3.4", device: null, loggedAt: new Date() }) as never;
+
+  test("keeps rows for profiles that still exist", () => {
+    const kept = selectRunnableRows([row("abc12345"), row("gone1234")], new Set(["abc12345"]));
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.profileId).toBe("abc12345");
+  });
+
+  test("drops everything when no profile matches", () => {
+    expect(selectRunnableRows([row("gone1234")], new Set())).toHaveLength(0);
   });
 });

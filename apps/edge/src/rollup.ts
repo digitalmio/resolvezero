@@ -1,7 +1,10 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
-import { statsHourly, statsMinute, type StatsTopEntry } from "@resolvezero/db/schema";
+import { profiles, statsHourly, statsMinute, type StatsTopEntry } from "@resolvezero/db/schema";
 import type { QueryLogRow } from "./batcher";
+
+/** Drizzle transaction handle (db.transaction callback argument). */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export const MAX_TOP_DOMAINS = 200;
 export const MAX_TOP_CLIENTS = 50;
@@ -32,21 +35,46 @@ interface BucketAgg {
  * transaction holding `pg_advisory_xact_lock`, so two edge regions flushing
  * the same bucket serialize instead of losing increments.
  */
-export async function updateStatsHourly(rows: QueryLogRow[]): Promise<void> {
+async function applyHourly(rows: QueryLogRow[], tx: Tx): Promise<void> {
   if (rows.length === 0) return;
-
-  const buckets = aggregate(rows);
-  await Promise.all(
-    [...buckets.values()].map((agg) => applyBucket(agg)),
-  );
+  for (const agg of aggregate(rows).values()) {
+    await applyBucket(agg, tx);
+  }
 }
 
 /**
  * Full rollup pass per batcher flush: minute rows (totals-only counters,
  * SQL-additive upsert) + hourly rows (top-lists, read-merge-write).
  */
+/**
+ * Apply one batched flush atomically.
+ *
+ * Rows for profiles that no longer exist are dropped instead of failing the
+ * batch: a stale buffer entry (rename/delete) used to wedge the queue and the
+ * batcher replayed the batch forever, inflating stats and the archive.
+ * Minute + hourly share one transaction, so a retry can never double-count.
+ */
 export async function updateRollups(rows: QueryLogRow[]): Promise<void> {
-  await Promise.all([updateStatsHourly(rows), updateStatsMinute(rows)]);
+  if (rows.length === 0) return;
+
+  await db.transaction(async (tx) => {
+    const ids = [...new Set(rows.map((row) => row.profileId))];
+    const known = new Set(
+      (
+        await tx.select({ id: profiles.id }).from(profiles).where(inArray(profiles.id, ids))
+      ).map((row) => row.id),
+    );
+    const valid = selectRunnableRows(rows, known);
+    if (valid.length === 0) return;
+
+    await applyHourly(valid, tx);
+    await applyMinutes(valid, tx);
+  });
+}
+
+/** Drop rows whose profile no longer exists (rename/delete leaves stale buffers). */
+export function selectRunnableRows(rows: QueryLogRow[], knownProfileIds: Set<string>): QueryLogRow[] {
+  return rows.filter((row) => knownProfileIds.has(row.profileId));
 }
 
 /** UTC minute truncation. Pure — unit-tested. */
@@ -58,7 +86,7 @@ export function minuteFloor(date: Date): Date {
  * Minute rollups: counters only, so a plain additive upsert is
  * race-safe across multiple edge writers (unlike the hour maps).
  */
-export async function updateStatsMinute(rows: QueryLogRow[]): Promise<void> {
+async function applyMinutes(rows: QueryLogRow[], tx: Tx): Promise<void> {
   if (rows.length === 0) return;
 
   const buckets = new Map<string, { profileId: string; minute: Date; total: number; blocked: number }>();
@@ -75,7 +103,7 @@ export async function updateStatsMinute(rows: QueryLogRow[]): Promise<void> {
   }
 
   for (const b of buckets.values()) {
-    await db
+    await tx
       .insert(statsMinute)
       .values({ profileId: b.profileId, minute: b.minute, totalQueries: b.total, blocked: b.blocked })
       .onConflictDoUpdate({
@@ -155,12 +183,12 @@ export function mergeTopEntries(a: Map<string, number>, entries: StatsTopEntry[]
   }
 }
 
-async function applyBucket(agg: BucketAgg): Promise<void> {
+async function applyBucket(agg: BucketAgg, tx: Tx): Promise<void> {
   // Read-modify-write must be serialized across edge regions. A
   // transaction-scoped advisory lock per (profile, hour) is cheap and
   // avoids a schema migration; the lock releases on commit/rollback.
   const lockKey = `${agg.profileId}:${agg.hour.getTime()}`;
-  await db.transaction(async (tx) => {
+  {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 
     const existing = await tx
@@ -222,7 +250,7 @@ async function applyBucket(agg: BucketAgg): Promise<void> {
           topDevices: values.topDevices,
         },
       });
-  });
+  }
 }
 
 function incr(map: Map<string, number>, key: string, by = 1): void {
