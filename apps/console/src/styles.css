@@ -49,6 +49,25 @@ body,
   min-height: 100%;
 }
 
+/*
+ * Radix overlays (Select, DropdownMenu) lock body scroll and compensate for
+ * the removed scrollbar by adding a body margin, measured from the window.
+ * On platforms with classic scrollbars that produces a one-scrollbar-wide
+ * layout jump when the menu opens. Reserve the viewport gutter instead, and
+ * drop the compensation so the layout is identical whether the scrollbar is
+ * visible or not.
+ */
+@supports (scrollbar-gutter: stable) {
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  html body[data-scroll-locked] {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
 body {
   margin: 0;
   background: var(--paper);
