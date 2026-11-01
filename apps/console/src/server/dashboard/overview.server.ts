@@ -84,21 +84,11 @@ export async function loadOverview(
     ownedProfiles(ownerUserId),
   ]);
 
-  // Device selector: every device seen in the window, biggest first. The
-  // dedicated device rows only start at the 0016 deploy, so fall back to the
-  // hourly `top_devices` counts for devices that predate it (their scoped
-  // figures read zero until the window rolls over).
-  const perDevice = new Map<string, number>();
-  for (const row of deviceRows) {
-    perDevice.set(row.device, (perDevice.get(row.device) ?? 0) + row.totalQueries);
-  }
-  const deviceTotals = new Map<string, number>(perDevice);
-  const legacyDeviceCounts = new Map<string, number>();
-  for (const row of rows) merge(legacyDeviceCounts, row.topDevices);
-  for (const [slug, count] of legacyDeviceCounts) {
-    if (!deviceTotals.has(slug)) deviceTotals.set(slug, count);
-  }
-  const devices = [...deviceTotals.entries()]
+  // Device selector: the hourly `top_devices` counts are the same source the
+  // Devices card renders, so the selector labels can never disagree with it.
+  const selectorCounts = new Map<string, number>();
+  for (const row of rows) merge(selectorCounts, row.topDevices);
+  const devices = [...selectorCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([slug, queries]) => ({ device: slug, queries }));
 
@@ -150,6 +140,7 @@ export async function loadOverview(
     profiles,
     device: activeDevice,
     devices,
+    deviceSince: activeDevice && scopedRows.length > 0 ? scopedRows[0]!.hour.toISOString() : null,
     generatedAt: new Date().toISOString(),
     configVersion: configRows[0]?.configVersion ?? 0,
     blocklistVersion: configRows[0]?.blocklistVersion ?? 0,

@@ -33,6 +33,10 @@ export interface OverviewData {
   device: string | null;
   /** Devices seen in the 24h window, with their query totals. */
   devices: { device: string; queries: number }[];
+  /** Earliest hour with per-device rows, ISO — null when not device-scoped.
+   *  Per-device rollups started on 2026-11-01, so a scoped window can be
+   *  younger than 24h; the UI says so instead of implying missing history. */
+  deviceSince: string | null;
   totalQueries: number;
   blocked: number;
   blockRatio: number;

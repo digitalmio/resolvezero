@@ -12,17 +12,32 @@ import { OverviewSkeleton, PulseMetric } from '../components/overview/pulse'
 import { QueryChart } from '../components/overview/query-chart'
 import { LiveTrafficCard, PostureCard } from '../components/overview/traffic'
 import { Button } from '../components/ui/button'
+import { DEVICE_TAG_RE } from '../lib/device'
 import { OVERVIEW_RANGES, overviewRange, type OverviewRangeKey } from '../lib/overview-range'
 import { getOverview, getQueryVolume } from '../server/dashboard'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
 const ALL_DEVICES = '__all__'
 
-export const Route = createFileRoute('/')({ component: Overview })
+export const Route = createFileRoute('/')({
+  // The device filter lives in the URL so a scoped view can be bookmarked and
+  // shared; the server re-validates the same regex.
+  validateSearch: (search: Record<string, unknown>) => {
+    const device = typeof search.device === 'string' && DEVICE_TAG_RE.test(search.device) ? search.device : undefined
+    return device ? { device } : {}
+  },
+  component: Overview,
+})
 
 function Overview() {
-  const [device, setDevice] = useState(ALL_DEVICES)
-  const deviceFilter = device === ALL_DEVICES ? undefined : device
+  const { device: deviceParam } = Route.useSearch()
+  const navigate = Route.useNavigate()
+  const device = deviceParam ?? ALL_DEVICES
+  const deviceFilter = deviceParam
+
+  function chooseDevice(next: string) {
+    void navigate({ search: next === ALL_DEVICES ? {} : { device: next } })
+  }
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ['overview', device],
     queryFn: () => getOverview({ data: { device: deviceFilter } }),
@@ -52,6 +67,13 @@ function Overview() {
         ? [{ device: data.device, queries: data.totalQueries }]
         : []
     : []
+  // Per-device rollups only exist from their deploy onward; say so instead of
+  // letting a partial window look like the device went quiet.
+  const windowStart = data?.series[0]?.bucket
+  const deviceHistoryStart =
+    data?.device && data.deviceSince && windowStart && parseISO(data.deviceSince).getTime() - parseISO(windowStart).getTime() > 3_600_000
+      ? format(parseISO(data.deviceSince), 'd MMM HH:mm')
+      : null
 
   const header = (
     <div className="relative">
@@ -61,7 +83,7 @@ function Overview() {
         title={data ? `${greeting}, ${firstName}` : greeting}
         description={
           data?.device
-            ? `Scoped to ${data.device} · device-tagged DoH traffic only, last 24 hours.`
+            ? `Scoped to ${data.device} · device-tagged DoH only${deviceHistoryStart ? ` · history since ${deviceHistoryStart}` : ''} · last 24 hours.`
             : 'Here’s how your network is doing over the last 24 hours.'
         }
         meta={
@@ -83,7 +105,7 @@ function Overview() {
         actions={
           <div className="flex items-center gap-2">
             <div className="w-[168px]">
-              <Select value={device} onValueChange={setDevice}>
+              <Select value={device} onValueChange={chooseDevice}>
                 <SelectTrigger className="h-8 py-0 text-[9px] font-semibold uppercase tracking-[0.08em]">
                   <SelectValue aria-label="Device" />
                 </SelectTrigger>
@@ -91,7 +113,7 @@ function Overview() {
                   <SelectItem value={ALL_DEVICES}>All devices</SelectItem>
                   {deviceOptions.map((option) => (
                     <SelectItem key={option.device} value={option.device}>
-                      {option.device} · {formatNumber(option.queries)}
+                      {option.device}
                     </SelectItem>
                   ))}
                 </SelectContent>

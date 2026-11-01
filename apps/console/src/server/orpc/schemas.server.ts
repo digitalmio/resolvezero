@@ -32,6 +32,7 @@ export const overviewSchema = z.object({
   edge: edgeHealthSchema,
   device: z.string().nullable(),
   devices: z.array(z.object({ device: z.string(), queries: z.number() })),
+  deviceSince: z.string().nullable(),
   totalQueries: z.number(),
   blocked: z.number(),
   blockRatio: z.number(),
