@@ -116,6 +116,7 @@ export const logEntrySchema = z.object({
   domain: z.string(),
   action: z.string(),
   clientIp: z.string().nullable(),
+  device: z.string().nullable(),
   rttMs: z.number().nullable(),
   reason: z.string().nullable(),
   listId: z.string().nullable(),

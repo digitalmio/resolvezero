@@ -73,6 +73,7 @@ export async function loadLogs(ownerUserId: string, profileId?: string): Promise
         domain: String(row.domain ?? ""),
         action: String(row.action ?? ""),
         clientIp: row.clientIp == null ? null : String(row.clientIp),
+        device: row.device == null ? null : String(row.device),
         rttMs: row.rttMs == null ? null : Number(row.rttMs),
         reason: row.reason == null ? null : String(row.reason),
         listId,

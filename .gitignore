@@ -16,6 +16,7 @@ build/
 # Logs
 *.log
 logs/
+!apps/console/src/components/logs/
 
 # Drizzle-kit local artifacts (migrations are committed; studio is not)
 packages/db/.drizzle/

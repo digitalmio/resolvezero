@@ -123,6 +123,8 @@ export interface LogEntry {
   domain: string;
   action: string;
   clientIp: string | null;
+  /** Device tag from device-tagged DoH paths; null for untagged/UDP/DoT. */
+  device: string | null;
   rttMs: number | null;
   reason: string | null;
   listId: string | null;
