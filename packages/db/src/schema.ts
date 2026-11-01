@@ -129,7 +129,7 @@ export const apiAuditLog = pgTable(
   "api_audit_log",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     userId: varchar("user_id", { length: 255 }).notNull(),
@@ -149,7 +149,8 @@ export const apiAuditLog = pgTable(
 );
 
 export const profiles = pgTable("profiles", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  /** 8-char lowercase base36 id (url-safe); replaces the old uuid. */
+  id: varchar("id", { length: 8 }).primaryKey().default(sql`rz_short_id(8)`),
   name: varchar("name", { length: 255 }).notNull(),
   dohToken: varchar("doh_token", { length: 255 }).unique(),
   logQueries: boolean("log_queries").notNull().default(true),
@@ -158,6 +159,8 @@ export const profiles = pgTable("profiles", {
   upstream: varchar("upstream", { length: 50 }),
   /** Custom upstream DoH URL — wins over `upstream` preset when set (self-hosters). */
   upstreamUrl: varchar("upstream_url", { length: 255 }),
+  /** Lowercase label used for DoT: `<dot_id>.dot.resolvezero.com`. */
+  dotId: varchar("dot_id", { length: 32 }).unique(),
   /** Owning account (better-auth user id) — nullable until hosted launch flips NOT NULL. */
   ownerUserId: varchar("owner_user_id", { length: 255 }).references(() => user.id, {
     onDelete: "set null",
@@ -184,7 +187,7 @@ export const edgeConfigState = pgTable("edge_config_state", {
 export const profileRules = pgTable(
   "profile_rules",
   {
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id),
     domain: varchar("domain", { length: 255 }).notNull(),
@@ -204,7 +207,7 @@ export const profileRules = pgTable(
 export const profileZones = pgTable(
   "profile_zones",
   {
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id),
     domain: varchar("domain", { length: 255 }).notNull(), // 'nas.lan' or '*.home.example.com'
@@ -244,7 +247,7 @@ export const dnsCachePurges = pgTable(
   "dns_cache_purges",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     domain: varchar("domain", { length: 255 }).notNull(),
@@ -263,7 +266,7 @@ export const dnsCachePurges = pgTable(
 export const profileDevices = pgTable(
   "profile_devices",
   {
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id),
     slug: varchar("slug", { length: 64 }).notNull(),
@@ -280,7 +283,7 @@ export const profileDevices = pgTable(
 // Optional UDP ingress whitelist per profile (routers / legacy devices)
 export const profileSourceIps = pgTable("profile_source_ips", {
   ipAddress: inet("ip_address").primaryKey(),
-  profileId: uuid("profile_id")
+  profileId: varchar("profile_id", { length: 8 })
     .notNull()
     .references(() => profiles.id),
 })
@@ -304,7 +307,7 @@ export interface StatsTopEntry {
 export const statsHourly = pgTable(
   "stats_hourly",
   {
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id),
     /** Start of the aggregated hour (UTC). */
@@ -337,7 +340,7 @@ export const statsHourly = pgTable(
 export const statsMinute = pgTable(
   "stats_minute",
   {
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id),
     /** Start of the aggregated minute (UTC). */
@@ -363,7 +366,7 @@ export const profileBlocklists = pgTable(
   "profile_blocklists",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    profileId: uuid("profile_id")
+    profileId: varchar("profile_id", { length: 8 })
       .notNull()
       .references(() => profiles.id),
     url: varchar("url", { length: 1024 }).notNull(),

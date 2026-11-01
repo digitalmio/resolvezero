@@ -19,6 +19,7 @@ import { createHealthApp, startEventLoopMonitor } from "./metrics";
 import { createAdminApp } from "./admin";
 import { startBlocklistSync } from "./blocklists";
 import { createDns53Service, type Dns53Handle } from "./dns53";
+import { createDotService, type DotHandle } from "./dot";
 import { S3ArchiveSink, createS3ClientFromEnv } from "./sinks/s3";
 import { normalizeProbeDomain } from "./probe";
 
@@ -69,7 +70,7 @@ if (!archive && !stdoutQueryLog) {
 
 // Record resolver-presence canaries. This is intentionally write-behind and
 // best-effort: a DB hiccup must never affect DNS answers or the query path.
-function recordProbe(nonce: string, transport: "doh" | "udp" | "tcp"): void {
+function recordProbe(nonce: string, transport: "doh" | "udp" | "tcp" | "dot" | "dot"): void {
   void db
     .insert(dnsProbes)
     .values({
@@ -279,6 +280,17 @@ if (process.env.DNS53_ENABLED !== "0") {
   }
 }
 readiness.dns53Bound = process.env.DNS53_ENABLED === "0" || dns53Handle !== null;
+
+// DNS-over-TLS. TLS is terminated by Fly's proxy (tls + proxy_proto v2), which
+// forwards the SNI hostname in the PROXY header; the app only speaks plaintext.
+let dotHandle: DotHandle | null = null;
+if (dns53Handle && process.env.DOT_ENABLED !== "0") {
+  dotHandle = await createDotService({
+    store,
+    resolve: (wire, sourceIp, profileId) => dns53Handle!.resolve(wire, sourceIp, "dot", profileId),
+  });
+  if (!dotHandle) log.error("DoT ingress not started (bind failed)");
+}
 
 startEventLoopMonitor();
 

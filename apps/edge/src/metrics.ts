@@ -41,7 +41,7 @@ export function cpuPercent(
   return Number((((userMs + sysMs) / wallMs) * 100).toFixed(2));
 }
 
-export type Transport = "udp" | "tcp" | "doh";
+export type Transport = "udp" | "tcp" | "doh" | "dot";
 
 export interface Recorder {
   recordQuery(action: "block" | "forward"): void;

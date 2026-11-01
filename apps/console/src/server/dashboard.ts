@@ -16,7 +16,7 @@ function validateProfileId(raw: unknown): string | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
   if (typeof raw !== "string") throw new Error("Invalid profile id");
   const value = raw.trim();
-  if (!/^[0-9a-f-]{12,64}$/i.test(value)) throw new Error("Invalid profile id");
+  if (!/^[a-z0-9]{6,32}$/i.test(value)) throw new Error("Invalid profile id");
   return value;
 }
 
