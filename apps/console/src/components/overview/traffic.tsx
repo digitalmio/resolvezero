@@ -37,14 +37,14 @@ export function LiveTrafficCard({
         </div>
         <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-[0.08em]">
           <span className="flex items-center gap-1.5 text-[var(--sidebar-muted)]">
+            Avg
+            <span className="rz-mono text-[var(--sidebar-text)]">{qpsLabel} qps</span>
+          </span>
+          <span className="flex items-center gap-1.5 text-[var(--sidebar-muted)]">
             <span className="size-1.5 bg-[var(--accent)]" /> Blocked
             <span className="rz-mono text-[var(--sidebar-text)]">{formatNumber(blocked)}</span>
             <span className="text-white/30">·</span>
             <span className="rz-mono text-[var(--sidebar-text)]">{(blockRatio * 100).toFixed(1)}%</span>
-          </span>
-          <span className="flex items-center gap-1.5 text-[var(--sidebar-muted)]">
-            Avg
-            <span className="rz-mono text-[var(--sidebar-text)]">{qpsLabel} qps</span>
           </span>
         </div>
       </div>
