@@ -16,6 +16,7 @@ describe("buildAppleProfile", () => {
 
     expect(xml.startsWith("<?xml version=\"1.0\"")).toBe(true);
     expect(xml).toContain("com.apple.dnsSettings.managed");
+    expect(xml).toContain("<key>DNSProtocol</key>");
     expect(xml).toContain("<string>HTTPS</string>");
     expect(xml).toContain("https://doh.resolvezero.com/v1/p/ipad/token");
     expect(xml).toContain("<key>ServerURL</key>");
@@ -33,6 +34,7 @@ describe("buildAppleProfile", () => {
       uuids,
     });
 
+    expect(xml).toContain("<key>DNSProtocol</key>");
     expect(xml).toContain("<string>TLS</string>");
     expect(xml).toContain("abc123.dot.resolvezero.com");
     expect(xml).toContain("<key>ServerName</key>");

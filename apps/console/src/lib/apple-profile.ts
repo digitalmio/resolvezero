@@ -36,11 +36,11 @@ export function buildAppleProfile(input: AppleProfileInput): string {
 
   const dnsSettings =
     input.kind === "https"
-      ? `        <key>DNSSettingsProtocol</key>
+      ? `        <key>DNSProtocol</key>
         <string>HTTPS</string>
         <key>ServerURL</key>
         <string>${escapeXml(input.dohUrl ?? "")}</string>`
-      : `        <key>DNSSettingsProtocol</key>
+      : `        <key>DNSProtocol</key>
         <string>TLS</string>
         <key>ServerName</key>
         <string>${escapeXml(input.serverName ?? "")}</string>`;
