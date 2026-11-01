@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
+import { parseDeviceTag } from "../lib/device";
 import { DEFAULT_OVERVIEW_RANGE, isOverviewRange } from "../lib/overview-range";
 import { normalizeDomain, normalizeRecordType, normalizeZoneInput, type ZoneInput } from "../lib/zone";
 import { sessionClient } from "./orpc/call.server";
@@ -74,20 +75,22 @@ function validateZoneKeyShape(data: unknown): { domain: string; recordType: stri
   };
 }
 
-export const getOverview = createServerFn({ method: "GET" }).handler(async () => {
-  const client = await sessionClient();
-  return client.overview();
-});
+export const getOverview = createServerFn({ method: "GET" })
+  .validator((data: { device?: string } | undefined) => ({ device: parseDeviceTag(data?.device) }))
+  .handler(async ({ data }) => {
+    const client = await sessionClient();
+    return client.overview({ device: data.device });
+  });
 
 export const getQueryVolume = createServerFn({ method: "GET" })
-  .validator((data: { range?: string } | undefined) => {
+  .validator((data: { range?: string; device?: string } | undefined) => {
     const range = data?.range ?? DEFAULT_OVERVIEW_RANGE;
     if (!isOverviewRange(range)) throw new Error("Invalid overview range");
-    return { range };
+    return { range, device: parseDeviceTag(data?.device) };
   })
   .handler(async ({ data }) => {
     const client = await sessionClient();
-    return client.queryVolume({ range: data.range });
+    return client.queryVolume({ range: data.range, device: data.device });
   });
 
 export const getRulesData = createServerFn({ method: "GET" }).handler(async () => {

@@ -2,14 +2,32 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import { profiles, statsHourly, statsMinute, type StatsTopEntry } from "@resolvezero/db/schema";
 import type { QueryLogRow } from "./batcher";
+import { applyDeviceRollups } from "./deviceRollup";
+import {
+  MAX_TOP_BLOCKED,
+  MAX_TOP_CLIENTS,
+  MAX_TOP_DEVICES,
+  MAX_TOP_DOMAINS,
+  hourFloor,
+  incr,
+  lockBucket,
+  mergeTopEntries,
+  minuteFloor,
+  toTopEntries,
+  type Tx,
+} from "./rollupShared";
 
-/** Drizzle transaction handle (db.transaction callback argument). */
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-export const MAX_TOP_DOMAINS = 200;
-export const MAX_TOP_CLIENTS = 50;
-export const MAX_TOP_DEVICES = 50;
-export const MAX_TOP_BLOCKED = 100;
+// Re-exported so existing imports/tests keep one entry point.
+export {
+  MAX_TOP_BLOCKED,
+  MAX_TOP_CLIENTS,
+  MAX_TOP_DEVICES,
+  MAX_TOP_DOMAINS,
+  hourFloor,
+  mergeTopEntries,
+  minuteFloor,
+  toTopEntries,
+} from "./rollupShared";
 
 /** Rows older than this in stats_minute are pruned by the daily job. */
 export const MINUTE_RETENTION_HOURS = 6;
@@ -69,17 +87,13 @@ export async function updateRollups(rows: QueryLogRow[]): Promise<void> {
 
     await applyHourly(valid, tx);
     await applyMinutes(valid, tx);
+    await applyDeviceRollups(valid, tx);
   });
 }
 
 /** Drop rows whose profile no longer exists (rename/delete leaves stale buffers). */
 export function selectRunnableRows(rows: QueryLogRow[], knownProfileIds: Set<string>): QueryLogRow[] {
   return rows.filter((row) => knownProfileIds.has(row.profileId));
-}
-
-/** UTC minute truncation. Pure — unit-tested. */
-export function minuteFloor(date: Date): Date {
-  return new Date(Math.floor(date.getTime() / 60_000) * 60_000);
 }
 
 /**
@@ -154,105 +168,69 @@ export function aggregate(rows: QueryLogRow[]): Map<string, BucketAgg> {
   return buckets;
 }
 
-/** UTC hour truncation. Pure — unit-tested. */
-export function hourFloor(date: Date): Date {
-  return new Date(Math.floor(date.getTime() / 3_600_000) * 3_600_000);
-}
-
-type TopEntry = StatsTopEntry;
-
-/** Converts a count map into a sorted, capped entry list. Pure — unit-tested. */
-export function toTopEntries(
-  map: Map<string, number>,
-  cap: number,
-  keyName: "domain" | "clientIp" | "device",
-): TopEntry[] {
-  return [...map.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, cap)
-    .map(([k, count]) =>
-      keyName === "domain" ? { domain: k, count } : keyName === "clientIp" ? { clientIp: k, count } : { device: k, count },
-    );
-}
-
-/** Adds counts from `entries` into map `a`. Pure — unit-tested. */
-export function mergeTopEntries(a: Map<string, number>, entries: StatsTopEntry[], keyName: "domain" | "clientIp" | "device"): void {
-  for (const e of entries ?? []) {
-    const k = keyName === "domain" ? e.domain : keyName === "device" ? e.device : e.clientIp;
-    if (typeof k === "string") incr(a, k, e.count);
-  }
-}
-
 async function applyBucket(agg: BucketAgg, tx: Tx): Promise<void> {
   // Read-modify-write must be serialized across edge regions. A
   // transaction-scoped advisory lock per (profile, hour) is cheap and
   // avoids a schema migration; the lock releases on commit/rollback.
-  const lockKey = `${agg.profileId}:${agg.hour.getTime()}`;
-  {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+  await lockBucket(tx, `${agg.profileId}:${agg.hour.getTime()}`);
 
-    const existing = await tx
-      .select()
-      .from(statsHourly)
-      .where(and(eq(statsHourly.profileId, agg.profileId), eq(statsHourly.hour, agg.hour)))
-      .limit(1);
+  const existing = await tx
+    .select()
+    .from(statsHourly)
+    .where(and(eq(statsHourly.profileId, agg.profileId), eq(statsHourly.hour, agg.hour)))
+    .limit(1);
 
-    const prev = existing[0] ?? {
-      totalQueries: 0,
-      blocked: 0,
-      rttSumMs: 0,
-      rttCount: 0,
-      topDomains: [] as StatsTopEntry[],
-      topBlocked: [] as StatsTopEntry[],
-      topClients: [] as StatsTopEntry[],
-      topDevices: [] as StatsTopEntry[],
-    };
+  const prev = existing[0] ?? {
+    totalQueries: 0,
+    blocked: 0,
+    rttSumMs: 0,
+    rttCount: 0,
+    topDomains: [] as StatsTopEntry[],
+    topBlocked: [] as StatsTopEntry[],
+    topClients: [] as StatsTopEntry[],
+    topDevices: [] as StatsTopEntry[],
+  };
 
-    const domains = new Map<string, number>();
-    const clients = new Map<string, number>();
-    const devices = new Map<string, number>();
-    const blockedDomains = new Map<string, number>();
-    mergeTopEntries(domains, prev.topDomains, "domain");
-    mergeTopEntries(clients, prev.topClients, "clientIp");
-    mergeTopEntries(devices, prev.topDevices ?? [], "device");
-    mergeTopEntries(blockedDomains, prev.topBlocked, "domain");
-    for (const [k, v] of agg.domains) incr(domains, k, v);
-    for (const [k, v] of agg.clients) incr(clients, k, v);
-    for (const [k, v] of agg.devices) incr(devices, k, v);
-    for (const [k, v] of agg.blockedDomains) incr(blockedDomains, k, v);
+  const domains = new Map<string, number>();
+  const clients = new Map<string, number>();
+  const devices = new Map<string, number>();
+  const blockedDomains = new Map<string, number>();
+  mergeTopEntries(domains, prev.topDomains, "domain");
+  mergeTopEntries(clients, prev.topClients, "clientIp");
+  mergeTopEntries(devices, prev.topDevices ?? [], "device");
+  mergeTopEntries(blockedDomains, prev.topBlocked, "domain");
+  for (const [k, v] of agg.domains) incr(domains, k, v);
+  for (const [k, v] of agg.clients) incr(clients, k, v);
+  for (const [k, v] of agg.devices) incr(devices, k, v);
+  for (const [k, v] of agg.blockedDomains) incr(blockedDomains, k, v);
 
-    const values = {
-      profileId: agg.profileId,
-      hour: agg.hour,
-      totalQueries: prev.totalQueries + agg.total,
-      blocked: prev.blocked + agg.blocked,
-      rttSumMs: prev.rttSumMs + agg.rttSumMs,
-      rttCount: prev.rttCount + agg.rttCount,
-      topDomains: toTopEntries(domains, MAX_TOP_DOMAINS, "domain"),
-      topBlocked: toTopEntries(blockedDomains, MAX_TOP_BLOCKED, "domain"),
-      topClients: toTopEntries(clients, MAX_TOP_CLIENTS, "clientIp"),
-      topDevices: toTopEntries(devices, MAX_TOP_DEVICES, "device"),
-    };
+  const values = {
+    profileId: agg.profileId,
+    hour: agg.hour,
+    totalQueries: prev.totalQueries + agg.total,
+    blocked: prev.blocked + agg.blocked,
+    rttSumMs: prev.rttSumMs + agg.rttSumMs,
+    rttCount: prev.rttCount + agg.rttCount,
+    topDomains: toTopEntries(domains, MAX_TOP_DOMAINS, "domain"),
+    topBlocked: toTopEntries(blockedDomains, MAX_TOP_BLOCKED, "domain"),
+    topClients: toTopEntries(clients, MAX_TOP_CLIENTS, "clientIp"),
+    topDevices: toTopEntries(devices, MAX_TOP_DEVICES, "device"),
+  };
 
-    await tx
-      .insert(statsHourly)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [statsHourly.profileId, statsHourly.hour],
-        set: {
-          totalQueries: values.totalQueries,
-          blocked: values.blocked,
-          rttSumMs: values.rttSumMs,
-          rttCount: values.rttCount,
-          topDomains: values.topDomains,
-          topBlocked: values.topBlocked,
-          topClients: values.topClients,
-          topDevices: values.topDevices,
-        },
-      });
-  }
-}
-
-function incr(map: Map<string, number>, key: string, by = 1): void {
-  map.set(key, (map.get(key) ?? 0) + by);
+  await tx
+    .insert(statsHourly)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [statsHourly.profileId, statsHourly.hour],
+      set: {
+        totalQueries: values.totalQueries,
+        blocked: values.blocked,
+        rttSumMs: values.rttSumMs,
+        rttCount: values.rttCount,
+        topDomains: values.topDomains,
+        topBlocked: values.topBlocked,
+        topClients: values.topClients,
+        topDevices: values.topDevices,
+      },
+    });
 }

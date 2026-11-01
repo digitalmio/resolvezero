@@ -30,6 +30,8 @@ export const overviewSchema = z.object({
   zoneCount: z.number(),
   viewer: viewerSchema,
   edge: edgeHealthSchema,
+  device: z.string().nullable(),
+  devices: z.array(z.object({ device: z.string(), queries: z.number() })),
   totalQueries: z.number(),
   blocked: z.number(),
   blockRatio: z.number(),
@@ -46,6 +48,7 @@ export const queryVolumeSchema = z.object({
   profileId: z.string(),
   profileName: z.string(),
   range: z.enum(["1h", "24h", "7d", "30d"]),
+  device: z.string().nullable(),
   series: z.array(z.object({ bucket: z.string(), total: z.number(), blocked: z.number() })),
 });
 

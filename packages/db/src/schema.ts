@@ -337,6 +337,60 @@ export const statsHourly = pgTable(
 );
 
 /**
+ * Per-device hourly rollups. Same shape as `stats_hourly`, keyed by the device
+ * slug carried in device-tagged DoH paths (`/v1/:profile/:device`). Only rows
+ * with a device tag land here, so the sum of device rows is a subset of the
+ * profile total (tagged DoH traffic only).
+ *
+ * Top lists are capped smaller than the profile row because they are
+ * multiplied by devices × hours.
+ */
+export const statsHourlyDevice = pgTable(
+  "stats_hourly_device",
+  {
+    profileId: varchar("profile_id", { length: 8 })
+      .notNull()
+      .references(() => profiles.id, { onUpdate: "cascade", onDelete: "cascade" }),
+    /** Raw client-provided slug (`[a-zA-Z0-9_-]{1,32}` at the edge). */
+    device: varchar("device", { length: 64 }).notNull(),
+    hour: timestamp("hour", { withTimezone: true }).notNull(),
+    totalQueries: integer("total_queries").notNull().default(0),
+    blocked: integer("blocked").notNull().default(0),
+    rttSumMs: bigint("rtt_sum_ms", { mode: "number" }).notNull().default(0),
+    rttCount: integer("rtt_count").notNull().default(0),
+    /** Capped at 50 */
+    topDomains: jsonb("top_domains").$type<StatsTopEntry[]>().notNull().default(sql`'[]'::jsonb`),
+    /** Capped at 50 */
+    topBlocked: jsonb("top_blocked").$type<StatsTopEntry[]>().notNull().default(sql`'[]'::jsonb`),
+  },
+  (t) => [
+    primaryKey({ columns: [t.profileId, t.device, t.hour] }),
+    index("stats_hourly_device_profile_hour_idx").on(t.profileId, t.hour),
+  ],
+);
+
+/**
+ * Per-device minute rollups (totals + blocked only), used by the 1H chart
+ * range when a device is selected. Pruned with `stats_minute`.
+ */
+export const statsMinuteDevice = pgTable(
+  "stats_minute_device",
+  {
+    profileId: varchar("profile_id", { length: 8 })
+      .notNull()
+      .references(() => profiles.id, { onUpdate: "cascade", onDelete: "cascade" }),
+    device: varchar("device", { length: 64 }).notNull(),
+    minute: timestamp("minute", { withTimezone: true }).notNull(),
+    totalQueries: integer("total_queries").notNull().default(0),
+    blocked: integer("blocked").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.profileId, t.device, t.minute] }),
+    index("stats_minute_device_profile_minute_idx").on(t.profileId, t.minute),
+  ],
+);
+
+/**
  * Minute-level stats for short-range charts (~NextDNS "30m/6h" views).
  * Totals only (no top-lists — hourly rolls own those). Hard-bounded:
  * rows older than MINUTE_RETENTION_HOURS are pruned by the daily job.

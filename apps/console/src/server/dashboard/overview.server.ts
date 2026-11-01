@@ -5,6 +5,7 @@ import {
   profileRules,
   profileZones,
   statsHourly,
+  statsHourlyDevice,
   type StatsTopEntry,
 } from "@resolvezero/db/schema";
 
@@ -13,16 +14,30 @@ import { loadEdgeHealth } from "./edge.server";
 import { findProfile, ownedProfiles } from "./profile.server";
 import { HOUR, type OverviewData, type Viewer } from "./types";
 
-export async function loadOverview(ownerUserId: string, viewer: Viewer, profileId?: string): Promise<OverviewData> {
+/**
+ * Overview payload for the rolling 24h window.
+ *
+ * `device` scopes every number to one device tag. Device rows only exist for
+ * device-tagged DoH traffic, so a scoped view is a subset of the profile
+ * total, not a partition of it.
+ */
+export async function loadOverview(
+  ownerUserId: string,
+  viewer: Viewer,
+  profileId?: string,
+  device?: string,
+): Promise<OverviewData> {
+  const activeDevice = device ?? null;
   const now = new Date();
   // Align the query and the plotted series to the same floored hour. Filtering
   // from `now - 24h` while plotting from the floored hour made the first
   // bucket look like a real zero even when it had queries.
   const start = Math.floor((now.getTime() - 24 * HOUR) / HOUR) * HOUR;
   const end = Math.floor(now.getTime() / HOUR) * HOUR;
+  const startDate = new Date(start);
   const profile = await findProfile(ownerUserId, profileId);
 
-  const [rows, configRows, rules, zones, edge, profiles] = await Promise.all([
+  const [rows, deviceRows, configRows, rules, zones, edge, profiles] = await Promise.all([
     db
       .select({
         hour: statsHourly.hour,
@@ -36,8 +51,22 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer, profileI
         topClients: statsHourly.topClients,
       })
       .from(statsHourly)
-      .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, new Date(start))))
+      .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, startDate)))
       .orderBy(asc(statsHourly.hour)),
+    db
+      .select({
+        device: statsHourlyDevice.device,
+        hour: statsHourlyDevice.hour,
+        totalQueries: statsHourlyDevice.totalQueries,
+        blocked: statsHourlyDevice.blocked,
+        rttSumMs: statsHourlyDevice.rttSumMs,
+        rttCount: statsHourlyDevice.rttCount,
+        topDomains: statsHourlyDevice.topDomains,
+        topBlocked: statsHourlyDevice.topBlocked,
+      })
+      .from(statsHourlyDevice)
+      .where(and(eq(statsHourlyDevice.profileId, profile.id), gte(statsHourlyDevice.hour, startDate)))
+      .orderBy(asc(statsHourlyDevice.hour)),
     db
       .select({ configVersion: edgeConfigState.configVersion, blocklistVersion: edgeConfigState.blocklistVersion })
       .from(edgeConfigState)
@@ -55,6 +84,28 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer, profileI
     ownedProfiles(ownerUserId),
   ]);
 
+  // Device selector: every device seen in the window, biggest first. The
+  // dedicated device rows only start at the 0016 deploy, so fall back to the
+  // hourly `top_devices` counts for devices that predate it (their scoped
+  // figures read zero until the window rolls over).
+  const perDevice = new Map<string, number>();
+  for (const row of deviceRows) {
+    perDevice.set(row.device, (perDevice.get(row.device) ?? 0) + row.totalQueries);
+  }
+  const deviceTotals = new Map<string, number>(perDevice);
+  const legacyDeviceCounts = new Map<string, number>();
+  for (const row of rows) merge(legacyDeviceCounts, row.topDevices);
+  for (const [slug, count] of legacyDeviceCounts) {
+    if (!deviceTotals.has(slug)) deviceTotals.set(slug, count);
+  }
+  const devices = [...deviceTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([slug, queries]) => ({ device: slug, queries }));
+
+  // Everything the page renders comes from either the profile rows or, when a
+  // device is selected, that device's rows.
+  const scopedRows = activeDevice ? deviceRows.filter((row) => row.device === activeDevice) : rows;
+
   let totalQueries = 0;
   let blocked = 0;
   let rttSumMs = 0;
@@ -64,19 +115,23 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer, profileI
   const deviceCounts = new Map<string, number>();
   const clientCounts = new Map<string, number>();
 
-  for (const row of rows) {
+  for (const row of scopedRows) {
     totalQueries += row.totalQueries;
     blocked += row.blocked;
     rttSumMs += row.rttSumMs;
     rttCount += row.rttCount;
     merge(domainCounts, row.topDomains);
     merge(blockedCounts, row.topBlocked);
-    merge(deviceCounts, row.topDevices);
-    merge(clientCounts, row.topClients as StatsTopEntry[]);
+  }
+  if (!activeDevice) {
+    for (const row of rows) {
+      merge(deviceCounts, row.topDevices);
+      merge(clientCounts, row.topClients as StatsTopEntry[]);
+    }
   }
 
   const byHour = new Map<number, { total: number; blocked: number }>();
-  for (const row of rows) {
+  for (const row of scopedRows) {
     const key = Math.floor(row.hour.getTime() / HOUR) * HOUR;
     const current = byHour.get(key) ?? { total: 0, blocked: 0 };
     current.total += row.totalQueries;
@@ -93,6 +148,8 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer, profileI
     profileId: profile.id,
     profileName: profile.name,
     profiles,
+    device: activeDevice,
+    devices,
     generatedAt: new Date().toISOString(),
     configVersion: configRows[0]?.configVersion ?? 0,
     blocklistVersion: configRows[0]?.blocklistVersion ?? 0,
@@ -104,11 +161,13 @@ export async function loadOverview(ownerUserId: string, viewer: Viewer, profileI
     blocked,
     blockRatio: totalQueries > 0 ? Number((blocked / totalQueries).toFixed(4)) : 0,
     avgRttMs: rttCount > 0 ? Math.round(rttSumMs / rttCount) : null,
-    activeDevices: deviceCounts.size,
+    activeDevices: activeDevice ? 1 : deviceCounts.size,
     series,
     topBlocked: top(blockedCounts, 5).map(([domain, count]) => ({ domain, count })),
     topDomains: top(domainCounts, 5).map(([domain, count]) => ({ domain, count })),
-    topDevices: top(deviceCounts, 6).map(([device, count]) => ({ device, count })),
+    topDevices: activeDevice
+      ? [{ device: activeDevice, count: totalQueries }]
+      : top(deviceCounts, 6).map(([slug, count]) => ({ device: slug, count })),
     topClients: top(clientCounts, 6).map(([clientIp, count]) => ({ clientIp, count })),
   };
 }

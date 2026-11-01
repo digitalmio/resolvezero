@@ -29,6 +29,10 @@ export interface OverviewData {
   zoneCount: number;
   viewer: Viewer;
   edge: EdgeHealth;
+  /** Active device filter (device tag), null = whole profile. */
+  device: string | null;
+  /** Devices seen in the 24h window, with their query totals. */
+  devices: { device: string; queries: number }[];
   totalQueries: number;
   blocked: number;
   blockRatio: number;

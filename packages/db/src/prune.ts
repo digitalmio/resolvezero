@@ -16,8 +16,18 @@ export async function pruneExpiredStats(): Promise<number> {
       DELETE FROM stats_minute
       WHERE minute < now() - interval '6 hours'
       RETURNING 1
+    ), deleted_device_minutes AS (
+      DELETE FROM stats_minute_device
+      WHERE minute < now() - interval '6 hours'
+      RETURNING 1
     ), deleted_hourly AS (
       DELETE FROM stats_hourly s
+      USING profiles p
+      WHERE s.profile_id = p.id
+        AND s.hour < now() - (GREATEST(p.log_retention_days, 1) * interval '1 day')
+      RETURNING 1
+    ), deleted_hourly_device AS (
+      DELETE FROM stats_hourly_device s
       USING profiles p
       WHERE s.profile_id = p.id
         AND s.hour < now() - (GREATEST(p.log_retention_days, 1) * interval '1 day')
@@ -33,14 +43,25 @@ export async function pruneExpiredStats(): Promise<number> {
     )
     SELECT
       (SELECT count(*)::int FROM deleted) AS minute_pruned,
+      (SELECT count(*)::int FROM deleted_device_minutes) AS device_minute_pruned,
       (SELECT count(*)::int FROM deleted_hourly) AS hourly_pruned,
+      (SELECT count(*)::int FROM deleted_hourly_device) AS device_hourly_pruned,
       (SELECT count(*)::int FROM deleted_probes) AS probe_pruned,
       (SELECT count(*)::int FROM deleted_purges) AS purge_pruned
-  `)) as unknown as Array<{ minute_pruned: number; hourly_pruned: number; probe_pruned: number; purge_pruned: number }>;
+  `)) as unknown as Array<{
+    minute_pruned: number;
+    device_minute_pruned: number;
+    hourly_pruned: number;
+    device_hourly_pruned: number;
+    probe_pruned: number;
+    purge_pruned: number;
+  }>;
 
   return (
     (res[0]?.minute_pruned ?? 0) +
+    (res[0]?.device_minute_pruned ?? 0) +
     (res[0]?.hourly_pruned ?? 0) +
+    (res[0]?.device_hourly_pruned ?? 0) +
     (res[0]?.probe_pruned ?? 0) +
     (res[0]?.purge_pruned ?? 0)
   );

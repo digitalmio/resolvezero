@@ -14,15 +14,23 @@ import { LiveTrafficCard, PostureCard } from '../components/overview/traffic'
 import { Button } from '../components/ui/button'
 import { OVERVIEW_RANGES, overviewRange, type OverviewRangeKey } from '../lib/overview-range'
 import { getOverview, getQueryVolume } from '../server/dashboard'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+
+const ALL_DEVICES = '__all__'
 
 export const Route = createFileRoute('/')({ component: Overview })
 
 function Overview() {
-  const { data, isPending, isError, refetch } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
+  const [device, setDevice] = useState(ALL_DEVICES)
+  const deviceFilter = device === ALL_DEVICES ? undefined : device
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ['overview', device],
+    queryFn: () => getOverview({ data: { device: deviceFilter } }),
+  })
   const [range, setRange] = useState<OverviewRangeKey>('24h')
   const { data: volume, isPending: volumePending } = useQuery({
-    queryKey: ['query-volume', range],
-    queryFn: () => getQueryVolume({ data: { range } }),
+    queryKey: ['query-volume', range, device],
+    queryFn: () => getQueryVolume({ data: { range, device: deviceFilter } }),
   })
   const [greeting, setGreeting] = useState('Hello')
 
@@ -37,6 +45,13 @@ function Overview() {
   const firstName = data ? data.viewer.name.split(/\s+/)[0] || 'there' : ''
   const region = data ? regionLabel(data.edge.region) : ''
   const updateAge = data ? ageLabel(data.edge.configPollAgeMs) : ''
+  const deviceOptions = data
+    ? data.devices.length > 0
+      ? data.devices
+      : data.device
+        ? [{ device: data.device, queries: data.totalQueries }]
+        : []
+    : []
 
   const header = (
     <div className="relative">
@@ -44,7 +59,11 @@ function Overview() {
       <PageHeader
         eyebrow={data ? `Network · ${profileLabel} profile` : 'Network'}
         title={data ? `${greeting}, ${firstName}` : greeting}
-        description="Here’s how your network is doing over the last 24 hours."
+        description={
+          data?.device
+            ? `Scoped to ${data.device} · device-tagged DoH traffic only, last 24 hours.`
+            : 'Here’s how your network is doing over the last 24 hours.'
+        }
         meta={
           data ? (
             <>
@@ -62,12 +81,29 @@ function Overview() {
           ) : undefined
         }
         actions={
-          <Button asChild variant="secondary">
-            <Link to="/logs">
-              <FileText size={13} />
-              Open query log
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="w-[168px]">
+              <Select value={device} onValueChange={setDevice}>
+                <SelectTrigger className="h-8 py-0 text-[9px] font-semibold uppercase tracking-[0.08em]">
+                  <SelectValue aria-label="Device" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_DEVICES}>All devices</SelectItem>
+                  {deviceOptions.map((option) => (
+                    <SelectItem key={option.device} value={option.device}>
+                      {option.device} · {formatNumber(option.queries)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button asChild variant="secondary">
+              <Link to="/logs">
+                <FileText size={13} />
+                Open query log
+              </Link>
+            </Button>
+          </div>
         }
       />
     </div>
@@ -76,7 +112,7 @@ function Overview() {
   if (isPending) return <div className="space-y-7">{header}<OverviewSkeleton /></div>
   if (isError || !data) return <div className="space-y-7">{header}<PageError title="Could not load live stats." onRetry={() => void refetch()} /></div>
 
-  const chartData = (volume?.range === range ? volume.series : range === '24h' ? data.series : []).map((point) => ({
+  const chartData = (volume?.range === range && (volume.device ?? null) === (deviceFilter ?? null) ? volume.series : range === '24h' ? data.series : []).map((point) => ({
     key: point.bucket,
     time: format(parseISO(point.bucket), range === '7d' || range === '30d' ? 'd MMM' : 'HH:mm'),
     day: format(parseISO(point.bucket), 'd MMM'),
@@ -189,7 +225,7 @@ function Overview() {
           icon={<Monitor size={15} />}
           label="Active sources"
           value={String(activeSources)}
-          delta="client IPs / DoH tags"
+          delta={data.device ? 'selected device' : 'client IPs / DoH tags'}
         />
       </section>
 

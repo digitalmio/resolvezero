@@ -2,6 +2,8 @@ import "@tanstack/react-start/server-only";
 
 import { z } from "zod";
 
+import { DEVICE_TAG_RE } from "../../../lib/device";
+
 import { base } from "../router-base.server";
 import { requireScope } from "../context.server";
 import { loadAnalytics } from "../../dashboard/analytics.server";
@@ -24,19 +26,25 @@ import {
 export const reads = {
   overview: base
     .route({ method: "GET", path: "/overview", summary: "Dashboard overview" })
+    .input(z.object({ device: z.string().regex(DEVICE_TAG_RE).optional() }).optional())
     .output(overviewSchema)
-    .handler(async ({ context }) => {
+    .handler(async ({ input, context }) => {
       requireScope(context, "read");
-      return loadOverview(context.principal.userId, context.viewer, context.profileId);
+      return loadOverview(context.principal.userId, context.viewer, context.profileId, input?.device);
     }),
 
   queryVolume: base
     .route({ method: "GET", path: "/overview/query-volume", summary: "Query volume series" })
-    .input(z.object({ range: z.enum(["1h", "24h", "7d", "30d"]).default("24h") }))
+    .input(
+      z.object({
+        range: z.enum(["1h", "24h", "7d", "30d"]).default("24h"),
+        device: z.string().regex(DEVICE_TAG_RE).optional(),
+      }),
+    )
     .output(queryVolumeSchema)
     .handler(async ({ input, context }) => {
       requireScope(context, "read");
-      return loadQueryVolume(context.principal.userId, input.range, context.profileId);
+      return loadQueryVolume(context.principal.userId, input.range, context.profileId, input.device);
     }),
 
   analytics: base
