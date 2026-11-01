@@ -236,7 +236,7 @@ export class RuleStore {
   hasProfile(profileId: string, token: string | undefined): boolean {
     // Profile ids are 8-char lowercase base36 (was uuid); the guard only
     // rejects obviously malformed input, the map lookup does the real check.
-    if (!/^[a-z0-9]{1,64}$/i.test(profileId)) return false;
+    if (!/^[a-z0-9-]{1,64}$/i.test(profileId)) return false;
     const stored = this.profileTokens.get(profileId);
     if (stored === undefined) return false; // no such profile
     if (stored === null) return true; // id-only auth
