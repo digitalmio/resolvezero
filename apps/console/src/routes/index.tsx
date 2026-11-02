@@ -171,7 +171,7 @@ function Overview() {
       {header}
 
       <section className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
-        <div className="rz-card flex flex-col border-t-2 border-t-[var(--brand)] p-5 xl:p-6">
+        <div className="rz-card flex flex-col p-5 xl:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="rz-section-title">Query volume</h2>
