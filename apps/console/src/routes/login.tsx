@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from '@tanstack/react-router'
-import { Ban, FileText, House, ShieldCheck } from 'lucide-react'
+import { Ban, FileText, House } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import logo from '../assets/logo-square.svg'
@@ -89,13 +89,6 @@ function LoginPage() {
       </section>
 
       <section className="relative flex min-h-[calc(100vh-5rem)] flex-col bg-[var(--paper)] px-5 pb-6 pt-5 sm:px-8 lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
-        <div className="flex items-center justify-between">
-          <span className="rz-eyebrow">Access / 001</span>
-          <span className="rz-pill rz-pill-positive">
-            <ShieldCheck size={11} /> Private by default
-          </span>
-        </div>
-
         <main className="flex flex-1 items-center justify-center py-10 lg:py-14">
           <div className="w-full max-w-[420px]">
             <SignInCard />
