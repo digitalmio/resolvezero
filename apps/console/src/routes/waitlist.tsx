@@ -33,14 +33,14 @@ function WaitlistPage() {
             </p>
           </div>
 
-          <div className="mt-12 border-t border-[var(--line)] pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+          <div className="mt-12 border-t border-[var(--line)] pt-5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
             Self-host today · Hosted soon · Open source
           </div>
         </section>
 
         <section className="flex items-center justify-center px-5 py-10 sm:px-8 lg:px-12">
           <div className="w-full max-w-[430px]">
-            <div className="border border-[var(--line-strong)] border-t-4 border-t-[var(--brand)] bg-[var(--card)] p-7 sm:p-8">
+            <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--card)] p-7 shadow-[var(--shadow-card)] sm:p-8">
               <p className="rz-eyebrow">Two paths</p>
               <h2 className="rz-display mt-3 text-[2.5rem]">Run it yourself.</h2>
               <p className="mt-3 text-[12px] leading-6 text-[var(--muted)]">
@@ -86,7 +86,7 @@ function WaitlistPage() {
         </section>
       </main>
 
-      <footer className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4 text-[8px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)] sm:px-8">
+      <footer className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)] sm:px-8">
         <span>Self-hosted friendly · open-source console</span>
         <span className="hidden sm:inline">DNS / Privacy</span>
       </footer>

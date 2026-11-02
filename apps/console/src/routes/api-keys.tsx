@@ -64,7 +64,7 @@ function ApiKeys() {
 
       {issued ? (
         <div className="rz-card border-l-4 border-l-[var(--brand)] p-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--brand)]">
+          <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-[var(--brand)]">
             Copy this key now — it is shown once
           </p>
           <p className="mt-1.5 text-[11px] text-[var(--muted)]">
@@ -118,7 +118,7 @@ function ApiKeys() {
                     aria-pressed={scope === option.value}
                     onClick={() => setScope(option.value)}
                     className={[
-                      'px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors',
+                      'px-3 py-2 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors',
                       scope === option.value ? option.active : 'text-[var(--muted)] hover:text-[var(--ink)]',
                     ].join(' ')}
                   >
@@ -147,7 +147,7 @@ function ApiKeys() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left">
             <thead>
-              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[11px] font-medium text-[var(--muted)]">
                 <th className="px-5 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Key</th>
                 <th className="px-4 py-3 font-medium">Scope</th>
@@ -171,7 +171,7 @@ function ApiKeys() {
                   <td className="px-4 py-4">
                     <span
                       className={[
-                        'inline-flex items-center rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]',
+                        'inline-flex items-center rounded-[var(--radius-sm)] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.06em]',
                         key.scope === 'read-write'
                           ? 'bg-[var(--accent-soft)] text-[#b74716]'
                           : 'bg-[var(--sage)] text-[var(--ink)]',

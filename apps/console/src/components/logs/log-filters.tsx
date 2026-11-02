@@ -45,7 +45,7 @@ export function LogFilters({
 }) {
   return (
     <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-[var(--paper)]/50 px-4 py-3 xl:flex-row xl:items-center">
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-none border border-[var(--line-strong)] bg-transparent px-3 py-1.5 text-[11px] text-[var(--muted)]">
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-transparent px-3 py-1.5 text-[11px] text-[var(--muted)]">
         <Search size={13} />
         <input
           value={search}
@@ -58,7 +58,7 @@ export function LogFilters({
       <div className="flex flex-wrap items-center gap-2">
         <div className="w-[170px]">
           <Select value={device} onValueChange={onDevice}>
-            <SelectTrigger aria-label="Device" className="h-8 py-0 text-[9px] font-semibold uppercase tracking-[0.08em]">
+            <SelectTrigger aria-label="Device" className="h-8 py-0 text-[12px] font-medium">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -74,7 +74,7 @@ export function LogFilters({
 
         <div className="w-[170px]">
           <Select value={pop} onValueChange={onPop}>
-            <SelectTrigger aria-label="POP" className="h-8 py-0 text-[9px] font-semibold uppercase tracking-[0.08em]">
+            <SelectTrigger aria-label="POP" className="h-8 py-0 text-[12px] font-medium">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -90,7 +90,7 @@ export function LogFilters({
 
         <label
           htmlFor="blocked-only"
-          className="flex cursor-pointer items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]"
+          className="flex cursor-pointer items-center gap-2 text-[12px] font-medium text-[var(--muted)]"
         >
           <Switch id="blocked-only" checked={blockedOnly} onCheckedChange={onBlockedOnly} />
           <span className={blockedOnly ? 'text-[var(--accent)]' : undefined}>Blocked only</span>
@@ -101,9 +101,9 @@ export function LogFilters({
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)] xl:ml-2">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted)] xl:ml-2">
         <span className="flex items-center gap-1.5">
-          <span className={['size-1.5', live ? 'bg-[var(--green)]' : 'bg-[var(--warning)]'].join(' ')} />
+          <span className={['size-1.5 rounded-full', live ? 'bg-[var(--green)]' : 'bg-[var(--warning)]'].join(' ')} />
           {live ? 'Live · appends' : 'Paused'}
         </span>
         {updatedAt ? (

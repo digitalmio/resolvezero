@@ -46,10 +46,10 @@ export function SidebarLink({ item, active }: { item: NavItem; active: boolean }
     <Link
       to={item.to}
       className={[
-        'group flex items-center gap-2.5 border-l-2 px-2.5 py-2 text-[11px] font-medium transition-colors',
+        'group flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-[7px] text-[12.5px] font-medium transition-colors',
         active
-          ? 'border-[var(--brand)] bg-white/[0.06] text-[var(--sidebar-text)]'
-          : 'border-transparent text-[var(--sidebar-muted)] hover:bg-white/[0.04] hover:text-[var(--sidebar-text)]',
+          ? 'bg-white/[0.09] text-[var(--sidebar-text)]'
+          : 'text-[var(--sidebar-muted)] hover:bg-white/[0.05] hover:text-[var(--sidebar-text)]',
       ].join(' ')}
     >
       <span className={active ? 'text-[var(--brand)]' : 'text-[var(--sidebar-muted)] group-hover:text-[var(--sidebar-text)]'}>
@@ -57,7 +57,7 @@ export function SidebarLink({ item, active }: { item: NavItem; active: boolean }
       </span>
       <span>{item.label}</span>
       {item.badge ? (
-        <span className="ml-auto rounded-none bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-[var(--sidebar-text)] ring-1 ring-white/10">
+        <span className="ml-auto rounded-[var(--radius-sm)] bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-[var(--sidebar-text)] ring-1 ring-white/10">
           {item.badge}
         </span>
       ) : null}

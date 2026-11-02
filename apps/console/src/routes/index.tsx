@@ -104,21 +104,23 @@ function Overview() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <div className="w-[168px]">
-              <Select value={device} onValueChange={chooseDevice}>
-                <SelectTrigger className="h-8 py-0 text-[9px] font-semibold uppercase tracking-[0.08em]">
-                  <SelectValue aria-label="Device" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_DEVICES}>All devices</SelectItem>
-                  {deviceOptions.map((option) => (
-                    <SelectItem key={option.device} value={option.device}>
-                      {option.device}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {data ? (
+              <div className="w-[168px]">
+                <Select value={device} onValueChange={chooseDevice}>
+                  <SelectTrigger className="h-8 py-0 text-[12px] font-medium">
+                    <SelectValue aria-label="Device" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_DEVICES}>All devices</SelectItem>
+                    {deviceOptions.map((option) => (
+                      <SelectItem key={option.device} value={option.device}>
+                        {option.device}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <Button asChild variant="secondary">
               <Link to="/logs">
                 <FileText size={13} />
@@ -169,7 +171,7 @@ function Overview() {
       {header}
 
       <section className="grid gap-4 xl:grid-cols-[1.65fr_1fr]">
-        <div className="rz-card flex flex-col border-t-2 border-t-[var(--brand)] p-5 xl:p-6">
+        <div className="rz-card flex flex-col p-5 xl:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="rz-section-title">Query volume</h2>
@@ -179,7 +181,7 @@ function Overview() {
             </div>
             <div className="flex items-center gap-2">
               {volumePending ? (
-                <span className="text-[8px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">Loading…</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">Loading…</span>
               ) : null}
               <div className="flex items-center border border-[var(--line-strong)]">
                 {OVERVIEW_RANGES.map((option) => (
@@ -189,7 +191,7 @@ function Overview() {
                     onClick={() => setRange(option.key)}
                     aria-pressed={range === option.key}
                     className={[
-                      'px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] transition-colors',
+                      'px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors',
                       range === option.key
                         ? 'bg-[var(--brand)] text-white'
                         : 'text-[var(--muted)] hover:bg-[var(--paper-2)] hover:text-[var(--ink)]',
@@ -201,12 +203,12 @@ function Overview() {
               </div>
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+          <div className="mt-4 flex items-center gap-5 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">
             <span className="flex items-center gap-2">
-              <span className="size-1.5 bg-[var(--ink)]" /> Queries
+              <span className="size-1.5 rounded-full bg-[var(--ink)]" /> Queries
             </span>
             <span className="flex items-center gap-2">
-              <span className="size-1.5 bg-[var(--accent)]" /> Blocked
+              <span className="size-1.5 rounded-full bg-[var(--accent)]" /> Blocked
             </span>
           </div>
           <QueryChart data={chartData} />

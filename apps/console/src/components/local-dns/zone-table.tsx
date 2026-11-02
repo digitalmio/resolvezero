@@ -26,7 +26,7 @@ export function ZoneTable({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-left">
           <thead>
-            <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+            <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[11px] font-medium text-[var(--muted)]">
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Answer</th>
@@ -47,7 +47,7 @@ export function ZoneTable({
               <tr key={zoneKey(zone)} className="group hover:bg-white/60">
                 <td className="px-5 py-3.5 font-mono text-[12px]">{zone.domain}</td>
                 <td className="px-4 py-3.5">
-                  <span className="inline-flex items-center rounded-none bg-[var(--sage)] px-2 py-1 text-[10px] font-semibold text-[var(--ink)] ring-1 ring-[var(--line)]">
+                  <span className="inline-flex items-center rounded-[var(--radius-sm)] bg-[var(--sage)] px-2 py-1 text-[10px] font-semibold text-[var(--ink)] ring-1 ring-[var(--line)]">
                     {zone.recordType}
                   </span>
                 </td>
@@ -62,7 +62,7 @@ export function ZoneTable({
                     <button
                       type="button"
                       onClick={() => onEdit(zone)}
-                      className="rounded-none p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
+                      className="rounded-[var(--radius-sm)] p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
                       aria-label={`Edit ${zone.domain} ${zone.recordType}`}
                       title="Edit"
                     >
@@ -71,7 +71,7 @@ export function ZoneTable({
                     <button
                       type="button"
                       onClick={() => onDelete(zone)}
-                      className="rounded-none p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[#b74716]"
+                      className="rounded-[var(--radius-sm)] p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[#b74716]"
                       aria-label={`Delete ${zone.domain} ${zone.recordType}`}
                       title="Delete"
                     >

@@ -88,9 +88,9 @@ export function SignInCard() {
   }
 
   return (
-            <div className="border border-[var(--line-strong)] border-t-4 border-t-[var(--brand)] bg-[var(--card)] p-7 sm:p-8">
+            <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--card)] p-7 shadow-[var(--shadow-card)] sm:p-8">
               <p className="rz-eyebrow">Welcome back</p>
-              <h2 className="rz-display mt-3 text-[2.6rem]">Sign in</h2>
+              <h2 className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em]">Sign in</h2>
               <p className="mt-3 text-[12px] leading-6 text-[var(--muted)]">
                 No password to lose. We email you a 6-digit code — it proves the address and gets you in.
               </p>
@@ -171,7 +171,7 @@ export function SignInCard() {
 
               <div className="mt-6 flex items-center gap-3">
                 <span className="h-px flex-1 bg-[var(--line)]" />
-                <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">or</span>
+                <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">or</span>
                 <span className="h-px flex-1 bg-[var(--line)]" />
               </div>
 

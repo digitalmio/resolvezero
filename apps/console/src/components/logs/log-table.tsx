@@ -27,7 +27,7 @@ export function LogTable({ entries }: { entries: LogEntry[] }) {
   return (
     <div className="overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1140px] text-left">
+        <table className="w-full min-w-[1060px] text-left">
           <thead>
             <tr className="border-b border-[var(--line)] text-[10px] font-medium text-[var(--muted)]">
               <th className="px-4 py-2.5 font-medium">Time</th>
@@ -62,7 +62,7 @@ export function LogTable({ entries }: { entries: LogEntry[] }) {
                 <td className="px-4 py-2.5">
                   <span
                     className={[
-                      'inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em]',
+                      'inline-flex items-center gap-1.5 text-[10px] font-medium capitalize tracking-[0.02em]',
                       entry.action === 'block' ? 'text-[var(--danger)]' : 'text-[var(--green)]',
                     ].join(' ')}
                   >

@@ -28,11 +28,11 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
         <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="rz-query-area" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--ink)" stopOpacity={0.1} />
+              <stop offset="0%" stopColor="var(--ink)" stopOpacity={0.06} />
               <stop offset="100%" stopColor="var(--ink)" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 5" />
+          <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="3 5" />
           <XAxis
             dataKey="key"
             tickLine={false}
@@ -61,10 +61,10 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
             contentStyle={{
               background: 'var(--card)',
               border: '1px solid var(--line-strong)',
-              borderRadius: 2,
-              boxShadow: '0 12px 32px rgba(11,11,10,0.12)',
+              borderRadius: 10,
+              boxShadow: 'var(--shadow-pop)',
               fontSize: 11,
-              padding: '6px 8px',
+              padding: '8px 10px',
             }}
             labelStyle={{ color: 'var(--muted)', marginBottom: 2, lineHeight: 1.2 }}
             itemStyle={{ padding: 0, lineHeight: 1.3 }}
@@ -78,7 +78,7 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
             type="monotone"
             dataKey="total"
             stroke="var(--ink)"
-            strokeWidth={1.8}
+            strokeWidth={1.6}
             fill="url(#rz-query-area)"
             dot={false}
             isAnimationActive
@@ -88,7 +88,7 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
             type="monotone"
             dataKey="blocked"
             stroke="var(--accent)"
-            strokeWidth={1.5}
+            strokeWidth={1.4}
             fill="transparent"
             dot={false}
             isAnimationActive

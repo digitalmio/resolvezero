@@ -62,7 +62,7 @@ export function DeviceSetup({ onDone }: { onDone: () => void }) {
               aria-pressed={tab === option}
               onClick={() => setTab(option)}
               className={[
-                'px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors',
+                'px-3 py-2 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors',
                 tab === option ? 'bg-[var(--ink)] text-[var(--paper)]' : 'text-[var(--muted)] hover:text-[var(--ink)]',
               ].join(' ')}
             >

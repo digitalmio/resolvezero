@@ -46,7 +46,7 @@ export function UserMenu({ name, image, email }: { name: string; image: string |
             )}
             <span className="min-w-0">
               <span className="block truncate text-[11px] font-medium text-[var(--sidebar-text)]">{name}</span>
-              <span className="block truncate text-[9px] uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
+              <span className="block truncate text-[10px] uppercase tracking-[0.06em] text-[var(--sidebar-muted)]">
                 Personal workspace
               </span>
             </span>

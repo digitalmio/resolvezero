@@ -18,30 +18,30 @@ export function LiveTrafficCard({
       <div className="flex items-start justify-between">
         <div>
           <h2 className="rz-section-title text-[var(--sidebar-text)]">Traffic</h2>
-          <p className="mt-1.5 text-[10px] uppercase tracking-[0.1em] text-[var(--sidebar-muted)]">Rolling 24-hour window</p>
+          <p className="mt-1.5 text-[11px] text-[var(--sidebar-muted)]">Rolling 24-hour window</p>
         </div>
         <Zap size={16} className="text-[var(--lime)]" />
       </div>
-      <p className="mt-5 rz-font-display text-[3rem] font-extrabold leading-none tracking-[-0.055em]">
+      <p className="mt-5 rz-font-display text-[2.75rem] font-semibold leading-none">
         {formatNumber(totalQueries)}
-        <span className="ml-2 font-sans text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--sidebar-muted)]">
+        <span className="ml-2 font-sans text-[11px] font-medium text-[var(--sidebar-muted)]">
           queries / 24h
         </span>
       </p>
       <div className="mt-5">
-        <div className="flex h-2 overflow-hidden bg-white/15">
+        <div className="flex h-1.5 overflow-hidden rounded-full bg-white/10">
           <div
             className="ml-auto h-full bg-[var(--accent)]"
             style={{ width: `${totalQueries > 0 ? (blocked / totalQueries) * 100 : 0}%` }}
           />
         </div>
-        <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-[0.08em]">
+        <div className="mt-3 flex items-center justify-between text-[10.5px]">
           <span className="flex items-center gap-1.5 text-[var(--sidebar-muted)]">
             Avg
             <span className="rz-mono text-[var(--sidebar-text)]">{qpsLabel} qps</span>
           </span>
           <span className="flex items-center gap-1.5 text-[var(--sidebar-muted)]">
-            <span className="size-1.5 bg-[var(--accent)]" /> Blocked
+            <span className="size-1.5 rounded-full bg-[var(--accent)]" /> Blocked
             <span className="rz-mono text-[var(--sidebar-text)]">{formatNumber(blocked)}</span>
             <span className="text-white/30">·</span>
             <span className="rz-mono text-[var(--sidebar-text)]">{(blockRatio * 100).toFixed(1)}%</span>
@@ -75,10 +75,10 @@ export function PostureCard({
       <div className="flex items-start justify-between">
         <div>
           <h2 className="rz-section-title">Protection</h2>
-          <p className="mt-1.5 text-[10px] uppercase tracking-[0.1em] text-[var(--muted)]">Edge and policy status</p>
+          <p className="mt-1.5 text-[11px] text-[var(--muted)]">Edge and policy status</p>
         </div>
         <span className={['rz-pill', edge.ok ? 'rz-pill-positive' : 'rz-pill-warning'].join(' ')}>
-          <span className={['size-1.5', edge.ok ? 'bg-[var(--green)]' : 'bg-[var(--warning)]'].join(' ')} />
+          <span className={['size-1.5 rounded-full', edge.ok ? 'bg-[var(--green)]' : 'bg-[var(--warning)]'].join(' ')} />
           {edge.ok ? 'Active' : 'Degraded'}
         </span>
       </div>
@@ -100,10 +100,10 @@ export function PostureCard({
 export function StatusRow({ label, value, good }: { label: string; value: string; good?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">{label}</span>
+      <span className="text-[11px] text-[var(--muted)]">{label}</span>
       <span className="flex items-center gap-1.5">
         {good !== undefined ? (
-          <span className={['size-1.5', good ? 'bg-[var(--green)]' : 'bg-[var(--warning)]'].join(' ')} />
+          <span className={['size-1.5 rounded-full', good ? 'bg-[var(--green)]' : 'bg-[var(--warning)]'].join(' ')} />
         ) : null}
         <span className="rz-mono text-[10px] text-[var(--ink)]">{value}</span>
       </span>
@@ -114,10 +114,10 @@ export function StatusRow({ label, value, good }: { label: string; value: string
 export function MiniStat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
     <div>
-      <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">{label}</p>
+      <p className="text-[11px] text-[var(--muted)]">{label}</p>
       <p
         className={[
-          'mt-1.5 rz-font-display text-[24px] font-extrabold tracking-[-0.05em]',
+          'mt-1.5 rz-font-display text-[22px] font-semibold',
           accent ? 'text-[var(--accent)]' : 'text-[var(--ink)]',
         ].join(' ')}
       >
