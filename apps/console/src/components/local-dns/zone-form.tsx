@@ -116,7 +116,7 @@ export function ZoneForm({
       </p>
 
       {error ? (
-        <p role="alert" className="mt-3 rounded-none border border-[#e7b4ae] bg-[var(--accent-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--danger)]">
+        <p role="alert" className="mt-3 rounded-[var(--radius-sm)] border border-[#e7b4ae] bg-[var(--accent-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--danger)]">
           {error}
         </p>
       ) : null}

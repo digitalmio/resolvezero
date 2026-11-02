@@ -10,12 +10,12 @@ const Switch = forwardRef<
   <SwitchPrimitive.Root
     ref={ref}
     className={cn(
-      "relative inline-flex h-4 w-8 shrink-0 items-center rounded-none border transition-colors data-[state=checked]:border-[var(--ink)] data-[state=checked]:bg-[var(--ink)] data-[state=unchecked]:border-[var(--line-strong)] data-[state=unchecked]:bg-transparent",
+      "relative inline-flex h-4 w-8 shrink-0 items-center rounded-full border transition-colors data-[state=checked]:border-[var(--ink)] data-[state=checked]:bg-[var(--ink)] data-[state=unchecked]:border-[var(--line-strong)] data-[state=unchecked]:bg-transparent",
       className,
     )}
     {...props}
   >
-    <SwitchPrimitive.Thumb className="pointer-events-none block size-2.5 rounded-none bg-[var(--muted)] transition-transform data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-[var(--card)] data-[state=unchecked]:translate-x-[2px]" />
+    <SwitchPrimitive.Thumb className="pointer-events-none block size-2.5 rounded-full bg-[var(--muted)] transition-transform data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-[var(--card)] data-[state=unchecked]:translate-x-[2px]" />
   </SwitchPrimitive.Root>
 ))
 Switch.displayName = SwitchPrimitive.Root.displayName

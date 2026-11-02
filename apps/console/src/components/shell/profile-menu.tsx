@@ -41,7 +41,7 @@ export function ProfileMenu({
             type="button"
             disabled={loading}
             aria-busy={loading}
-            className="flex h-8 items-center gap-2 rounded-none border border-[var(--line)] bg-transparent px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] disabled:cursor-wait disabled:opacity-60"
+            className="flex h-8 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-transparent px-3 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] disabled:cursor-wait disabled:opacity-60"
           >
             <span className="max-w-[120px] truncate">{label}</span>
             {!loading ? (

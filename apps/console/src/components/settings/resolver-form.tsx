@@ -50,7 +50,7 @@ export function ResolverForm({ initial }: { initial: ResolverFormValues }) {
       }}
     >
       <div className="space-y-1.5">
-        <label className="block text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+        <label className="block text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">
           Upstream preset
         </label>
         <Select value={upstream} onValueChange={setUpstream}>
@@ -68,7 +68,7 @@ export function ResolverForm({ initial }: { initial: ResolverFormValues }) {
       </div>
 
       <div className="space-y-1.5">
-        <label className="block text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+        <label className="block text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">
           Custom upstream URL
         </label>
         <input
@@ -92,7 +92,7 @@ export function ResolverForm({ initial }: { initial: ResolverFormValues }) {
 
       <div className="flex items-end gap-3">
         <div className="space-y-1.5">
-          <label className="block text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+          <label className="block text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">
             Retention (days)
           </label>
           <input

@@ -175,7 +175,7 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-none bg-[var(--sage)] p-3">
+    <div className="rounded-[var(--radius-sm)] bg-[var(--sage)] p-3">
       <p className="text-[10px] text-[var(--muted)]">{label}</p>
       <p className="mt-1 rz-font-display text-[22px] font-semibold tracking-[-0.04em]">{value}</p>
     </div>

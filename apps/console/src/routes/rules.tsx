@@ -56,7 +56,7 @@ function Rules() {
               className="w-full bg-transparent text-[11px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
             />
           </label>
-          <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--muted)]">
+          <span className="font-mono text-[11px] font-medium text-[var(--muted)]">
             {data.counts.block} block · {data.counts.allow} allow
           </span>
         </div>
@@ -64,7 +64,7 @@ function Rules() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-left">
             <thead>
-              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[11px] font-medium text-[var(--muted)]">
                 <th className="px-5 py-3 font-medium">Domain</th>
                 <th className="px-4 py-3 font-medium">Action</th>
                 <th className="px-4 py-3 font-medium text-right">Enabled</th>
@@ -120,7 +120,7 @@ function ActionPill({ action }: { action: string }) {
       ? 'bg-[var(--accent-soft)] text-[#b74716] ring-[var(--line)]'
       : 'bg-[var(--green-soft)] text-[var(--green)] ring-[var(--line)]'
   return (
-    <span className={`inline-flex items-center rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ring-1 ${style}`}>
+    <span className={`inline-flex items-center rounded-[var(--radius-sm)] px-2 py-1 text-[10px] font-medium capitalize tracking-[0.02em] ring-1 ${style}`}>
       {action}
     </span>
   )

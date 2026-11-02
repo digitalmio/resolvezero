@@ -38,7 +38,7 @@ const SelectContent = forwardRef<
       position={position}
       sideOffset={4}
       className={cn(
-        "relative z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden border border-[var(--line-strong)] bg-[var(--card)] shadow-[0_18px_48px_rgba(11,11,10,0.14)]",
+        "relative z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--card)] shadow-[var(--shadow-pop)]",
         className,
       )}
       {...props}
@@ -56,7 +56,7 @@ const SelectItem = forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center gap-2 px-3 py-2 text-[11px] outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-[var(--paper-2)]",
+      "relative flex w-full cursor-default select-none items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-[12px] outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-[var(--paper-2)]",
       className,
     )}
     {...props}

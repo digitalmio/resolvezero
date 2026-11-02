@@ -51,7 +51,7 @@ export function AddRuleForm({ profileId, onDone }: { profileId: string; onDone: 
               aria-pressed={action === option.value}
               onClick={() => setAction(option.value)}
               className={[
-                'px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors',
+                'px-3 py-2 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors',
                 action === option.value
                   ? option.active
                   : 'text-[var(--muted)] hover:text-[var(--ink)]',

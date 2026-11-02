@@ -19,13 +19,13 @@ export function PulseMetric({
     <div className="px-5 py-6">
       <div className="flex items-center justify-between">
         <span className="rz-mono text-[9px] text-[var(--muted)]">{index}</span>
-        <span className="flex size-7 items-center justify-center rounded-none bg-[var(--brand-soft)] text-[var(--brand)]">
+        <span className="flex size-7 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--brand-soft)] text-[var(--brand)]">
           {icon}
         </span>
       </div>
-      <p className="mt-5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 rz-font-display text-[2rem] font-extrabold leading-none tracking-[-0.055em]">{value}</p>
-      <p className={['mt-2 text-[9px] uppercase tracking-[0.08em]', positive ? 'text-[var(--green)]' : 'text-[var(--muted)]'].join(' ')}>
+      <p className="mt-5 text-[11px] font-medium text-[var(--muted)]">{label}</p>
+      <p className="mt-2 rz-font-display text-[1.85rem] font-semibold leading-none">{value}</p>
+      <p className={['mt-2 text-[10.5px]', positive ? 'text-[var(--green)]' : 'text-[var(--muted)]'].join(' ')}>
         {delta}
       </p>
     </div>

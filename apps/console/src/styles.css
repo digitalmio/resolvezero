@@ -5,29 +5,32 @@
 :root {
   --ink: #0b0b0a;
   --ink-2: #171716;
-  --paper: #f2efe6;
-  --paper-2: #e7e2d6;
-  --card: #fffdf8;
-  --sage: #e7e2d6;
-  --sage-2: #dcd6c7;
-  --line: rgba(11, 11, 10, 0.14);
-  --line-strong: rgba(11, 11, 10, 0.28);
-  --muted: #6b675e;
+  --paper: #faf9f7;
+  --paper-2: #f1efea;
+  --card: #ffffff;
+  --sage: #f1efea;
+  --sage-2: #e6e3dc;
+  --line: rgba(11, 11, 10, 0.08);
+  --line-strong: rgba(11, 11, 10, 0.16);
+  --muted: #6f6a62;
   --brand: #ff4d00;
-  --brand-strong: color-mix(in oklab, var(--brand) 82%, var(--ink));
-  --brand-soft: #ffe7db;
+  --brand-strong: #e64500;
+  --brand-soft: #fff0e8;
   --accent: #d92d20;
-  --accent-soft: #fde8e4;
-  --green: #0a7d52;
-  --green-soft: #e3efe7;
+  --accent-soft: #fdeceb;
+  --green: #0f7a4f;
+  --green-soft: #e7f2ec;
   --lime: #c6f24e;
   --danger: #d92d20;
   --warning: #a56a16;
   --sidebar: #0b0b0a;
-  --sidebar-2: #171716;
-  --sidebar-text: #f2efe6;
-  --sidebar-muted: #b4ada0;
-  --radius: 0;
+  --sidebar-2: #161514;
+  --sidebar-text: #f4f1ec;
+  --sidebar-muted: #a6a099;
+  --radius: 10px;
+  --radius-sm: 8px;
+  --shadow-card: 0 1px 2px rgba(11, 11, 10, 0.04);
+  --shadow-pop: 0 12px 32px rgba(11, 11, 10, 0.1);
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Archivo Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -129,17 +132,17 @@ textarea:focus-visible,
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--card);
-  box-shadow: none;
+  box-shadow: var(--shadow-card);
 }
 
 .rz-eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -162,18 +165,18 @@ textarea:focus-visible,
 }
 
 .rz-font-display {
-  font-family: var(--font-display);
-  font-stretch: 112%;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
 }
 
 .rz-page-title {
   font-family: var(--font-display);
-  font-size: clamp(1.95rem, 3.75vw, 3.1rem);
-  font-stretch: 118%;
-  font-weight: 800;
-  letter-spacing: -0.055em;
-  line-height: 0.95;
-  text-transform: uppercase;
+  font-size: clamp(1.6rem, 2.6vw, 2.15rem);
+  font-stretch: 100%;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
   color: var(--ink);
 }
 
@@ -181,22 +184,20 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
-  border: 1px solid var(--ink);
-  border-radius: 2px;
-  background: var(--brand);
-  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .rz-section-title {
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: 13px;
-  font-stretch: 112%;
-  font-weight: 700;
-  letter-spacing: 0.015em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
@@ -208,20 +209,20 @@ textarea:focus-visible,
 .rz-input {
   width: 100%;
   border: 1px solid var(--line-strong);
-  border-radius: 0;
-  background: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--card);
   padding: 8px 12px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--ink);
   outline: none;
-  transition: border-color 120ms ease;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .rz-input:focus {
-  border-color: var(--line-strong);
+  border-color: var(--brand);
   outline: none;
-  box-shadow: inset 0 -2px 0 var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 14%, transparent);
 }
 
 .rz-input::placeholder {
@@ -230,9 +231,9 @@ textarea:focus-visible,
 
 .rz-field-label {
   display: block;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -241,14 +242,13 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 0;
+  border-radius: 6px;
   border: 1px solid var(--line);
-  padding: 5px 8px;
-  font-size: 9px;
-  font-weight: 600;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   color: var(--muted);
   background: var(--card);
 }
@@ -278,7 +278,7 @@ textarea:focus-visible,
 }
 
 .rz-dot-grid {
-  background-image: radial-gradient(color-mix(in oklab, var(--ink) 16%, transparent) 1px, transparent 1px);
+  background-image: radial-gradient(color-mix(in oklab, var(--ink) 10%, transparent) 1px, transparent 1px);
   background-size: 16px 16px;
   -webkit-mask-image: linear-gradient(to bottom, black, transparent);
   mask-image: linear-gradient(to bottom, black, transparent);

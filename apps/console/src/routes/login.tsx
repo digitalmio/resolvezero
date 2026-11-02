@@ -47,13 +47,13 @@ function LoginPage() {
               ResolveZero
             </span>
           </div>
-          <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-[var(--sidebar-muted)]">
+          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
             DNS / Privacy
           </span>
         </div>
 
         <div className="relative z-10 hidden flex-1 flex-col justify-center py-16 lg:flex">
-          <p className="mb-5 text-[9px] font-semibold uppercase tracking-[0.2em] text-[var(--sidebar-muted)]">
+          <p className="mb-5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
             Open-source DNS firewall
           </p>
           <h1 className="rz-display max-w-[700px] text-[clamp(2.8rem,4.8vw,5.2rem)]">ResolveZero</h1>
@@ -83,7 +83,7 @@ function LoginPage() {
           </div>
         </div>
 
-        <p className="relative z-10 hidden border-t border-white/15 pt-4 text-[8px] font-semibold uppercase tracking-[0.2em] text-[var(--sidebar-muted)] lg:block">
+        <p className="relative z-10 hidden border-t border-white/15 pt-4 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--sidebar-muted)] lg:block">
           Private by default · No third-party DNS · Self-hosted friendly
         </p>
       </section>
@@ -112,7 +112,7 @@ function LoginPage() {
           </div>
         </main>
 
-        <footer className="text-[8px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+        <footer className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
           Self-hosted friendly · open-source console
         </footer>
       </section>

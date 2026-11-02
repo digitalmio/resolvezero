@@ -33,7 +33,7 @@ function WaitlistPage() {
             </p>
           </div>
 
-          <div className="mt-12 border-t border-[var(--line)] pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+          <div className="mt-12 border-t border-[var(--line)] pt-5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
             Self-host today · Hosted soon · Open source
           </div>
         </section>
@@ -86,7 +86,7 @@ function WaitlistPage() {
         </section>
       </main>
 
-      <footer className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4 text-[8px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)] sm:px-8">
+      <footer className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)] sm:px-8">
         <span>Self-hosted friendly · open-source console</span>
         <span className="hidden sm:inline">DNS / Privacy</span>
       </footer>

@@ -62,17 +62,17 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
         <ProfileMenu profiles={data?.profiles ?? []} activeId={data?.profileId ?? ''} label={profileLabel} loading={!data} />
 
-        <div className="absolute left-1/2 top-1/2 hidden w-full max-w-[420px] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-none border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[11px] text-[var(--muted)] lg:flex">
+        <div className="absolute left-1/2 top-1/2 hidden w-full max-w-[420px] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-[12px] text-[var(--muted)] shadow-[var(--shadow-card)] lg:flex">
           <Search size={14} />
           <span>Search domains, rules, devices</span>
-          <kbd className="ml-auto flex items-center gap-0.5 rounded-none border border-[var(--line)] bg-[var(--card)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
+          <kbd className="ml-auto flex items-center gap-0.5 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
             <Command size={10} /> K
           </kbd>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
           {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
-          <span className="hidden h-8 items-center gap-2 rounded-none border border-[var(--line)] bg-transparent px-3 text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)] md:inline-flex">
+          <span className="hidden h-8 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-3 text-[11px] font-medium text-[var(--muted)] md:inline-flex">
             <Activity size={12} className="text-[var(--green)]" />
             {queriesLabel} queries / 24h
           </span>
@@ -87,7 +87,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
               key={item.to}
               to={item.to}
               className={[
-                'flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[8px] font-semibold uppercase tracking-[0.12em] transition-colors [&_svg]:size-3',
+                'flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors [&_svg]:size-3',
                 active
                   ? 'border-[var(--brand)] text-[var(--sidebar-text)] [&_svg]:text-[var(--brand)]'
                   : 'border-transparent text-[var(--sidebar-muted)] [&_svg]:text-[var(--sidebar-muted)]',
@@ -102,7 +102,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
           <button
             type="button"
             onClick={() => void signOut()}
-            className="ml-auto flex shrink-0 items-center gap-1.5 border-l border-white/10 px-3 py-2 text-[8px] font-semibold uppercase tracking-[0.12em] text-[var(--sidebar-muted)]"
+            className="ml-auto flex shrink-0 items-center gap-1.5 border-l border-white/10 px-3 py-2 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--sidebar-muted)]"
           >
             <LogOut size={11} /> Sign out
           </button>
@@ -113,7 +113,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
         <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 pb-4 pt-6">
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2.5 pb-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--sidebar-muted)]">
+              <p className="px-2.5 pb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--sidebar-muted)]/80">
                 {group.label}
               </p>
               {group.items.map((item) => (
@@ -130,7 +130,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
         <div className="px-3 pb-3">
           <div className="rounded-[var(--radius)] border border-white/10 bg-white/[0.04] p-3.5">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em]">
+              <span className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.06em]">
                 <span
                   className={[
                     'size-1.5 rounded-full',
@@ -144,7 +144,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
             <p className="mt-2.5 text-[11px] leading-5 text-[var(--sidebar-muted)]">
               {data ? `${queriesLabel} queries in the last 24 hours.` : 'Loading live DNS data…'}
             </p>
-            <div className="mt-2.5 flex items-center justify-between border-t border-white/10 pt-2.5 text-[9px] uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
+            <div className="mt-2.5 flex items-center justify-between border-t border-white/10 pt-2.5 text-[10px] uppercase tracking-[0.06em] text-[var(--sidebar-muted)]">
               <span>
                 {deviceCount} {deviceCount === 1 ? 'device' : 'devices'}
               </span>
@@ -152,7 +152,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
             </div>
           </div>
 
-          <p className="px-2.5 pb-1.5 pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-[var(--sidebar-muted)]">
+          <p className="px-2.5 pb-1.5 pt-5 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--sidebar-muted)]/80">
             Account
           </p>
           {accountNav.map((item) => (

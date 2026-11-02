@@ -62,7 +62,7 @@ function Blocklists() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left">
             <thead>
-              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[10px] uppercase tracking-[0.14em] text-[var(--muted)]">
+              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[11px] font-medium text-[var(--muted)]">
                 <th className="px-5 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Format</th>
                 <th className="px-4 py-3 font-medium">Entries</th>
@@ -88,7 +88,7 @@ function Blocklists() {
                       <span className="flex items-center gap-1.5">
                         auto
                         {list.detectedFormat ? (
-                          <span className="rounded-none bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[9px] normal-case text-[var(--ink)]">
+                          <span className="rounded-[var(--radius-sm)] bg-[var(--paper-2)] px-1.5 py-0.5 font-mono text-[9px] normal-case text-[var(--ink)]">
                             {list.detectedFormat}
                           </span>
                         ) : null}
@@ -118,14 +118,14 @@ function Blocklists() {
 function StatusPill({ enabled, status }: { enabled: boolean; status: string | null }) {
   if (!enabled) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-none bg-[var(--sage)] px-2 py-1 text-[10px] font-medium text-[var(--muted)]">
+      <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--sage)] px-2 py-1 text-[10px] font-medium text-[var(--muted)]">
         <AlertCircle size={11} /> disabled
       </span>
     )
   }
   const ok = status === 'ok'
   return (
-    <span className={['inline-flex items-center gap-1.5 rounded-none px-2 py-1 text-[10px] font-medium', ok ? 'bg-[var(--green-soft)] text-[var(--green)]' : 'bg-[var(--accent-soft)] text-[var(--warning)]'].join(' ')}>
+    <span className={['inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-[10px] font-medium', ok ? 'bg-[var(--green-soft)] text-[var(--green)]' : 'bg-[var(--accent-soft)] text-[var(--warning)]'].join(' ')}>
       {ok ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}
       {status ?? 'pending'}
     </span>
