@@ -43,7 +43,7 @@ function LoginPage() {
         <div className="relative z-10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src={logo} alt="ResolveZero" className="size-10 shrink-0 invert" />
-            <span className="rz-font-display text-[17px] font-bold uppercase tracking-[-0.03em] lg:hidden">
+            <span className="rz-font-display text-[17px] font-semibold tracking-[-0.03em] lg:hidden">
               ResolveZero
             </span>
           </div>
@@ -56,7 +56,7 @@ function LoginPage() {
           <p className="mb-5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
             Open-source DNS firewall
           </p>
-          <h1 className="rz-display max-w-[700px] text-[clamp(2.8rem,4.8vw,5.2rem)]">ResolveZero</h1>
+          <h1 className="rz-hero-title max-w-[560px]">ResolveZero</h1>
           <p className="mt-6 max-w-[430px] text-[16px] leading-7 text-[var(--sidebar-muted)]">
             Your DNS. Your rules. Filter at the edge, resolve local names, and keep the logs in storage you own.
           </p>

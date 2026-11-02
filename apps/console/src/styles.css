@@ -82,7 +82,6 @@ h1,
 h2,
 h3 {
   font-family: var(--font-display);
-  font-stretch: 112%;
   font-weight: 700;
 }
 
@@ -168,6 +167,16 @@ textarea:focus-visible,
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+}
+
+.rz-hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(2.3rem, 3.6vw, 3.2rem);
+  font-stretch: 100%;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  color: var(--sidebar-text);
 }
 
 .rz-page-title {
