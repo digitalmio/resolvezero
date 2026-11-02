@@ -2,16 +2,18 @@ import { Hono } from "hono";
 import { decode } from "dns-packet";
 import {
   RESPONSE,
-  SINKHOLE_TTL,
+  SAFE_SEARCH_TTL,
   decodeQuestion,
   noDataResponse,
+  cnameResponse,
+  blockedResponse,
   nxdomainResponse,
-  sinkholeResponse,
   servfailResponse,
   wireEncode,
   zoneAnswer,
 } from "./wire";
 import { matchProbeNonce } from "./probe";
+import { safeSearchTarget } from "./safeSearch";
 import type { RuleAction } from "./ruleStore";
 import type { RuleStore, ZoneAnswer } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
@@ -20,7 +22,7 @@ import { localNameAnswer, type ZoneRecordType } from "@resolvezero/shared";
 import { readBytesBounded } from "./body";
 import { createRateLimiter, positiveInt, Semaphore } from "./limits";
 
-export type QueryLogReason = "manual" | "blocklist" | "zone";
+export type QueryLogReason = "manual" | "blocklist" | "zone" | "safesearch";
 
 export interface QueryLogEntry {
   profileId: string;
@@ -237,9 +239,30 @@ export function createDohApp(deps: DohAppDeps) {
         transport: "doh",
       });
       deps.recorder?.recordQuery("block");
-      return c.body(sinkholeResponse(question), 200, {
+      const blocked = deps.store.blockAnswer(profileId);
+      return c.body(blockedResponse(question, blocked), 200, {
         "content-type": "application/dns-message",
-        "cache-control": `max-age=${SINKHOLE_TTL}`,
+        "cache-control": `max-age=${blocked.ttl}`,
+      });
+    }
+
+    // ---- SafeSearch rewrites (CNAME to the provider's safe endpoint) ----
+    const safeTarget = safeSearchTarget(deps.store.safeSearchSettings(profileId), question.name);
+    if (safeTarget) {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: clientAddr,
+        device,
+        reason: "safesearch",
+        transport: "doh",
+      });
+      deps.recorder?.recordQuery("forward");
+      return c.body(cnameResponse(question, safeTarget), 200, {
+        "content-type": "application/dns-message",
+        "cache-control": `max-age=${SAFE_SEARCH_TTL}`,
       });
     }
 
@@ -258,9 +281,10 @@ export function createDohApp(deps: DohAppDeps) {
         transport: "doh",
       });
       deps.recorder?.recordQuery("block");
-      return c.body(sinkholeResponse(question), 200, {
+      const blocked = deps.store.blockAnswer(profileId);
+      return c.body(blockedResponse(question, blocked), 200, {
         "content-type": "application/dns-message",
-        "cache-control": `max-age=${SINKHOLE_TTL}`,
+        "cache-control": `max-age=${blocked.ttl}`,
       });
     }
 

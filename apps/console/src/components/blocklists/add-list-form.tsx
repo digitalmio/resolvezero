@@ -6,6 +6,14 @@ import { createBlocklist } from '../../server/policy'
 import { Button } from '../ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
+/** Curated starting points; the URL stays editable after picking one. */
+const SUGGESTED = [
+  { label: 'Adult content', url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn/hosts' },
+  { label: 'Gambling', url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts' },
+  { label: 'Fake news', url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews/hosts' },
+  { label: 'Social', url: 'https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/social/hosts' },
+]
+
 export function AddListForm({ profileId, onDone }: { profileId: string; onDone: () => void }) {
   const queryClient = useQueryClient()
   const [url, setUrl] = useState('')
@@ -29,6 +37,20 @@ export function AddListForm({ profileId, onDone }: { profileId: string; onDone: 
         if (url.trim()) mutation.mutate()
       }}
     >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">Suggested</span>
+        {SUGGESTED.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            onClick={() => setUrl(preset.url)}
+            className="rounded-[var(--radius-sm)] border border-[var(--line-strong)] px-2.5 py-1 text-[11px] text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
           autoFocus

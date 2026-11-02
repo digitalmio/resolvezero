@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { FilteringForm } from '../components/settings/filtering-form'
 import { ResolverForm } from '../components/settings/resolver-form'
 import { Button } from '../components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
@@ -60,16 +61,13 @@ function SettingsPage() {
         </Section>
 
         <Section title="Upstream" icon={<Network size={16} />}>
-          <ResolverForm
-            initial={{
-              upstream: data.upstream,
-              upstreamUrl: data.upstreamUrl,
-              logQueries: data.logQueries,
-              logRetentionDays: data.logRetentionDays,
-            }}
-          />
+          <ResolverForm initial={data} />
         </Section>
       </div>
+
+      <Section title="Filtering" icon={<ShieldCheck size={16} />}>
+        <FilteringForm initial={data} />
+      </Section>
 
       <div className="rz-card p-5">
         <div className="flex items-center gap-2">

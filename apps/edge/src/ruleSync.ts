@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
   edgeConfigState,
+  profileBlockedServices,
   profileRules,
   profiles,
   profileSourceIps,
@@ -83,7 +84,7 @@ export async function startRuleSync(
   }
 
   async function snapshot(): Promise<void> {
-    const [profileRows, ruleRows, sourceIpRows, zoneRows] = await Promise.all([
+    const [profileRows, ruleRows, sourceIpRows, zoneRows, serviceRows] = await Promise.all([
       db
         .select({
           id: profiles.id,
@@ -92,6 +93,11 @@ export async function startRuleSync(
           logQueries: profiles.logQueries,
           upstream: profiles.upstream,
           upstreamUrl: profiles.upstreamUrl,
+          blockMode: profiles.blockMode,
+          blockIpv4: profiles.blockIpv4,
+          blockIpv6: profiles.blockIpv6,
+          blockTtl: profiles.blockTtl,
+          safeSearch: profiles.safeSearch,
         })
         .from(profiles),
       db
@@ -117,6 +123,12 @@ export async function startRuleSync(
           ttl: profileZones.ttl,
         })
         .from(profileZones),
+      db
+        .select({
+          profileId: profileBlockedServices.profileId,
+          service: profileBlockedServices.service,
+        })
+        .from(profileBlockedServices),
     ]);
 
     // Snapshot replaces state atomically. The version was read before this
@@ -132,9 +144,15 @@ export async function startRuleSync(
           logQueries: p.logQueries,
           upstream: p.upstream,
           upstreamUrl: p.upstreamUrl ?? null,
+          blockMode: p.blockMode,
+          blockIpv4: p.blockIpv4 ?? null,
+          blockIpv6: p.blockIpv6 ?? null,
+          blockTtl: p.blockTtl,
+          safeSearch: p.safeSearch,
         }),
       ),
       zoneRows.map((z): ZoneRow => ({ ...z, recordType: z.recordType as ZoneRecordType })),
+      serviceRows,
     );
   }
 

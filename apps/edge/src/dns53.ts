@@ -7,11 +7,12 @@ import type { Recorder } from "./metrics";
 import type { RuleStore } from "./ruleStore";
 import {
   UDP_MAX_PAYLOAD,
+  blockedResponse,
+  cnameResponse,
   decodeQuestion,
   noDataResponse,
   normalizeIp,
   nxdomainResponse,
-  sinkholeResponse,
   servfailResponse,
   refusedResponse,
   truncatedResponse,
@@ -20,6 +21,7 @@ import {
 import { moduleLogger } from "./logger";
 import { localNameAnswer } from "@resolvezero/shared";
 import { matchProbeNonce } from "./probe";
+import { safeSearchTarget } from "./safeSearch";
 import { createRateLimiter, positiveInt, Semaphore } from "./limits";
 import type { Transport } from "./metrics";
 
@@ -423,8 +425,26 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
         transport,
       });
       deps.recorder?.recordQuery("block");
-      return sinkholeResponse(question);
+      return blockedResponse(question, deps.store.blockAnswer(profileId));
     }
+
+    // SafeSearch rewrites: CNAME the search host to the provider's safe endpoint.
+    const safeTarget = safeSearchTarget(deps.store.safeSearchSettings(profileId), question.name);
+    if (safeTarget) {
+      deps.logQuery({
+        profileId,
+        domain: question.name,
+        action: "override",
+        rttMs: null,
+        clientIp: sourceIp,
+        device: null,
+        reason: "safesearch",
+        transport,
+      });
+      deps.recorder?.recordQuery("forward");
+      return cnameResponse(question, safeTarget);
+    }
+
     const remote = explicit ? undefined : deps.store.resolveRemoteDetailed(profileId, question.name);
     if (remote?.action === "block") {
       deps.logQuery({
@@ -439,7 +459,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
         transport,
       });
       deps.recorder?.recordQuery("block");
-      return sinkholeResponse(question);
+      return blockedResponse(question, deps.store.blockAnswer(profileId));
     }
 
     // 5. Synthetic local names (nip.io-style, scoped to .lan/.home.arpa)

@@ -163,6 +163,15 @@ export const profiles = pgTable("profiles", {
   upstream: varchar("upstream", { length: 50 }),
   /** Custom upstream DoH URL — wins over `upstream` preset when set (self-hosters). */
   upstreamUrl: varchar("upstream_url", { length: 255 }),
+  /** How blocked answers are shaped: null | nxdomain | refused | custom. */
+  blockMode: varchar("block_mode", { length: 16 }).notNull().default("null"),
+  /** Custom block answers, only used when block_mode = 'custom'. */
+  blockIpv4: varchar("block_ipv4", { length: 45 }),
+  blockIpv6: varchar("block_ipv6", { length: 45 }),
+  /** TTL for synthesised block answers (seconds). */
+  blockTtl: integer("block_ttl").notNull().default(300),
+  /** SafeSearch engines forced for this profile (CNAME rewrites). */
+  safeSearch: jsonb("safe_search").$type<SafeSearchSettings>().notNull().default(sql`'{}'::jsonb`),
   /** Lowercase label used for DoT: `<dot_id>.dot.resolvezero.com`. */
   dotId: varchar("dot_id", { length: 32 }).unique(),
   /** Owning account (better-auth user id) — nullable until hosted launch flips NOT NULL. */
@@ -173,6 +182,29 @@ export const profiles = pgTable("profiles", {
     .notNull()
     .defaultNow(),
 });
+
+/** Per-engine SafeSearch toggles stored on the profile as jsonb. */
+export interface SafeSearchSettings {
+  google?: boolean;
+  bing?: boolean;
+  duckduckgo?: boolean;
+  youtube?: boolean;
+}
+
+/**
+ * Services a profile blocks wholesale (TikTok, YouTube, …). The catalog lives
+ * in `services.ts`; the edge expands these ids into synthetic block rules.
+ */
+export const profileBlockedServices = pgTable(
+  "profile_blocked_services",
+  {
+    profileId: varchar("profile_id", { length: 8 })
+      .notNull()
+      .references(() => profiles.id, { onUpdate: "cascade", onDelete: "cascade" }),
+    service: varchar("service", { length: 32 }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.profileId, t.service] })],
+);
 
 /**
  * Single-row watermark for edge config propagation. Triggers bump one of the

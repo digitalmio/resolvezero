@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { UPSTREAM_PRESETS } from '../../lib/settings'
 import { updateSettings } from '../../server/dashboard'
+import type { SettingsData } from '../../server/dashboard/types'
 import { Button } from '../ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Switch } from '../ui/switch'
@@ -14,14 +15,7 @@ const PRESET_LABELS: Record<string, string> = {
   quad9: 'Quad9',
 }
 
-export interface ResolverFormValues {
-  upstream: string | null
-  upstreamUrl: string | null
-  logQueries: boolean
-  logRetentionDays: number
-}
-
-export function ResolverForm({ initial }: { initial: ResolverFormValues }) {
+export function ResolverForm({ initial }: { initial: SettingsData }) {
   const queryClient = useQueryClient()
   const [upstream, setUpstream] = useState(initial.upstream ?? 'default')
   const [upstreamUrl, setUpstreamUrl] = useState(initial.upstreamUrl ?? '')
@@ -36,6 +30,13 @@ export function ResolverForm({ initial }: { initial: ResolverFormValues }) {
           upstreamUrl: upstreamUrl.trim() || null,
           logQueries,
           logRetentionDays: Number(retention),
+          // Preserve the filtering settings this form does not edit.
+          blockMode: initial.blockMode,
+          blockIpv4: initial.blockIpv4,
+          blockIpv6: initial.blockIpv6,
+          blockTtl: initial.blockTtl,
+          safeSearch: initial.safeSearch,
+          blockedServices: initial.blockedServices,
         },
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),

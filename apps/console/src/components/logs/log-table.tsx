@@ -10,6 +10,7 @@ function reasonLabel(entry: { reason: string | null; listLabel: string | null })
   if (entry.reason === 'manual') return 'Manual rule'
   if (entry.reason === 'blocklist') return entry.listLabel ?? 'Blocklist'
   if (entry.reason === 'zone') return 'Local zone'
+  if (entry.reason === 'safesearch') return 'SafeSearch'
   return '—'
 }
 

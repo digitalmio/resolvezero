@@ -101,6 +101,12 @@ export interface SettingsData {
   upstreamUrl: string | null;
   logQueries: boolean;
   logRetentionDays: number;
+  blockMode: "null" | "nxdomain" | "refused" | "custom";
+  blockIpv4: string | null;
+  blockIpv6: string | null;
+  blockTtl: number;
+  safeSearch: { google?: boolean; bing?: boolean; duckduckgo?: boolean; youtube?: boolean };
+  blockedServices: string[];
   createdAt: string;
   sourceIps: string[];
   counts: { rules: number; zones: number; lists: number };

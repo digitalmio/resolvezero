@@ -120,6 +120,13 @@
       "when": 1793160000000,
       "tag": "0016_device_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793246400000,
+      "tag": "0017_filtering_modes",
+      "breakpoints": true
     }
   ]
 }

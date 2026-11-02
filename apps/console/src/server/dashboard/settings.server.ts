@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
+  profileBlockedServices,
   profileBlocklists,
   profileRules,
   profileSourceIps,
@@ -15,7 +16,7 @@ import type { CachePurgeResult, SettingsData } from "./types";
 
 export async function loadSettings(ownerUserId: string, profileId?: string): Promise<SettingsData> {
   const profile = await findProfile(ownerUserId, profileId);
-  const [full, sourceIps, rules, zones, lists] = await Promise.all([
+  const [full, sourceIps, rules, zones, lists, services] = await Promise.all([
     db
       .select({
         dohToken: profiles.dohToken,
@@ -23,6 +24,11 @@ export async function loadSettings(ownerUserId: string, profileId?: string): Pro
         upstreamUrl: profiles.upstreamUrl,
         logQueries: profiles.logQueries,
         logRetentionDays: profiles.logRetentionDays,
+        blockMode: profiles.blockMode,
+        blockIpv4: profiles.blockIpv4,
+        blockIpv6: profiles.blockIpv6,
+        blockTtl: profiles.blockTtl,
+        safeSearch: profiles.safeSearch,
         createdAt: profiles.createdAt,
       })
       .from(profiles)
@@ -32,6 +38,10 @@ export async function loadSettings(ownerUserId: string, profileId?: string): Pro
     db.select({ domain: profileRules.domain }).from(profileRules).where(eq(profileRules.profileId, profile.id)),
     db.select({ domain: profileZones.domain }).from(profileZones).where(eq(profileZones.profileId, profile.id)),
     db.select({ id: profileBlocklists.id }).from(profileBlocklists).where(eq(profileBlocklists.profileId, profile.id)),
+    db
+      .select({ service: profileBlockedServices.service })
+      .from(profileBlockedServices)
+      .where(eq(profileBlockedServices.profileId, profile.id)),
   ]);
   const p = full[0];
   if (!p) throw new Error("profile disappeared");
@@ -43,6 +53,12 @@ export async function loadSettings(ownerUserId: string, profileId?: string): Pro
     upstreamUrl: p.upstreamUrl,
     logQueries: p.logQueries,
     logRetentionDays: p.logRetentionDays,
+    blockMode: (p.blockMode as SettingsData["blockMode"]) ?? "null",
+    blockIpv4: p.blockIpv4,
+    blockIpv6: p.blockIpv6,
+    blockTtl: p.blockTtl,
+    safeSearch: p.safeSearch ?? {},
+    blockedServices: services.map((row) => row.service).sort(),
     createdAt: p.createdAt.toISOString(),
     sourceIps: sourceIps.map((row) => row.ip),
     counts: { rules: rules.length, zones: zones.length, lists: lists.length },
@@ -57,15 +73,29 @@ export async function updateSettings(
   profileId?: string,
 ): Promise<SettingsData> {
   const profile = await findProfile(ownerUserId, profileId);
-  await db
-    .update(profiles)
-    .set({
-      upstream: input.upstream,
-      upstreamUrl: input.upstreamUrl,
-      logQueries: input.logQueries,
-      logRetentionDays: input.logRetentionDays,
-    })
-    .where(eq(profiles.id, profile.id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(profiles)
+      .set({
+        upstream: input.upstream,
+        upstreamUrl: input.upstreamUrl,
+        logQueries: input.logQueries,
+        logRetentionDays: input.logRetentionDays,
+        blockMode: input.blockMode,
+        blockIpv4: input.blockIpv4,
+        blockIpv6: input.blockIpv6,
+        blockTtl: input.blockTtl,
+        safeSearch: input.safeSearch,
+      })
+      .where(eq(profiles.id, profile.id));
+
+    await tx.delete(profileBlockedServices).where(eq(profileBlockedServices.profileId, profile.id));
+    if (input.blockedServices.length > 0) {
+      await tx
+        .insert(profileBlockedServices)
+        .values(input.blockedServices.map((service) => ({ profileId: profile.id, service })));
+    }
+  });
   return loadSettings(ownerUserId, profile.id);
 }
 

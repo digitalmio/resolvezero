@@ -220,3 +220,51 @@ describe("zone overrides", () => {
     expect(store.applyDeviceSeen("p2", "device-0")).toBe(true);
   });
 });
+
+describe("blocked services and filtering settings", () => {
+  test("expands blocked services into suffix rules", () => {
+    const store = new RuleStore();
+    store.replaceAll([], [], profiles, [], [{ profileId: "p1", service: "tiktok" }]);
+
+    expect(store.resolve("p1", "www.tiktok.com")).toBe("block");
+    expect(store.resolve("p1", "api2.tiktokv.com")).toBe("block");
+    expect(store.resolve("p1", "example.com")).toBeUndefined();
+    expect(store.resolve("p2", "www.tiktok.com")).toBeUndefined();
+  });
+
+  test("an explicit allow carves a host out of a blocked service", () => {
+    const store = new RuleStore();
+    store.replaceAll(
+      [{ profileId: "p1", domain: "ads.tiktok.com", action: "allow" }],
+      [],
+      profiles,
+      [],
+      [{ profileId: "p1", service: "tiktok" }],
+    );
+
+    expect(store.resolve("p1", "ads.tiktok.com")).toBe("allow");
+    expect(store.resolve("p1", "www.tiktok.com")).toBe("block");
+  });
+
+  test("returns the profile's block answer and SafeSearch settings", () => {
+    const store = new RuleStore();
+    store.replaceAll([], [], [
+      {
+        id: "p1",
+        dohToken: null,
+        logQueries: true,
+        upstream: null,
+        blockMode: "nxdomain",
+        blockTtl: 60,
+        safeSearch: { google: true },
+      },
+      { id: "p2", dohToken: null, logQueries: true, upstream: null },
+    ]);
+
+    expect(store.blockAnswer("p1")).toMatchObject({ mode: "nxdomain", ttl: 60 });
+    expect(store.blockAnswer("p2").mode).toBe("null");
+    expect(store.blockAnswer("unknown").mode).toBe("null");
+    expect(store.safeSearchSettings("p1")).toEqual({ google: true });
+    expect(store.safeSearchSettings("p2")).toEqual({});
+  });
+});

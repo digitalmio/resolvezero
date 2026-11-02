@@ -9,7 +9,7 @@ export interface QueryLogEntry {
   clientIp: string | null;
   device: string | null;
   /** Why the policy action happened. Omitted for ordinary forwards. */
-  reason?: "manual" | "blocklist" | "zone";
+  reason?: "manual" | "blocklist" | "zone" | "safesearch";
   /** profile_blocklists.id for blocklist hits (never the URL). */
   listId?: string;
   transport?: "doh" | "udp" | "tcp" | "dot";

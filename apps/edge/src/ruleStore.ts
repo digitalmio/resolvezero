@@ -1,5 +1,8 @@
 import type { IpUpdateEvent, RuleUpdateEvent, ZoneRecordType, ZoneUpdateEvent } from "@resolvezero/shared";
+import type { SafeSearchSettings } from "@resolvezero/db/schema";
+import { blockedServiceDomains } from "@resolvezero/db";
 import { SuffixFingerprintTable, type FingerprintAction } from "./fingerprint";
+import { DEFAULT_BLOCK_ANSWER, type BlockAnswer, type BlockMode } from "./wire";
 
 export type RuleAction = "block" | "allow";
 
@@ -24,6 +27,19 @@ export interface ProfileRow {
   upstream: string | null;
   /** Custom upstream DoH URL — wins over `upstream` preset when set. */
   upstreamUrl?: string | null;
+  /** Blocked-answer shape for this profile. */
+  blockMode?: string | null;
+  blockIpv4?: string | null;
+  blockIpv6?: string | null;
+  blockTtl?: number | null;
+  /** SafeSearch engines forced for this profile. */
+  safeSearch?: SafeSearchSettings | null;
+}
+
+/** A service the profile blocks wholesale (catalog lives in @resolvezero/db). */
+export interface BlockedServiceRow {
+  profileId: string;
+  service: string;
 }
 
 export interface ZoneEntry {
@@ -80,6 +96,10 @@ export class RuleStore {
   private profileUpstreams = new Map<string, string | null>();
   /** profile_id -> custom upstream DoH URL (wins over preset selector). */
   private profileUpstreamUrls = new Map<string, string | null>();
+  /** profile_id -> how blocked answers are shaped. */
+  private blockAnswers = new Map<string, BlockAnswer>();
+  /** profile_id -> forced SafeSearch engines. */
+  private safeSearch = new Map<string, SafeSearchSettings>();
   /** profile_id -> `${domain}|${type}` -> entry (EXACT domain zones) */
   private zones = new Map<string, Map<string, ZoneEntry>>();
   /** profile_id -> `${suffix}|${type}` -> entry (from '*.' wildcard zones) */
@@ -180,6 +200,7 @@ export class RuleStore {
     sourceIpRows: SourceIpRow[],
     profileRows: ProfileRow[],
     zoneRows: ZoneRow[] = [],
+    serviceRows: BlockedServiceRow[] = [],
   ): void {
     const rules = new Map<string, Map<string, RuleAction>>();
     for (const row of ruleRows) {
@@ -203,6 +224,37 @@ export class RuleStore {
     this.logQueries = new Map(profileRows.map((p) => [p.id, p.logQueries]));
     this.profileUpstreams = new Map(profileRows.map((p) => [p.id, p.upstream ?? null]));
     this.profileUpstreamUrls = new Map(profileRows.map((p) => [p.id, p.upstreamUrl ?? null]));
+    this.blockAnswers = new Map(
+      profileRows.map((p) => [
+        p.id,
+        {
+          mode: normalizeBlockMode(p.blockMode),
+          ipv4: p.blockIpv4 ?? null,
+          ipv6: p.blockIpv6 ?? null,
+          ttl: p.blockTtl ?? DEFAULT_BLOCK_ANSWER.ttl,
+        },
+      ]),
+    );
+    this.safeSearch = new Map(profileRows.map((p) => [p.id, p.safeSearch ?? {}]));
+
+    // Blocked services expand into synthetic suffix rules. Existing rules win,
+    // so an explicit allow can still carve a host out of a service.
+    const servicesByProfile = new Map<string, string[]>();
+    for (const row of serviceRows) {
+      const list = servicesByProfile.get(row.profileId) ?? [];
+      list.push(row.service);
+      servicesByProfile.set(row.profileId, list);
+    }
+    for (const [profileId, services] of servicesByProfile) {
+      let profile = rules.get(profileId);
+      if (!profile) {
+        profile = new Map();
+        rules.set(profileId, profile);
+      }
+      for (const domain of blockedServiceDomains(services)) {
+        if (!profile.has(domain)) profile.set(domain, "block");
+      }
+    }
     this.authorizedSourceIps = new Map(
       sourceIpRows.map((r) => [r.ipAddress, r.profileId]),
     );
@@ -284,6 +336,16 @@ export class RuleStore {
       if (action) return action;
     }
     return undefined;
+  }
+
+  /** Blocked-answer shape for a profile (defaults to the classic sinkhole). */
+  blockAnswer(profileId: string): BlockAnswer {
+    return this.blockAnswers.get(profileId) ?? DEFAULT_BLOCK_ANSWER;
+  }
+
+  /** Forced SafeSearch engines for a profile. */
+  safeSearchSettings(profileId: string): SafeSearchSettings {
+    return this.safeSearch.get(profileId) ?? {};
   }
 
   /**
@@ -492,6 +554,10 @@ export class RuleStore {
     set.add(device);
     return true;
   }
+}
+
+function normalizeBlockMode(raw: string | null | undefined): BlockMode {
+  return raw === "nxdomain" || raw === "refused" || raw === "custom" ? raw : "null";
 }
 
 function normalizeRuleDomain(domain: string): string {

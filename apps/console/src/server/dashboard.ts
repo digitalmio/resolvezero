@@ -151,11 +151,21 @@ export const updateSettings = createServerFn({ method: "POST" })
     if (input.upstreamUrl !== null && typeof input.upstreamUrl !== "string") {
       throw new Error("Invalid upstream URL");
     }
+    if (typeof input.blockMode !== "string") throw new Error("Invalid block mode");
+    if (typeof input.blockTtl !== "number") throw new Error("Invalid block TTL");
+    if (input.blockIpv4 !== null && typeof input.blockIpv4 !== "string") throw new Error("Invalid block IPv4");
+    if (input.blockIpv6 !== null && typeof input.blockIpv6 !== "string") throw new Error("Invalid block IPv6");
     return {
       upstream: input.upstream as "cloudflare" | "google" | "quad9" | null,
       upstreamUrl: input.upstreamUrl as string | null,
       logQueries: input.logQueries,
       logRetentionDays: input.logRetentionDays,
+      blockMode: input.blockMode as "null" | "nxdomain" | "refused" | "custom",
+      blockIpv4: (input.blockIpv4 as string | null) ?? null,
+      blockIpv6: (input.blockIpv6 as string | null) ?? null,
+      blockTtl: input.blockTtl,
+      safeSearch: (input.safeSearch as { google?: boolean; bing?: boolean; duckduckgo?: boolean; youtube?: boolean }) ?? {},
+      blockedServices: Array.isArray(input.blockedServices) ? (input.blockedServices as string[]) : [],
     };
   })
   .handler(async ({ data }) => {

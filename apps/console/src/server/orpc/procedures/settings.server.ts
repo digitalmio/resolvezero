@@ -15,6 +15,17 @@ const settingsInput = z.object({
   upstreamUrl: z.string().max(255).nullable(),
   logQueries: z.boolean(),
   logRetentionDays: z.number().int().min(1).max(365),
+  blockMode: z.enum(["null", "nxdomain", "refused", "custom"]),
+  blockIpv4: z.string().max(45).nullable(),
+  blockIpv6: z.string().max(45).nullable(),
+  blockTtl: z.number().int().min(0).max(86_400),
+  safeSearch: z.object({
+    google: z.boolean().optional(),
+    bing: z.boolean().optional(),
+    duckduckgo: z.boolean().optional(),
+    youtube: z.boolean().optional(),
+  }),
+  blockedServices: z.array(z.string().max(32)),
 });
 
 export const settings = {

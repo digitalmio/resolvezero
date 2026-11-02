@@ -10,6 +10,25 @@ import type { ZoneAnswer } from "./ruleStore";
 
 export const RESPONSE = 0x8000; // QR header bit (dns-packet exposes named flags only)
 export const SINKHOLE_TTL = 300; // 5 min is plenty for filtering churn
+/** CNAME rewrites (SafeSearch) are stable, so they can live a little longer. */
+export const SAFE_SEARCH_TTL = 600;
+
+/** How a profile's blocked answers are shaped. */
+export type BlockMode = "null" | "nxdomain" | "refused" | "custom";
+
+export interface BlockAnswer {
+  mode: BlockMode;
+  ipv4: string | null;
+  ipv6: string | null;
+  ttl: number;
+}
+
+export const DEFAULT_BLOCK_ANSWER: BlockAnswer = {
+  mode: "null",
+  ipv4: null,
+  ipv6: null,
+  ttl: SINKHOLE_TTL,
+};
 
 export interface QuestionInfo {
   id: number;
@@ -30,13 +49,22 @@ export function decodeQuestion(wire: Uint8Array): QuestionInfo {
   };
 }
 
-/** Sinkhole (blocked): A → 0.0.0.0, AAAA → ::, other qtypes → empty NOERROR. */
-export function sinkholeResponse(question: QuestionInfo): WireBytes {
+/**
+ * Sinkhole (blocked): A → 0.0.0.0 (or a custom address), AAAA → ::, other
+ * qtypes → empty NOERROR.
+ */
+export function sinkholeResponse(
+  question: QuestionInfo,
+  opts?: { ttl?: number; ipv4?: string | null; ipv6?: string | null },
+): WireBytes {
+  const ttl = opts?.ttl ?? SINKHOLE_TTL;
+  const ipv4 = opts?.ipv4 ?? "0.0.0.0";
+  const ipv6 = opts?.ipv6 ?? "::";
   const answers =
     question.type === "A"
-      ? [{ name: question.name, type: "A" as const, class: "IN" as const, ttl: SINKHOLE_TTL, data: "0.0.0.0" }]
+      ? [{ name: question.name, type: "A" as const, class: "IN" as const, ttl, data: ipv4 }]
       : question.type === "AAAA"
-        ? [{ name: question.name, type: "AAAA" as const, class: "IN" as const, ttl: SINKHOLE_TTL, data: "::" }]
+        ? [{ name: question.name, type: "AAAA" as const, class: "IN" as const, ttl, data: ipv6 }]
         : [];
 
   return wireEncode({
@@ -45,6 +73,35 @@ export function sinkholeResponse(question: QuestionInfo): WireBytes {
     flags: RESPONSE | AUTHORITATIVE_ANSWER | RECURSION_DESIRED | RECURSION_AVAILABLE,
     questions: [{ name: question.name, type: question.type }],
     answers,
+  });
+}
+
+/**
+ * Blocked answer in the profile's configured shape. `null` keeps the classic
+ * sinkhole, `nxdomain` makes clients fail fast, `refused` is explicit policy,
+ * and `custom` points at an address the operator controls (block page).
+ */
+export function blockedResponse(question: QuestionInfo, answer: BlockAnswer): WireBytes {
+  switch (answer.mode) {
+    case "nxdomain":
+      return nxdomainResponse(question);
+    case "refused":
+      return refusedResponse(question);
+    case "custom":
+      return sinkholeResponse(question, { ttl: answer.ttl, ipv4: answer.ipv4 ?? "0.0.0.0", ipv6: answer.ipv6 ?? "::" });
+    default:
+      return sinkholeResponse(question, { ttl: answer.ttl });
+  }
+}
+
+/** CNAME rewrite (SafeSearch): answer the query with a canonical target. */
+export function cnameResponse(question: QuestionInfo, target: string, ttl = SAFE_SEARCH_TTL): WireBytes {
+  return wireEncode({
+    id: question.id,
+    type: "response",
+    flags: RESPONSE | AUTHORITATIVE_ANSWER | RECURSION_DESIRED | RECURSION_AVAILABLE,
+    questions: [{ name: question.name, type: question.type }],
+    answers: [{ name: question.name, type: "CNAME" as const, class: "IN" as const, ttl, data: target }],
   });
 }
 
