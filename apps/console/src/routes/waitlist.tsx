@@ -59,14 +59,6 @@ function WaitlistPage() {
                     ? 'That address was added earlier. We will email it when an invite is available.'
                     : `We will email ${email.trim().toLowerCase()} when hosted access opens for you.`}
                 </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => join.reset()}>
-                    Use a different email
-                  </Button>
-                  <Button asChild variant="secondary" size="sm">
-                    <Link to="/login">Sign in</Link>
-                  </Button>
-                </div>
               </div>
             ) : (
               <form
