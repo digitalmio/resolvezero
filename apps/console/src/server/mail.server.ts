@@ -45,6 +45,13 @@ function devLoggingEnabled(): boolean {
 function transporter(): Transporter | null {
   if (cached !== undefined) return cached;
 
+  // Explicit local/test escape hatch: log codes instead of sending even when
+  // SMTP is configured (documented in .env.example).
+  if (process.env.EMAIL_OTP_DEV_LOG === "1") {
+    cached = null;
+    return null;
+  }
+
   const url = process.env.SMTP_URL?.trim();
   if (!url) {
     if (!devLoggingEnabled()) {
