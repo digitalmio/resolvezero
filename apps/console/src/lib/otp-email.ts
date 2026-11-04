@@ -1,3 +1,5 @@
+import { EMAIL_LOGO_CID } from "./email-logo";
+
 export type OtpType = "sign-in" | "email-verification" | "forget-password" | "change-email";
 
 export interface OtpEmail {
@@ -45,7 +47,14 @@ export function otpEmail(otp: string, type: OtpType, expiresMinutes = 10): OtpEm
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:480px;background:#ffffff;border:1px solid #e5e5e5;border-radius:10px">
             <tr>
               <td style="padding:28px">
-                <p style="margin:0 0 20px;font-size:12px;font-weight:600;letter-spacing:-0.01em;color:#0b0b0a">ResolveZero</p>
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px">
+                  <tr>
+                    <td style="padding:0 10px 0 0;vertical-align:middle">
+                      <img src="cid:${EMAIL_LOGO_CID}" width="32" height="32" alt="" style="display:block;width:32px;height:32px;border:0;outline:none;text-decoration:none" />
+                    </td>
+                    <td style="vertical-align:middle;font-size:13px;font-weight:600;letter-spacing:-0.01em;color:#0b0b0a">ResolveZero</td>
+                  </tr>
+                </table>
                 <p style="margin:0 0 6px;font-size:11px;line-height:1.5;color:#6f6a62">${heading}</p>
                 <p style="margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:34px;font-weight:600;letter-spacing:0.12em;line-height:1.15;color:#0b0b0a">${otp}</p>
                 <p style="margin:20px 0 0;font-size:12px;line-height:1.7;color:#6f6a62">

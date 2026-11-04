@@ -1,0 +1,39 @@
+/**
+ * The RØ mark as an inline PNG attachment for transactional email.
+ *
+ * Embedded as base64 (2 KB) instead of a file read so the server bundle works
+ * the same in dev, tests, and the hosted build — no asset-path surprises.
+ * Rendered from `assets/logo-square.svg` at 128×128, transparent background.
+ */
+export const EMAIL_LOGO_CID = "rz-logo";
+
+export const EMAIL_LOGO_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAABmJLR0QA/wD/AP+gvaeTAAAHtklEQVR4nO2dW4hWVRTHf2Nq"
+  "TBfTwkpLLbWbURrd0KhIVJKykIrKiiCKHiKK6K6p5UsFFUj3ottD95IeuokkVFNGF7spQXTDEi2jzKlMR78e9nz4OXPOPvv7"
+  "zjr7nBn+P1gPM+c7e62999rnsvba+4AQQgghhBBCCCGEEEIIIYQQQgghhBBCCCGEEEIIIYQQQgghhBBCiD5AW9kGCACWAxNT"
+  "jm0BJgHr4pkjYnI6UPPIQ+WZJmLwHumdvwU4uDzTRNFMxz/6Hy3aAD0DtMYYYApwGDAWN0qHArsBe+I6rxP4G/gT+AH4HvgG"
+  "+ABY013Ou8DJKTq2Aod3n1cYrTrAbGCgpSEp1HAN2An8wo6Gi82uwAzgPGAqcEDO8tYAq3D3/zSeBC7LqacwNuG/dBUlG3Ej"
+  "aBFuBO5ScD3HA/cDf0SuZxdwaMF1y0VZDtBTfgCuB4YZ128CsATYVlK9njaujzlVcYC6/AHcBAzOWa+9gQdw998y6/M47lmi"
+  "slTNAeryOa1fOqcBP1egDnX5ETilxboUTlUdoIZ7TjiriboMAO4GtlfA9p7SBcylgm9rVXaAesNdEFCPXYHnK2BvljxF/tub"
+  "KVV3gBouijbVU4fdce/hZdsZKm9QISfoCw5QA9YDIxLsH4xr0LLta1aWECf+kklfcYAa8GqC/c9WwK5WZXFKn0SlLzlADTip"
+  "wfarKmBPXrnI1zkx6GsO8Ha33ROBzRWwJ69sBA7y9lDB9DUH2AaMwoWRy7bFSpZk9lKB9DUHqAHPVcAGa5mZ1VFZtBpg2ATs"
+  "kUPvGbgn9CQGAcOB44E5wLgcehr5F2g3KqsqfAEcg3OGqOS9AowK1DMQuIVqRulquFvL+7h5iBNw08SDcQGmA4kTZ5gW2Jam"
+  "xHKAOvfk1FeELMONvjQmEcdx3wxuRUNiO8BQXHZN2Z1ew80UXhlg86uR7OkCRgbYY0psBwB4J6dOC/kHfxZPnSPx5xJ8nXG8"
+  "Wbk+wCZTynCAZ3LqtJBLAm19KaOck4H5hnZ9EGiXGWU4QKxLapqEZuhOwD+6l3X/rg143ci2LbjJrWiU4QArc+rMI53AvoF2"
+  "vpBR1qkNv81ylmZkeqB9JsR2gHGU+yp4V6CdR+Dv0OUJ57xsZONNgTaaENsByp69OzrQzqxo42kJ58w2srHwRSSNxHKANmBB"
+  "Tl15ZT1hEdNDcK9kaeV0pJy3J/CfgZ3LA2zsRVnJBaNxId8kdgH2w426S3ERtjJZgWvgLBbgX6ewIOX/m3DPNyc2aVdP9mvl"
+  "pLIc4P2S9LZCyLLs8cD5nuMr2PH0n8TapixKpqW3gAEGivs7GwJ+Mx//YFqYcf6vwdak09LknBwgm+0Zx8cBF3qOfwoszSij"
+  "qymLkmlpZre/O0DIvTuLfTKOz8M/+usRPx8t3b970NnKSf3ZAbpwqVN5Ge45Nha42HP8M8Jm60KDTD7kAA3UcDN2FvvqHOs5"
+  "Npfse3/W6B+Mf1o5lJBnFTOqnBK2Hbiu206rWHvSNi1j8L+/ryTsvjzVyMYnAnT1or9dATbjUqbv7f77O6NyZyf8by7+lTq3"
+  "E/YMcm5LFvXGqq5BVPEK8C5uS5VGrjAqey075xOOxj/6vyZscO2PyzGwsHFWgD4zquYAD5J8uZ1gqOPGhnIfzvjtOYHtuNjI"
+  "tm3Yb5LhpWoO8C0uEbMnbbggi4WOzbgHwlH4F5esImz0n4ndDOfKAH2m5HWAL4FPgK9yltMoadOhTxvq+B63VNv3G19IuM5R"
+  "2O47tChApylWs4EDgI9zllWXTSQnR840Kr8uvlG7muzRPwO385mlTRMydJpjOR08BbtLYdLmSoOwuw1kyRxPm43APTv4poxb"
+  "kY89OgvDOh/glZzl1WU7ydOqlgmYafItvYNCuwFn4zZ96ixIry8SWRjWDjAWu1W7n9D7MjwM+MuofJ/zrcM933xFnKvOj5Q0"
+  "pV9ERpDl6p9LE8q/w7D8qsjlCfWMQhEOMBT4LWe5dVkHDOlRfjsuWlZ2p1lJ0pUuGkXlBF6ds9xGuTOh/JlUd6FpM7KVklPl"
+  "inKAgbgwqkUj/UfyppH3GZVfptya0n7RKDIreFbOshvltYTyBwEfGuqILW9SgUm8otPCl+Ysv1GSFnMOxwVtyu7MZuVzIsf8"
+  "0yjaASZiFzBZTXIK+ijgJyMdMeQbbDKHTIixMOSxnDoa5doUHSNxaVtld26WfIRN3qAZMRxgX1xOn0UDbsTNvScxBHjLSE8R"
+  "8iIV3Nso1tKweTn1NMojHj1twDVUaw/Bf7ptqtxO4RDPAdpx4U6LBt0GHJehbxLuclt25y/DfZCqssRcHXxRTl2N0kH2iCoz"
+  "ZLyKyKldrRLTAdpwHWfVyL6Ejb2I/4GoGm6t5HkU/xEsM2LvDzAZuxDuGtIXUi7MOHetkQ01XBrXrbiFpaVR1ncDX8c95DTD"
+  "TPLtTtpIB71X5A7BPW+kBVo24NYHtOOSWCbjspDrH45Ms+1vdv5wZAduU6eoCzlENrfhH7E3ZJw/EOc8B+KucMNI3wNBVIwh"
+  "wO+kd/4GKv4ZN5GPufhH/83lmSaKZnf86Vu/049HfyU+QFQy7fizedfj3nqEEEIIIYQQQgghhBBCCCGEEEIIIYQQQgghhBBC"
+  "CCGEEEIIIYQQokT+B8om2Tv1PzJMAAAAAElFTkSuQmCC";
