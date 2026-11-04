@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Activity, FileText, House, KeyRound, Layers3, ListFilter, Monitor, Settings } from 'lucide-react'
+import { Activity, Cable, FileText, House, KeyRound, Layers3, ListFilter, Monitor, Settings } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 export type NavItem = {
@@ -21,6 +21,7 @@ export const navGroups: NavGroup[] = [
       { label: 'Overview', to: '/', icon: <Activity size={16} /> },
       { label: 'Devices', to: '/devices', icon: <Monitor size={16} /> },
       { label: 'Local DNS', to: '/local-dns', icon: <House size={16} /> },
+      { label: 'Setup', to: '/setup', icon: <Cable size={16} /> },
     ],
   },
   {

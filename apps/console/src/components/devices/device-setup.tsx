@@ -2,20 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Check, Copy, Download } from 'lucide-react'
 
+import { slugifyDevice } from '../../lib/device'
 import { getDeviceSetup, ensureDotId } from '../../server/device-setup'
 import { Button } from '../ui/button'
 
 const TABS = ['Apple', 'Android', 'Other'] as const
 type Tab = (typeof TABS)[number]
-
-function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 32)
-}
 
 export function DeviceSetup({ onDone }: { onDone: () => void }) {
   const queryClient = useQueryClient()
@@ -33,7 +25,7 @@ export function DeviceSetup({ onDone }: { onDone: () => void }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['device-setup'] }),
   })
 
-  const slug = slugify(device)
+  const slug = slugifyDevice(device)
   const dohUrl = data && slug ? `${data.dohBase}/${slug}/${data.token}` : ''
   const dotHost = dot.data?.hostname ?? data?.dotHostname ?? null
 

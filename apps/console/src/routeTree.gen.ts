@@ -21,6 +21,7 @@ import { Route as LogsRouteImport } from './routes/logs'
 import { Route as OpenapiDotjsonRouteImport } from './routes/openapi[.]json'
 import { Route as RulesRouteImport } from './routes/rules'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as WaitlistRouteImport } from './routes/waitlist'
 import { Route as RpcSplatRouteImport } from './routes/rpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -86,6 +87,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WaitlistRoute = WaitlistRouteImport.update({
   id: '/waitlist',
   path: '/waitlist',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/openapi.json': typeof OpenapiDotjsonRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/waitlist': typeof WaitlistRoute
   '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/openapi.json': typeof OpenapiDotjsonRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/waitlist': typeof WaitlistRoute
   '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/openapi.json': typeof OpenapiDotjsonRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/waitlist': typeof WaitlistRoute
   '/rpc/$': typeof RpcSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/openapi.json'
     | '/rules'
     | '/settings'
+    | '/setup'
     | '/waitlist'
     | '/rpc/$'
     | '/api/auth/$'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/openapi.json'
     | '/rules'
     | '/settings'
+    | '/setup'
     | '/waitlist'
     | '/rpc/$'
     | '/api/auth/$'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/openapi.json'
     | '/rules'
     | '/settings'
+    | '/setup'
     | '/waitlist'
     | '/rpc/$'
     | '/api/auth/$'
@@ -232,6 +244,7 @@ export interface RootRouteChildren {
   OpenapiDotjsonRoute: typeof OpenapiDotjsonRoute
   RulesRoute: typeof RulesRoute
   SettingsRoute: typeof SettingsRoute
+  SetupRoute: typeof SetupRoute
   WaitlistRoute: typeof WaitlistRoute
   RpcSplatRoute: typeof RpcSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -324,6 +337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/waitlist': {
       id: '/waitlist'
       path: '/waitlist'
@@ -368,6 +388,7 @@ const rootRouteChildren: RootRouteChildren = {
   OpenapiDotjsonRoute: OpenapiDotjsonRoute,
   RulesRoute: RulesRoute,
   SettingsRoute: SettingsRoute,
+  SetupRoute: SetupRoute,
   WaitlistRoute: WaitlistRoute,
   RpcSplatRoute: RpcSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

@@ -12,3 +12,13 @@ export function parseDeviceTag(raw: unknown): string | undefined {
   if (typeof raw !== "string" || !DEVICE_TAG_RE.test(raw)) throw new Error("Invalid device tag");
   return raw;
 }
+
+/** Turns a human device name into a valid edge device tag. */
+export function slugifyDevice(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
