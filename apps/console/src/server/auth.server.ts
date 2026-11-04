@@ -49,6 +49,14 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
   },
+  // Fly's proxy sets Fly-Client-IP authoritatively; without an explicit header
+  // Better Auth cannot resolve a client IP behind the platform and rate limits
+  // collapse into one shared per-path bucket.
+  advanced: {
+    ipAddress: {
+      ipAddressHeaders: ["fly-client-ip", "x-forwarded-for"],
+    },
+  },
   // Per-IP throttling for the auth endpoints. The per-address and global email
   // caps live in otp-guard.server.ts (this limiter cannot see recipients).
   rateLimit: {
