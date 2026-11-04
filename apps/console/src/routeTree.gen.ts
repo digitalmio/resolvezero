@@ -15,6 +15,7 @@ import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as BlocklistsRouteImport } from './routes/blocklists'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as DocsRouteImport } from './routes/docs'
+import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as LocalDnsRouteImport } from './routes/local-dns'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LogsRouteImport } from './routes/logs'
@@ -55,6 +56,11 @@ const DevicesRoute = DevicesRouteImport.update({
 const DocsRoute = DocsRouteImport.update({
   id: '/docs',
   path: '/docs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthzRoute = HealthzRouteImport.update({
+  id: '/healthz',
+  path: '/healthz',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LocalDnsRoute = LocalDnsRouteImport.update({
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
   '/docs': typeof DocsRoute
+  '/healthz': typeof HealthzRoute
   '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
   '/docs': typeof DocsRoute
+  '/healthz': typeof HealthzRoute
   '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/blocklists': typeof BlocklistsRoute
   '/devices': typeof DevicesRoute
   '/docs': typeof DocsRoute
+  '/healthz': typeof HealthzRoute
   '/local-dns': typeof LocalDnsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
@@ -180,6 +189,7 @@ export interface FileRouteTypes {
     | '/blocklists'
     | '/devices'
     | '/docs'
+    | '/healthz'
     | '/local-dns'
     | '/login'
     | '/logs'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/blocklists'
     | '/devices'
     | '/docs'
+    | '/healthz'
     | '/local-dns'
     | '/login'
     | '/logs'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/blocklists'
     | '/devices'
     | '/docs'
+    | '/healthz'
     | '/local-dns'
     | '/login'
     | '/logs'
@@ -238,6 +250,7 @@ export interface RootRouteChildren {
   BlocklistsRoute: typeof BlocklistsRoute
   DevicesRoute: typeof DevicesRoute
   DocsRoute: typeof DocsRoute
+  HealthzRoute: typeof HealthzRoute
   LocalDnsRoute: typeof LocalDnsRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
@@ -293,6 +306,13 @@ declare module '@tanstack/react-router' {
       path: '/docs'
       fullPath: '/docs'
       preLoaderRoute: typeof DocsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/healthz': {
+      id: '/healthz'
+      path: '/healthz'
+      fullPath: '/healthz'
+      preLoaderRoute: typeof HealthzRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/local-dns': {
@@ -382,6 +402,7 @@ const rootRouteChildren: RootRouteChildren = {
   BlocklistsRoute: BlocklistsRoute,
   DevicesRoute: DevicesRoute,
   DocsRoute: DocsRoute,
+  HealthzRoute: HealthzRoute,
   LocalDnsRoute: LocalDnsRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,

@@ -1,14 +1,14 @@
-node_modules
-bun.lockb
 .git
+.github
+**/node_modules
+**/dist
+**/target
+agent-rust
+**/*.md
+!README.md
 .env
 .env.*
-*.md
-appstore
-coverage
-**/*.test.ts
-**/*.spec.ts
-docs
-
-# Dev-only edge scripts (session dumping, probes, benchmarks) are never runtime.
-apps/edge/scripts
+!.env.example
+.github
+CODE_REVIEW_*.md
+progress.md

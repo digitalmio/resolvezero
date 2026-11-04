@@ -144,3 +144,30 @@ jobs:
             echo "::error::edge rollback also failed (healthz $code)"
             exit 1
           fi
+
+  deploy-console:
+    name: deploy console
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: migrate
+    # Opt-in until the Fly app and its secrets exist:
+    #   gh variable set DEPLOY_CONSOLE --body true
+    if: vars.DEPLOY_CONSOLE == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: deploy (fra, one machine)
+        run: flyctl deploy --config fly.console.toml --remote-only --ha=false
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: smoke — console healthz
+        run: |
+          for i in $(seq 1 24); do
+            if curl -fsS -m 10 https://resolvezero-console.fly.dev/healthz | grep -q '"ok":true'; then
+              echo "console healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::console failed the post-deploy health check"
+          exit 1
