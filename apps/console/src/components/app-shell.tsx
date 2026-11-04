@@ -1,12 +1,11 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Braces, Command, LogOut, Search, ShieldCheck } from 'lucide-react'
+import { Braces, LogOut, ShieldCheck } from 'lucide-react'
 import { useEffect } from 'react'
 
 import logo from '../assets/logo-square.svg'
 import { authClient } from '../lib/auth-client'
 import type { SessionUser } from '../server/auth'
-import { DnsProbeBadge } from './dns-probe-badge'
 import { accountNav, navGroups, SidebarLink } from './shell/nav'
 import { ProfileMenu } from './shell/profile-menu'
 import { UserMenu } from './shell/user-menu'
@@ -62,16 +61,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
         <ProfileMenu profiles={data?.profiles ?? []} activeId={data?.profileId ?? ''} label={profileLabel} loading={!data} />
 
-        <div className="absolute left-1/2 top-1/2 hidden w-full max-w-[420px] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-[12px] text-[var(--muted)] shadow-[var(--shadow-card)] lg:flex">
-          <Search size={14} />
-          <span>Search domains, rules, devices</span>
-          <kbd className="ml-auto flex items-center gap-0.5 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">
-            <Command size={10} /> K
-          </kbd>
-        </div>
-
         <div className="ml-auto flex items-center gap-2">
-          {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
           <a
             href="/docs"
             target="_blank"

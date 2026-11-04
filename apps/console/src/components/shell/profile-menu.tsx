@@ -1,7 +1,7 @@
-import { Link } from '@tanstack/react-router'
-import { ChevronDown, Settings } from 'lucide-react'
+import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 
+import { setActiveProfileCookie } from '../../lib/profile-cookie'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
+import { CreateProfileDialog, DeleteProfileDialog } from './profile-dialogs'
 
 export function ProfileMenu({
   profiles,
@@ -25,13 +26,16 @@ export function ProfileMenu({
   loading: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [dialog, setDialog] = useState<'create' | 'delete' | null>(null)
 
   function choose(id: string) {
     setOpen(false)
     if (id === activeId) return
-    document.cookie = `rz_profile_id=${encodeURIComponent(id)}; Path=/; Max-Age=31536000; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}`
+    setActiveProfileCookie(id)
     window.location.reload()
   }
+
+  const active = profiles.find((profile) => profile.id === activeId) ?? null
 
   return (
     <div className="relative ml-1 block">
@@ -53,8 +57,8 @@ export function ProfileMenu({
           </button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="start" sideOffset={12} className="w-[188px]">
-          <DropdownMenuLabel>Profile</DropdownMenuLabel>
+        <DropdownMenuContent align="start" sideOffset={12} className="w-[200px]">
+          <DropdownMenuLabel>Profiles</DropdownMenuLabel>
           {profiles.length === 0 ? (
             <p className="px-3 py-2 text-[11px] text-[var(--muted)]">No profiles</p>
           ) : null}
@@ -66,13 +70,23 @@ export function ProfileMenu({
             ))}
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link to="/settings" className="text-[10px] uppercase tracking-[0.06em] text-[var(--muted)]">
-              <Settings size={12} /> Profile settings
-            </Link>
+          <DropdownMenuItem onSelect={() => setDialog('create')}>
+            <Plus size={12} /> New profile
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => setDialog('delete')}
+            disabled={profiles.length <= 1}
+            className="text-[var(--danger)] data-[disabled]:text-[var(--muted)]"
+          >
+            <Trash2 size={12} /> Delete profile
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {dialog === 'create' ? <CreateProfileDialog onClose={() => setDialog(null)} /> : null}
+      {dialog === 'delete' && active ? (
+        <DeleteProfileDialog profile={active} onClose={() => setDialog(null)} />
+      ) : null}
     </div>
   )
 }
