@@ -6,7 +6,7 @@ import { ORPCError } from "@orpc/server";
 import { base } from "../router-base.server";
 import { requireScope } from "../context.server";
 import { auditWrite } from "../audit.server";
-import { loadSettings, updateSettings } from "../../dashboard/settings.server";
+import { loadSettings, unlinkSourceIp, updateSettings } from "../../dashboard/settings.server";
 import { normalizeSettingsInput, UPSTREAM_PRESETS } from "../../../lib/settings";
 import { settingsSchema } from "../schemas.server";
 
@@ -35,6 +35,23 @@ export const settings = {
     .handler(({ context }) => {
       requireScope(context, "read");
       return loadSettings(context.principal.userId, context.profileId);
+    }),
+
+  unlinkSourceIp: base
+    .route({ method: "POST", path: "/settings/source-ips/unlink", summary: "Remove a linked source IP" })
+    .input(z.object({ ip: z.string().min(2).max(45) }))
+    .output(z.object({ ok: z.boolean(), ip: z.string() }))
+    .handler(async ({ input, context }) => {
+      requireScope(context, "read-write");
+      try {
+        const result = await unlinkSourceIp(context.principal.userId, input.ip, context.profileId);
+        await auditWrite(context, { procedure: "settings.unlinkSourceIp", summary: `unlink ${result.ip}` });
+        return result;
+      } catch (err) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: err instanceof Error ? err.message : "Could not unlink IP",
+        });
+      }
     }),
 
   update: base

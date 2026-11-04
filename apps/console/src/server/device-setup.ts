@@ -9,9 +9,16 @@ export interface DeviceSetup {
   token: string;
   /** `<dotId>.dot.resolvezero.com`, or null until generated. */
   dotHostname: string | null;
+  /** Plain-DNS IPv4 addresses offered for linked-IP setup. */
+  dnsIps: string[];
 }
 
 const DOT_SUFFIX = (process.env.DOT_SUFFIX ?? ".dot.resolvezero.com").toLowerCase();
+/** Public resolver IPv4s for the plain-DNS + linked-IP path. */
+const DNS_IPS = (process.env.PUBLIC_DNS_IPS ?? "37.16.24.24,37.16.24.46")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 const DOH_BASE = (process.env.DOH_PUBLIC_URL ?? "https://doh.resolvezero.com").replace(/\/+$/, "");
 /** The DoT hostname is a capability: 20 chars from a CSPRNG. */
 const newDotId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 20);
@@ -44,6 +51,7 @@ export const getDeviceSetup = createServerFn({ method: "GET" }).handler(async ()
     dohBase: `${DOH_BASE}/v1/${profile.id}`,
     token: row.token,
     dotHostname: row.dotId ? `${row.dotId}${DOT_SUFFIX}` : null,
+    dnsIps: DNS_IPS,
   };
 });
 

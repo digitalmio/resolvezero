@@ -173,6 +173,17 @@ export const updateSettings = createServerFn({ method: "POST" })
     return client.settings.update(data);
   });
 
+export const unlinkSourceIp = createServerFn({ method: "POST" })
+  .validator((data: { ip?: string }) => {
+    const ip = String(data?.ip ?? "").trim();
+    if (!ip || ip.length > 45) throw new Error("Enter a valid IP address");
+    return { ip };
+  })
+  .handler(async ({ data }) => {
+    const client = await sessionClient();
+    return client.settings.unlinkSourceIp({ ip: data.ip });
+  });
+
 export const getLogsData = createServerFn({ method: "GET" }).handler(async () => {
   const client = await sessionClient();
   return client.logs();

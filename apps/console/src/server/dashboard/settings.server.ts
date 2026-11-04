@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
   profileBlockedServices,
@@ -8,6 +8,8 @@ import {
   profileZones,
   profiles,
 } from "@resolvezero/db/schema";
+
+import { isIP } from "node:net";
 
 import { edgeBaseUrl } from "./edge.server";
 import { findProfile } from "./profile.server";
@@ -63,6 +65,25 @@ export async function loadSettings(ownerUserId: string, profileId?: string): Pro
     sourceIps: sourceIps.map((row) => row.ip),
     counts: { rules: rules.length, zones: zones.length, lists: lists.length },
   };
+}
+
+/**
+ * Remove one linked source IP from this profile. Linking itself happens at the
+ * edge (`POST /v1/:profile/update-ip`) so the caller has to actually own the
+ * IP; removal only needs ownership of the profile.
+ */
+export async function unlinkSourceIp(
+  ownerUserId: string,
+  ip: string,
+  profileId?: string,
+): Promise<{ ok: true; ip: string }> {
+  const profile = await findProfile(ownerUserId, profileId);
+  const address = ip.trim();
+  if (!address || isIP(address) === 0) throw new Error("Enter a valid IP address");
+  await db
+    .delete(profileSourceIps)
+    .where(and(eq(profileSourceIps.ipAddress, address), eq(profileSourceIps.profileId, profile.id)));
+  return { ok: true, ip: address };
 }
 
 /** Queue an edge-cache purge. Upstream resolver caches remain TTL-bound. */

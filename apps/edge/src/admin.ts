@@ -12,6 +12,7 @@ import { createRateLimiter } from "./limits";
 const log = moduleLogger("admin");
 
 const updateIpLimiter = createRateLimiter(30, 60_000);
+const whoamiLimiter = createRateLimiter(60, 60_000);
 const syncLimiter = createRateLimiter(10, 60_000);
 const syncGlobalLimiter = createRateLimiter(6, 60_000);
 const purgeLimiter = createRateLimiter(10, 60_000);
@@ -19,6 +20,32 @@ const purgeLimiter = createRateLimiter(10, 60_000);
 const PURGE_TYPES = new Set([
   "A", "AAAA", "CNAME", "TXT", "MX", "NS", "SOA", "SRV", "CAA", "HTTPS", "SVCB",
 ]);
+
+/**
+ * Origins allowed to call the IP-linking routes from a browser. The console is
+ * a different origin from the edge, and linking must happen from the user's
+ * browser so the edge sees their real public IP.
+ */
+const CONSOLE_ORIGINS = new Set(
+  (process.env.CONSOLE_ORIGINS ??
+    "https://my.resolvezero.com,http://localhost:3000,http://localhost:3100")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+const CORS_ROUTE_RE = /^\/v1\/[^/]+\/(whoami|update-ip)$/;
+
+function callerIp(c: {
+  req: { header(name: string): string | undefined };
+}): string | undefined {
+  const flyClientIp = c.req.header("fly-client-ip")?.trim();
+  const xff = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+  return (
+    flyClientIp ||
+    (process.env.ALLOW_UNTRUSTED_IP_HEADERS === "1" ? xff : undefined) ||
+    ""
+  );
+}
 
 function bearerOrQuery(c: { req: { query(k: string): string | undefined; header(n: string): string | undefined } }): string | undefined {
   const q = c.req.query("token");
@@ -46,6 +73,47 @@ export interface AdminDeps {
 export function createAdminApp(deps: AdminDeps) {
   const app = new Hono().basePath("/v1");
 
+  // CORS only for the browser-driven IP linking routes. Credentials are never
+  // used (bearer tokens only), so no Access-Control-Allow-Credentials.
+  app.use("*", async (c, next) => {
+    if (!CORS_ROUTE_RE.test(c.req.path)) return next();
+    const origin = c.req.header("origin");
+    if (origin && CONSOLE_ORIGINS.has(origin)) {
+      c.header("access-control-allow-origin", origin);
+      c.header("vary", "Origin");
+      c.header("access-control-allow-methods", "GET,POST,OPTIONS");
+      c.header("access-control-allow-headers", "authorization,content-type");
+      c.header("access-control-max-age", "600");
+    }
+    if (c.req.method === "OPTIONS") return c.body(null, 204);
+    return next();
+  });
+
+  /**
+   * Reports the caller's public IP without linking it. The console's setup
+   * page calls this from the browser, so the edge sees the network that the
+   * resolver will actually see for plain UDP.
+   */
+  app.get(":profileId/whoami", (c) => {
+    const profileId = c.req.param("profileId");
+    if (!deps.store.hasProfile(profileId, bearerOrQuery(c))) {
+      return c.body(null, 404);
+    }
+    const caller = callerIp(c);
+    const ip = caller ? normalizeIp(caller) : "";
+    if (!ip || isIP(ip) === 0) {
+      return c.json({ error: "no valid caller IP" }, 400);
+    }
+    if (!whoamiLimiter(`${ip}:${profileId}`)) {
+      return c.json({ error: "rate limited" }, 429);
+    }
+    return c.json({
+      ip,
+      profileId,
+      linked: deps.store.authorizeSourceIp(ip) === profileId,
+    });
+  });
+
   app.post(":profileId/update-ip", async (c) => {
     const profileId = c.req.param("profileId");
     const token = bearerOrQuery(c);
@@ -61,9 +129,7 @@ export function createAdminApp(deps: AdminDeps) {
       return c.body(null, 404);
     }
 
-    const flyClientIp = c.req.header("fly-client-ip")?.trim();
-    const xff = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
-    const caller = flyClientIp || (process.env.ALLOW_UNTRUSTED_IP_HEADERS === "1" ? xff : undefined) || "";
+    const caller = callerIp(c) ?? "";
     if (!caller) return c.json({ error: "caller IP unavailable" }, 400);
     if (!updateIpLimiter(`${caller}:${profileId}`)) {
       return c.json({ error: "rate limited" }, 429);

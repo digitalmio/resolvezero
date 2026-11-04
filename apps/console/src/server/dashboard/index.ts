@@ -16,7 +16,7 @@ export {
   setRuleEnabled,
   upsertLocalDnsZone,
 } from "./rules.server";
-export { loadSettings, purgeCache } from "./settings.server";
+export { loadSettings, purgeCache, unlinkSourceIp } from "./settings.server";
 export type {
   AnalyticsData,
   BlocklistsData,
