@@ -15,6 +15,7 @@ function GitHubMark() {
 export function SignInCard() {
   const [stage, setStage] = useState<'email' | 'code'>('email')
   const [pending, setPending] = useState(false)
+  const [githubPending, setGithubPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [email, setEmail] = useState('')
@@ -70,7 +71,9 @@ export function SignInCard() {
   }
 
   async function signInWithGitHub() {
-    setPending(true)
+    // Its own flag: the email/code buttons must not read "Sending…" while the
+    // browser is being redirected to GitHub.
+    setGithubPending(true)
     setError(null)
     try {
       const result = await authClient.signIn.social({
@@ -79,11 +82,11 @@ export function SignInCard() {
       })
       if (result.error) {
         setError(result.error.message ?? 'GitHub sign-in failed.')
-        setPending(false)
+        setGithubPending(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'GitHub sign-in failed.')
-      setPending(false)
+      setGithubPending(false)
     }
   }
 
@@ -179,11 +182,11 @@ export function SignInCard() {
                 type="button"
                 variant="secondary"
                 onClick={() => void signInWithGitHub()}
-                disabled={pending}
+                disabled={githubPending || pending}
                 className="mt-4 w-full"
               >
-                <GitHubMark />
-                Continue with GitHub
+                {githubPending ? <LoaderCircle size={16} className="animate-spin" /> : <GitHubMark />}
+                {githubPending ? 'Redirecting…' : 'Continue with GitHub'}
               </Button>
             </div>
 
