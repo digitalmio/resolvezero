@@ -14,27 +14,21 @@ const POLL_MS = 350
 
 type Phase = 'checking' | 'active' | 'inactive'
 
-const phaseMeta: Record<
-  Phase,
-  { label: string; icon: typeof ShieldCheck; className: string; dot: string }
-> = {
+const phaseMeta: Record<Phase, { label: string; icon: typeof ShieldCheck; iconClass: string }> = {
   checking: {
     label: 'Checking DNS',
     icon: LoaderCircle,
-    className: 'border-[var(--line)] bg-[var(--card)] text-[var(--muted)]',
-    dot: 'bg-[var(--warning)]',
+    iconClass: 'text-[var(--muted)]',
   },
   active: {
     label: 'Using ResolveZero',
     icon: ShieldCheck,
-    className: 'border-[var(--line)] bg-[var(--green-soft)] text-[var(--green)]',
-    dot: 'bg-[var(--green)]',
+    iconClass: 'text-[var(--green)]',
   },
   inactive: {
     label: 'Not using ResolveZero',
     icon: WifiOff,
-    className: 'border-[#eadfc4] bg-[#fbf6e9] text-[var(--warning)]',
-    dot: 'bg-[var(--warning)]',
+    iconClass: 'text-[var(--warning)]',
   },
 }
 
@@ -102,10 +96,7 @@ export function DnsProbeBadge({ profileId }: { profileId: string }) {
     <span
       role="status"
       aria-live="polite"
-      className={[
-        'flex h-8 items-center gap-2 rounded-full border px-3 text-[11px] font-medium',
-        meta.className,
-      ].join(' ')}
+      className="flex h-8 items-center gap-1.5 text-[11px] text-[var(--muted)]"
       title={
         phase === 'active'
           ? 'This browser resolved the ResolveZero canary through our DNS.'
@@ -114,17 +105,13 @@ export function DnsProbeBadge({ profileId }: { profileId: string }) {
             : 'Checking which resolver this browser is using.'
       }
     >
-      {phase === 'checking' ? (
-        <Icon size={12} className="animate-spin" />
-      ) : (
-        <span className={['size-1.5 rounded-full', meta.dot].join(' ')} />
-      )}
+      <Icon size={12} className={[meta.iconClass, phase === 'checking' ? 'animate-spin' : ''].join(' ')} />
       <span className="hidden sm:inline">{meta.label}</span>
       {phase !== 'checking' ? (
         <button
           type="button"
           onClick={() => setAttempt((value) => value + 1)}
-          className="-mr-1 rounded-full p-0.5 opacity-60 transition-opacity hover:opacity-100"
+          className="rounded-[var(--radius-sm)] p-0.5 text-[var(--muted)] opacity-60 transition-opacity hover:opacity-100"
           aria-label="Check DNS again"
           title="Check DNS again"
         >
