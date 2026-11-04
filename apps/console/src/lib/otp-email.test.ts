@@ -52,8 +52,10 @@ describe("otpEmail (precision template)", () => {
   });
 });
 
-describe("otpEmail logo", () => {
-  test("references the inline CID image", () => {
-    expect(otpEmail("1", "sign-in").html).toContain('src="cid:rz-logo"');
+describe("otpEmail brand mark", () => {
+  test("renders the mark as text, not a remote/inline image", () => {
+    const { html } = otpEmail("1", "sign-in");
+    expect(html).toContain("R&Oslash;");
+    expect(html).not.toContain("<img");
   });
 });

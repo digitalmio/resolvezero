@@ -2,7 +2,6 @@ import "@tanstack/react-start/server-only";
 
 import nodemailer, { type Transporter } from "nodemailer";
 
-import { EMAIL_LOGO_BASE64, EMAIL_LOGO_CID } from "../lib/email-logo";
 import { otpEmail, type OtpType } from "../lib/otp-email";
 
 let cached: Transporter | null | undefined;
@@ -96,14 +95,5 @@ export async function sendOtpEmail(
     subject: message.subject,
     text: message.text,
     html: message.html,
-    attachments: [
-      {
-        filename: "resolvezero.png",
-        content: Buffer.from(EMAIL_LOGO_BASE64, "base64"),
-        cid: EMAIL_LOGO_CID,
-        contentType: "image/png",
-        contentDisposition: "inline",
-      },
-    ],
   });
 }

@@ -1,5 +1,3 @@
-import { EMAIL_LOGO_CID } from "./email-logo";
-
 export type OtpType = "sign-in" | "email-verification" | "forget-password" | "change-email";
 
 export interface OtpEmail {
@@ -49,10 +47,8 @@ export function otpEmail(otp: string, type: OtpType, expiresMinutes = 10): OtpEm
               <td style="padding:28px">
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px">
                   <tr>
-                    <td style="padding:0 10px 0 0;vertical-align:middle">
-                      <img src="cid:${EMAIL_LOGO_CID}" width="32" height="32" alt="" style="display:block;width:32px;height:32px;border:0;outline:none;text-decoration:none" />
-                    </td>
-                    <td style="vertical-align:middle;font-size:13px;font-weight:600;letter-spacing:-0.01em;color:#0b0b0a">ResolveZero</td>
+                    <td width="36" height="36" align="center" valign="middle" style="width:36px;height:36px;background:#0b0b0a;border-radius:10px;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;letter-spacing:-0.02em;text-align:center;line-height:36px;mso-line-height-rule:exactly">R&Oslash;</td>
+                    <td style="padding-left:10px;vertical-align:middle;font-size:13px;font-weight:600;letter-spacing:-0.01em;color:#0b0b0a">ResolveZero</td>
                   </tr>
                 </table>
                 <p style="margin:0 0 6px;font-size:11px;line-height:1.5;color:#6f6a62">${heading}</p>
