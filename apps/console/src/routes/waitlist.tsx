@@ -1,94 +1,164 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeft, ExternalLink, Server } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { ArrowLeft, ArrowUpRight, CheckCircle2, Server } from 'lucide-react'
+import { useState } from 'react'
 
 import logo from '../assets/logo-square.svg'
 import { Button } from '../components/ui/button'
+import { joinWaitlist } from '../server/waitlist'
 
 export const Route = createFileRoute('/waitlist')({ component: WaitlistPage })
 
 function WaitlistPage() {
+  const [email, setEmail] = useState('')
+  const [website, setWebsite] = useState('')
+
+  const join = useMutation({
+    mutationFn: () => joinWaitlist({ data: { email, website } }),
+  })
+
+  const submitted = join.isSuccess
+  const already = join.data?.already === true
+
   return (
     <div className="flex min-h-screen flex-col bg-[var(--paper)] text-[var(--ink)]">
-      <header className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4 sm:px-8">
-        <Link to="/login" className="flex items-center gap-3" aria-label="ResolveZero sign in">
-          <img src={logo} alt="" className="size-9" />
-          <span className="rz-font-display text-[18px] font-bold uppercase tracking-[-0.035em]">
-            ResolveZero
-          </span>
-        </Link>
-        <Link to="/login" className="rz-pill hover:text-[var(--ink)]">
-          <ArrowLeft size={11} /> Back to sign in
-        </Link>
+      <header className="border-b border-[var(--line)] bg-[var(--card)]">
+        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-5 sm:px-8">
+          <Link to="/login" className="flex items-center gap-2.5" aria-label="ResolveZero sign in">
+            <img src={logo} alt="" className="size-9" />
+            <span className="text-[13px] font-semibold tracking-[-0.01em]">ResolveZero</span>
+          </Link>
+          <Button asChild variant="secondary" size="sm">
+            <Link to="/login">
+              <ArrowLeft size={12} /> Back to sign in
+            </Link>
+          </Button>
+        </div>
       </header>
 
-      <main className="grid flex-1 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="relative flex flex-col justify-between overflow-hidden border-b border-[var(--line)] px-5 py-12 sm:px-8 lg:border-b-0 lg:border-r lg:px-14 lg:py-16 xl:px-20">
-          <div>
-            <p className="rz-eyebrow">Early access / 001</p>
-            <h1 className="rz-display mt-5 max-w-[760px] text-[clamp(3.4rem,7.4vw,7rem)]">
-              Hosted access is not open yet.
-            </h1>
-            <p className="mt-6 max-w-[480px] text-[14px] leading-7 text-[var(--muted)]">
-              ResolveZero accounts are being rolled out gradually. The hosted service is not taking signups on this page yet.
-            </p>
-          </div>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-12 sm:px-8 lg:py-16">
+        <p className="rz-eyebrow">Early access</p>
+        <h1 className="rz-page-title mt-4 max-w-[640px]">Hosted access is opening gradually.</h1>
+        <p className="mt-4 max-w-[560px] text-[13px] leading-6 text-[var(--muted)]">
+          Leave your email and we&apos;ll send one message when your invite is ready. One row per address — no newsletter,
+          no marketing list.
+        </p>
 
-          <div className="mt-12 border-t border-[var(--line)] pt-5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
-            Self-host today · Hosted soon · Open source
-          </div>
-        </section>
-
-        <section className="flex items-center justify-center px-5 py-10 sm:px-8 lg:px-12">
-          <div className="w-full max-w-[430px]">
-            <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--card)] p-7 shadow-[var(--shadow-card)] sm:p-8">
-              <p className="rz-eyebrow">Two paths</p>
-              <h2 className="rz-display mt-3 text-[2.5rem]">Run it yourself.</h2>
-              <p className="mt-3 text-[12px] leading-6 text-[var(--muted)]">
-                The edge and console are self-hostable now. Bring Postgres and a GitHub OAuth app; the README covers the rest.
-              </p>
-
-              <div className="mt-6 border border-[var(--line)] bg-[var(--paper)] p-4">
-                <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
-                  <Server size={14} className="text-[var(--brand)]" />
-                  Self-host
+        <div className="mt-9 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
+          <div className="rz-card p-6">
+            {submitted ? (
+              <div className="flex h-full flex-col justify-center py-2">
+                <span className="flex size-9 items-center justify-center rounded-full bg-[var(--green-soft)] text-[var(--green)]">
+                  <CheckCircle2 size={18} />
+                </span>
+                <h2 className="mt-4 text-[15px] font-semibold">
+                  {already ? 'You are already on the list' : 'You are on the list'}
+                </h2>
+                <p className="mt-1.5 text-[12px] leading-6 text-[var(--muted)]">
+                  {already
+                    ? 'That address was added earlier. We will email it when an invite is available.'
+                    : `We will email ${email.trim().toLowerCase()} when hosted access opens for you.`}
                 </p>
-                <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
-                  Clone the repo, run migrations, start the edge and console. No waitlist.
-                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => join.reset()}>
+                    Use a different email
+                  </Button>
+                  <Button asChild variant="secondary" size="sm">
+                    <Link to="/login">Sign in</Link>
+                  </Button>
+                </div>
               </div>
+            ) : (
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  if (!join.isPending) join.mutate()
+                }}
+              >
+                <div>
+                  <h2 className="text-[15px] font-semibold">Join the waitlist</h2>
+                  <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                    Hosted accounts are invite-only while we onboard the first networks.
+                  </p>
+                </div>
 
-              <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-                <Button asChild className="flex-1">
-                  <a
-                    href="https://github.com/digitalmio/resolvezero"
-                    target="_blank"
-                    rel="noreferrer"
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="waitlist-email"
+                    className="block text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]"
                   >
-                    <ExternalLink size={13} /> View on GitHub
-                  </a>
-                </Button>
-                <Button asChild variant="secondary" className="flex-1">
-                  <Link to="/login">
-                    <ArrowLeft size={13} /> Sign in
-                  </Link>
-                </Button>
-              </div>
-            </div>
+                    Email address
+                  </label>
+                  <input
+                    id="waitlist-email"
+                    type="email"
+                    required
+                    autoComplete="email"
+                    inputMode="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    className="rz-input w-full"
+                  />
+                </div>
 
-            <p className="mt-4 text-center text-[10px] leading-5 text-[var(--muted)]">
-              Already have access?{' '}
-              <Link to="/login" className="font-semibold text-[var(--ink)] underline decoration-[var(--brand)] decoration-2 underline-offset-4">
-                Sign in
-              </Link>
-              .
-            </p>
+                {/* Honeypot: hidden from people, irresistible to bots. */}
+                <div className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
+                  <label htmlFor="waitlist-website">Website</label>
+                  <input
+                    id="waitlist-website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={website}
+                    onChange={(event) => setWebsite(event.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="submit" disabled={join.isPending || !email.trim()}>
+                    {join.isPending ? 'Adding…' : 'Join the waitlist'}
+                  </Button>
+                  <span className="text-[10px] text-[var(--muted)]">One email, when it matters.</span>
+                </div>
+
+                {join.isError ? (
+                  <p role="alert" className="text-[11px] text-[var(--danger)]">
+                    {join.error.message}
+                  </p>
+                ) : null}
+              </form>
+            )}
           </div>
-        </section>
+
+          <div className="rz-card flex flex-col p-6">
+            <span className="flex size-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--brand-soft)] text-[var(--brand)]">
+              <Server size={16} />
+            </span>
+            <h2 className="mt-4 text-[15px] font-semibold">Prefer to run it yourself?</h2>
+            <p className="mt-1.5 text-[12px] leading-6 text-[var(--muted)]">
+              The edge and console are self-hostable today. Bring Postgres and a GitHub OAuth app; the README covers the
+              rest. No waitlist.
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row lg:mt-auto lg:pt-5">
+              <Button asChild variant="secondary" className="flex-1">
+                <a href="https://github.com/digitalmio/resolvezero" target="_blank" rel="noreferrer">
+                  <ArrowUpRight size={13} /> View on GitHub
+                </a>
+              </Button>
+              <Button asChild variant="secondary" className="flex-1">
+                <Link to="/login">Sign in</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
       </main>
 
-      <footer className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)] sm:px-8">
-        <span>Self-hosted friendly · open-source console</span>
-        <span className="hidden sm:inline">DNS / Privacy</span>
+      <footer className="border-t border-[var(--line)]">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-5 py-4 text-[10px] uppercase tracking-[0.06em] text-[var(--muted)] sm:px-8">
+          <span>Self-hosted friendly · open-source console</span>
+          <span>DNS / Privacy</span>
+        </div>
       </footer>
     </div>
   )

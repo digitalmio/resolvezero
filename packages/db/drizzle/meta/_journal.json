@@ -127,6 +127,13 @@
       "when": 1793246400000,
       "tag": "0017_filtering_modes",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793332800000,
+      "tag": "0018_waitlist",
+      "breakpoints": true
     }
   ]
 }

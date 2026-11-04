@@ -207,6 +207,15 @@ export const profileBlockedServices = pgTable(
 );
 
 /**
+ * Public waitlist for hosted access. Pre-account only: one row per email,
+ * lowercased, no marketing consent beyond "we will email you when invited".
+ */
+export const waitlist = pgTable("waitlist", {
+  email: varchar("email", { length: 254 }).primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Single-row watermark for edge config propagation. Triggers bump one of the
  * counters in the same transaction as the config write; edges poll this row
  * (LISTEN/NOTIFY is intentionally not used). `id` is always true.
