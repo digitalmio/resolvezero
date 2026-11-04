@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { setActiveProfileCookie } from '../../lib/profile-cookie'
@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu'
-import { CreateProfileDialog, DeleteProfileDialog } from './profile-dialogs'
+import { CreateProfileDialog } from './profile-dialogs'
 
 export function ProfileMenu({
   profiles,
@@ -26,7 +26,7 @@ export function ProfileMenu({
   loading: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const [dialog, setDialog] = useState<'create' | 'delete' | null>(null)
+  const [dialog, setDialog] = useState<'create' | null>(null)
 
   function choose(id: string) {
     setOpen(false)
@@ -34,8 +34,6 @@ export function ProfileMenu({
     setActiveProfileCookie(id)
     window.location.reload()
   }
-
-  const active = profiles.find((profile) => profile.id === activeId) ?? null
 
   return (
     <div className="relative ml-1 block">
@@ -73,20 +71,10 @@ export function ProfileMenu({
           <DropdownMenuItem onSelect={() => setDialog('create')}>
             <Plus size={12} /> New profile
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => setDialog('delete')}
-            disabled={profiles.length <= 1}
-            className="text-[var(--danger)] data-[disabled]:text-[var(--muted)]"
-          >
-            <Trash2 size={12} /> Delete profile
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
       {dialog === 'create' ? <CreateProfileDialog onClose={() => setDialog(null)} /> : null}
-      {dialog === 'delete' && active ? (
-        <DeleteProfileDialog profile={active} onClose={() => setDialog(null)} />
-      ) : null}
     </div>
   )
 }

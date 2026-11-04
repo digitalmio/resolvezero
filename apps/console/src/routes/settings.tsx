@@ -3,9 +3,10 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { CheckCircle2, Copy, KeyRound, Network, ShieldCheck, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { getSettingsData, purgeCache } from '../server/dashboard'
+import { getOverview, getSettingsData, purgeCache } from '../server/dashboard'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { DeleteProfileButton } from '../components/settings/delete-profile'
 import { FilteringForm } from '../components/settings/filtering-form'
 import { ResolverForm } from '../components/settings/resolver-form'
 import { Button } from '../components/ui/button'
@@ -29,6 +30,8 @@ function SettingsPage() {
     queryKey: ['settings'],
     queryFn: () => getSettingsData(),
   })
+  // Cached from the app shell; used to disable deleting the last profile.
+  const { data: overview } = useQuery({ queryKey: ['overview'], queryFn: () => getOverview() })
   const [domain, setDomain] = useState('')
   const [recordType, setRecordType] = useState('')
   const purge = useMutation({
@@ -148,6 +151,24 @@ function SettingsPage() {
             <Copy size={12} /> API key management lands with the public API.
           </p>
         </div>
+
+        <div className="rz-card border-[#e7b4ae] p-5">
+          <div className="flex items-center gap-2">
+            <Trash2 size={16} className="text-[var(--danger)]" />
+            <h2 className="text-[14px] font-semibold">Delete profile</h2>
+          </div>
+          <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+            Permanently removes <span className="font-medium text-[var(--ink)]">{data.profileName}</span> with its rules,
+            blocklists, local records, devices and stats. Linked devices stop resolving immediately.
+          </p>
+          <div className="mt-4">
+            <DeleteProfileButton
+              profile={{ id: data.profileId, name: data.profileName }}
+              canDelete={(overview?.profiles.length ?? 0) > 1}
+            />
+          </div>
+        </div>
+
       </div>
     </div>
   )

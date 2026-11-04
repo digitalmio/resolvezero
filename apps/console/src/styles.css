@@ -303,3 +303,16 @@ textarea:focus-visible,
     background: var(--paper);
   }
 }
+
+/*
+ * Radix menu/select items get focus programmatically for keyboard navigation.
+ * The global :focus-visible ring draws an orange box that is clipped to two
+ * horizontal lines inside overflow-hidden menus, so suppress it there: the
+ * highlighted background is the affordance.
+ */
+[role="menuitem"]:focus-visible,
+[role="menuitemradio"]:focus-visible,
+[role="menuitemcheckbox"]:focus-visible,
+[role="option"]:focus-visible {
+  outline: none;
+}
