@@ -13,16 +13,24 @@ const HEADINGS: Record<OtpType, string> = {
   "change-email": "Confirm your new email",
 };
 
+/**
+ * Transactional OTP mail. Kept to inline styles + a table layout so it renders
+ * in Gmail/Outlook/Apple Mail; no CSS variables, no external assets (images
+ * are blocked by default in most clients).
+ */
 export function otpEmail(otp: string, type: OtpType, expiresMinutes = 10): OtpEmail {
   const heading = HEADINGS[type] ?? "Your code";
   const subject = `${otp} is your ResolveZero code`;
 
   const text = [
+    "ResolveZero",
+    "",
     heading,
     "",
     `Code: ${otp}`,
     "",
     `It expires in ${expiresMinutes} minutes and can be used once.`,
+    "Never share this code — ResolveZero will never ask you for it.",
     "If you did not request this, you can ignore this email.",
     "",
     "ResolveZero — your DNS, your rules.",
@@ -30,20 +38,28 @@ export function otpEmail(otp: string, type: OtpType, expiresMinutes = 10): OtpEm
 
   const html = `<!doctype html>
 <html>
-  <body style="margin:0;padding:24px;background:#f2efe6;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;color:#0b0b0a">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;margin:0 auto;background:#fffdf8;border:1px solid rgba(11,11,10,0.28);border-top:4px solid #ff4d00">
+  <body style="margin:0;padding:24px;background:#faf9f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0b0b0a">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td style="padding:28px">
-          <p style="margin:0 0 6px;font-size:9px;letter-spacing:0.16em;text-transform:uppercase;color:#6b675e">${heading}</p>
-          <p style="margin:0;font-size:34px;font-weight:800;letter-spacing:0.18em;font-variant-numeric:tabular-nums">${otp}</p>
-          <p style="margin:18px 0 0;font-size:12px;line-height:1.7;color:#6b675e">
-            It expires in ${expiresMinutes} minutes and can be used once.<br />
-            If you did not request this, you can ignore this email.
-          </p>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:480px;background:#ffffff;border:1px solid #e5e5e5;border-radius:10px">
+            <tr>
+              <td style="padding:28px">
+                <p style="margin:0 0 20px;font-size:12px;font-weight:600;letter-spacing:-0.01em;color:#0b0b0a">ResolveZero</p>
+                <p style="margin:0 0 6px;font-size:11px;line-height:1.5;color:#6f6a62">${heading}</p>
+                <p style="margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:34px;font-weight:600;letter-spacing:0.12em;line-height:1.15;color:#0b0b0a">${otp}</p>
+                <p style="margin:20px 0 0;font-size:12px;line-height:1.7;color:#6f6a62">
+                  It expires in ${expiresMinutes} minutes and can be used once.<br />
+                  Never share this code — ResolveZero will never ask you for it.<br />
+                  If you did not request this, you can ignore this email.
+                </p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:16px 0 0;font-size:10px;line-height:1.6;color:#6f6a62">ResolveZero — your DNS, your rules.</p>
         </td>
       </tr>
     </table>
-    <p style="max-width:480px;margin:16px auto 0;font-size:10px;color:#6b675e">ResolveZero — your DNS, your rules.</p>
   </body>
 </html>`;
 

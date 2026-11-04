@@ -31,3 +31,23 @@ describe("otpEmail", () => {
     expect(text).toContain("ResolveZero");
   });
 });
+
+describe("otpEmail (precision template)", () => {
+  test("carries the configured expiry into both parts", () => {
+    const { text, html } = otpEmail("555111", "sign-in", 3);
+    expect(text).toContain("3 minutes");
+    expect(html).toContain("3 minutes");
+  });
+
+  test("includes the anti-phishing line", () => {
+    expect(otpEmail("1", "sign-in").text).toContain("Never share this code");
+    expect(otpEmail("1", "sign-in").html).toContain("Never share this code");
+  });
+
+  test("uses the current palette instead of the old orange accent", () => {
+    const { html } = otpEmail("1", "sign-in");
+    expect(html).toContain("#faf9f7");
+    expect(html).not.toContain("#ff4d00");
+    expect(html).not.toContain("#fffdf8");
+  });
+});

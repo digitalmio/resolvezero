@@ -11,6 +11,33 @@ export function mailConfigured(): boolean {
   return Boolean(process.env.SMTP_URL?.trim());
 }
 
+/**
+ * Loud startup warning when a production build would be unable to deliver any
+ * OTP. The send path throws per request, but the sign-in screen answers 200 to
+ * avoid leaking account existence, so without this the failure is invisible.
+ */
+export function warnIfMailMisconfigured(): void {
+  const production = process.env.NODE_ENV === "production";
+  if (!production) return;
+  if (!mailConfigured()) {
+    console.error(
+      JSON.stringify({
+        level: "warn",
+        msg: "SMTP_URL is not set; email OTP sign-in cannot deliver codes",
+      }),
+    );
+    return;
+  }
+  if (!process.env.EMAIL_FROM?.trim()) {
+    console.error(
+      JSON.stringify({
+        level: "warn",
+        msg: "EMAIL_FROM is not set; falling back to no-reply@resolvezero.local, which most providers reject",
+      }),
+    );
+  }
+}
+
 function devLoggingEnabled(): boolean {
   return process.env.EMAIL_OTP_DEV_LOG === "1" || process.env.NODE_ENV !== "production";
 }
@@ -38,8 +65,13 @@ function transporter(): Transporter | null {
  * the flow is testable without a mail server. Production refuses to send (and
  * fails loudly) when SMTP is missing.
  */
-export async function sendOtpEmail(to: string, otp: string, type: OtpType): Promise<void> {
-  const message = otpEmail(otp, type);
+export async function sendOtpEmail(
+  to: string,
+  otp: string,
+  type: OtpType,
+  expiresMinutes = 10,
+): Promise<void> {
+  const message = otpEmail(otp, type, expiresMinutes);
   const from = process.env.EMAIL_FROM?.trim() || "ResolveZero <no-reply@resolvezero.local>";
   const transport = transporter();
 

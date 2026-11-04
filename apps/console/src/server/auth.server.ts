@@ -9,7 +9,7 @@ import { db } from "@resolvezero/db/client";
 import { account, apikey, session, user, verification } from "@resolvezero/db/schema";
 
 import { requiredEnv } from "./env.server";
-import { sendOtpEmail } from "./mail.server";
+import { sendOtpEmail, warnIfMailMisconfigured } from "./mail.server";
 import { allowOtpSend } from "./otp-guard.server";
 
 export type SessionUser = {
@@ -20,6 +20,10 @@ export type SessionUser = {
 };
 
 const isProduction = process.env.NODE_ENV === "production";
+/** Shared by Better Auth's expiry and the copy shown in the email. */
+const OTP_TTL_SECONDS = Number(process.env.EMAIL_OTP_TTL_SECONDS ?? 600);
+
+warnIfMailMisconfigured();
 
 export const auth = betterAuth({
   appName: "ResolveZero",
@@ -61,7 +65,7 @@ export const auth = betterAuth({
     // or reset. The code is stored hashed and expires quickly.
     emailOTP({
       otpLength: 6,
-      expiresIn: Number(process.env.EMAIL_OTP_TTL_SECONDS ?? 600),
+      expiresIn: OTP_TTL_SECONDS,
       allowedAttempts: 5,
       storeOTP: "hashed",
       // Hosted can close signup (AUTH_ALLOW_SIGNUP=0) and stay invite-only.
@@ -72,7 +76,7 @@ export const auth = betterAuth({
         // whether an account exists.
         if (!allowOtpSend(email)) return;
         // Fire-and-forget: keeps the endpoint response time independent of SMTP.
-        void sendOtpEmail(email, otp, type).catch((err) =>
+        void sendOtpEmail(email, otp, type, Math.max(1, Math.round(OTP_TTL_SECONDS / 60))).catch((err) =>
           console.error(
             JSON.stringify({
               level: "error",
