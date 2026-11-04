@@ -140,14 +140,11 @@ function WaitlistPage() {
               The edge and console are self-hostable today. Bring Postgres and a GitHub OAuth app; the README covers the
               rest. No waitlist.
             </p>
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row lg:mt-auto lg:pt-5">
-              <Button asChild variant="secondary" className="flex-1">
+            <div className="mt-5 lg:mt-auto lg:pt-5">
+              <Button asChild variant="secondary" className="w-full sm:w-auto">
                 <a href="https://github.com/digitalmio/resolvezero" target="_blank" rel="noreferrer">
                   <ArrowUpRight size={13} /> View on GitHub
                 </a>
-              </Button>
-              <Button asChild variant="secondary" className="flex-1">
-                <Link to="/login">Sign in</Link>
               </Button>
             </div>
           </div>
