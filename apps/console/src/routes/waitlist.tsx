@@ -115,12 +115,9 @@ function WaitlistPage() {
                   />
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="submit" disabled={join.isPending || !email.trim()}>
-                    {join.isPending ? 'Adding…' : 'Join the waitlist'}
-                  </Button>
-                  <span className="text-[10px] text-[var(--muted)]">One email, when it matters.</span>
-                </div>
+                <Button type="submit" disabled={join.isPending || !email.trim()}>
+                  {join.isPending ? 'Adding…' : 'Join the waitlist'}
+                </Button>
 
                 {join.isError ? (
                   <p role="alert" className="text-[11px] text-[var(--danger)]">
