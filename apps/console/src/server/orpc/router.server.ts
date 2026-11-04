@@ -11,7 +11,7 @@ import { settings } from "./procedures/settings.server";
 
 /** Identity probe: lets a client confirm its key and profile binding. */
 const whoami = base
-  .route({ method: "GET", path: "/whoami", summary: "Who is calling?" })
+  .route({ method: "GET", path: "/whoami", tags: ["Account"], summary: "Who is calling?" })
   .output(
     z.object({
       via: z.enum(["session", "key"]),

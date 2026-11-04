@@ -1,6 +1,6 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, Command, LogOut, Search, ShieldCheck } from 'lucide-react'
+import { Braces, Command, LogOut, Search, ShieldCheck } from 'lucide-react'
 import { useEffect } from 'react'
 
 import logo from '../assets/logo-square.svg'
@@ -72,10 +72,16 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
         <div className="ml-auto flex items-center gap-2">
           {data ? <DnsProbeBadge profileId={data.profileId} /> : null}
-          <span className="hidden h-8 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-3 text-[11px] font-medium text-[var(--muted)] md:inline-flex">
-            <Activity size={12} className="text-[var(--green)]" />
-            {queriesLabel} queries / 24h
-          </span>
+          <a
+            href="/docs"
+            target="_blank"
+            rel="noreferrer"
+            title="Open the API reference"
+            className="hidden h-8 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-3 text-[11px] font-medium text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)] md:inline-flex"
+          >
+            <Braces size={12} className="text-[var(--brand)]" />
+            API docs
+          </a>
         </div>
       </header>
 

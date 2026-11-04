@@ -30,7 +30,7 @@ const settingsInput = z.object({
 
 export const settings = {
   get: base
-    .route({ method: "GET", path: "/settings", summary: "Profile settings and capacity" })
+    .route({ method: "GET", path: "/settings", tags: ["Settings"], summary: "Profile settings and capacity" })
     .output(settingsSchema)
     .handler(({ context }) => {
       requireScope(context, "read");
@@ -38,7 +38,7 @@ export const settings = {
     }),
 
   unlinkSourceIp: base
-    .route({ method: "POST", path: "/settings/source-ips/unlink", summary: "Remove a linked source IP" })
+    .route({ method: "POST", path: "/settings/source-ips/unlink", tags: ["Settings"], summary: "Remove a linked source IP" })
     .input(z.object({ ip: z.string().min(2).max(45) }))
     .output(z.object({ ok: z.boolean(), ip: z.string() }))
     .handler(async ({ input, context }) => {
@@ -55,7 +55,7 @@ export const settings = {
     }),
 
   update: base
-    .route({ method: "PATCH", path: "/settings", summary: "Update resolver and logging settings" })
+    .route({ method: "PATCH", path: "/settings", tags: ["Settings"], summary: "Update resolver and logging settings" })
     .input(settingsInput)
     .output(settingsSchema)
     .handler(async ({ input, context }) => {

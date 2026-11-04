@@ -25,7 +25,7 @@ import {
  */
 export const reads = {
   overview: base
-    .route({ method: "GET", path: "/overview", summary: "Dashboard overview" })
+    .route({ method: "GET", path: "/overview", tags: ["Insights"], summary: "Dashboard overview" })
     .input(z.object({ device: z.string().regex(DEVICE_TAG_RE).optional() }).optional())
     .output(overviewSchema)
     .handler(async ({ input, context }) => {
@@ -34,7 +34,7 @@ export const reads = {
     }),
 
   queryVolume: base
-    .route({ method: "GET", path: "/overview/query-volume", summary: "Query volume series" })
+    .route({ method: "GET", path: "/overview/query-volume", tags: ["Insights"], summary: "Query volume series" })
     .input(
       z.object({
         range: z.enum(["1h", "24h", "7d", "30d"]).default("24h"),
@@ -48,7 +48,7 @@ export const reads = {
     }),
 
   analytics: base
-    .route({ method: "GET", path: "/analytics", summary: "Analytics rollups" })
+    .route({ method: "GET", path: "/analytics", tags: ["Insights"], summary: "Analytics rollups" })
     .output(analyticsSchema)
     .handler(async ({ context }) => {
       requireScope(context, "read");
@@ -56,7 +56,7 @@ export const reads = {
     }),
 
   logs: base
-    .route({ method: "GET", path: "/logs", summary: "Recent query log entries" })
+    .route({ method: "GET", path: "/logs", tags: ["Insights"], summary: "Recent query log entries" })
     .output(logsSchema)
     .handler(async ({ context }) => {
       requireScope(context, "read");
@@ -64,7 +64,7 @@ export const reads = {
     }),
 
   edge: base
-    .route({ method: "GET", path: "/edge", summary: "Edge health for this profile" })
+    .route({ method: "GET", path: "/edge", tags: ["Insights"], summary: "Edge health for this profile" })
     .output(edgeHealthSchema)
     .handler(async ({ context }) => {
       requireScope(context, "read");

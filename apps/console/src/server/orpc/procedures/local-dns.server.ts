@@ -40,7 +40,7 @@ function badRequest(err: unknown): never {
 
 export const localDns = {
   list: base
-    .route({ method: "GET", path: "/local-dns", summary: "List local DNS records" })
+    .route({ method: "GET", path: "/local-dns", tags: ["Local DNS"], summary: "List local DNS records" })
     .output(localDnsSchema)
     .handler(({ context }) => {
       requireScope(context, "read");
@@ -48,7 +48,7 @@ export const localDns = {
     }),
 
   upsert: base
-    .route({ method: "PUT", path: "/local-dns", summary: "Create or update a local DNS record" })
+    .route({ method: "PUT", path: "/local-dns", tags: ["Local DNS"], summary: "Create or update a local DNS record" })
     .input(zoneInput)
     .output(
       z.object({
@@ -74,7 +74,7 @@ export const localDns = {
     }),
 
   delete: base
-    .route({ method: "DELETE", path: "/local-dns", summary: "Delete a local DNS record" })
+    .route({ method: "DELETE", path: "/local-dns", tags: ["Local DNS"], summary: "Delete a local DNS record" })
     .input(zoneKey)
     .output(z.object({ ok: z.literal(true) }))
     .handler(async ({ input, context }) => {
@@ -99,7 +99,7 @@ export const localDns = {
 
 export const cache = {
   purge: base
-    .route({ method: "POST", path: "/cache/purge", summary: "Purge one name from the edge cache" })
+    .route({ method: "POST", path: "/cache/purge", tags: ["Settings"], summary: "Purge one name from the edge cache" })
     .input(purgeInput)
     .output(
       z.object({

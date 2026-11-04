@@ -7,7 +7,7 @@ const HTML = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ResolveZero API</title>
     <style>
-      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; background: #f2efe6; }
+      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; background: #faf9f7; }
       .rz-docs-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px;
         padding: 14px 20px; background: #0b0b0a; color: #f2efe6; font-size: 12px; }
       .rz-docs-bar a { color: #ff4d00; text-decoration: none; font-weight: 600; }

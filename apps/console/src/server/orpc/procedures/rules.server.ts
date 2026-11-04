@@ -36,7 +36,7 @@ function badRequest(err: unknown): never {
 
 export const rules = {
   list: base
-    .route({ method: "GET", path: "/rules", summary: "List rules, zones, and blocklists" })
+    .route({ method: "GET", path: "/rules", tags: ["Policy"], summary: "List rules, zones, and blocklists" })
     .output(rulesSchema)
     .handler(({ context }) => {
       requireScope(context, "read");
@@ -44,7 +44,7 @@ export const rules = {
     }),
 
   create: base
-    .route({ method: "POST", path: "/rules", summary: "Add or replace a rule" })
+    .route({ method: "POST", path: "/rules", tags: ["Policy"], summary: "Add or replace a rule" })
     .input(ruleInput)
     .output(ruleOutput)
     .handler(async ({ input, context }) => {
@@ -66,7 +66,7 @@ export const rules = {
     }),
 
   setEnabled: base
-    .route({ method: "POST", path: "/rules/enabled", summary: "Enable or disable a rule" })
+    .route({ method: "POST", path: "/rules/enabled", tags: ["Policy"], summary: "Enable or disable a rule" })
     .input(ruleToggle)
     .output(z.object({ domain: z.string(), enabled: z.boolean() }))
     .handler(async ({ input, context }) => {
@@ -89,7 +89,7 @@ export const rules = {
     }),
 
   delete: base
-    .route({ method: "DELETE", path: "/rules", summary: "Delete a rule" })
+    .route({ method: "DELETE", path: "/rules", tags: ["Policy"], summary: "Delete a rule" })
     .input(ruleKey)
     .output(z.object({ ok: z.literal(true) }))
     .handler(async ({ input, context }) => {

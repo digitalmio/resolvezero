@@ -41,7 +41,7 @@ function badRequest(err: unknown): never {
 
 export const blocklists = {
   list: base
-    .route({ method: "GET", path: "/blocklists", summary: "List blocklist subscriptions" })
+    .route({ method: "GET", path: "/blocklists", tags: ["Policy"], summary: "List blocklist subscriptions" })
     .output(blocklistsSchema)
     .handler(({ context }) => {
       requireScope(context, "read");
@@ -49,7 +49,7 @@ export const blocklists = {
     }),
 
   create: base
-    .route({ method: "POST", path: "/blocklists", summary: "Subscribe to a blocklist" })
+    .route({ method: "POST", path: "/blocklists", tags: ["Policy"], summary: "Subscribe to a blocklist" })
     .input(listInput)
     .output(listOutput)
     .handler(async ({ input, context }) => {
@@ -71,7 +71,7 @@ export const blocklists = {
     }),
 
   setEnabled: base
-    .route({ method: "POST", path: "/blocklists/enabled", summary: "Enable or disable a blocklist" })
+    .route({ method: "POST", path: "/blocklists/enabled", tags: ["Policy"], summary: "Enable or disable a blocklist" })
     .input(listToggle)
     .output(z.object({ id: z.string(), enabled: z.boolean() }))
     .handler(async ({ input, context }) => {
@@ -94,7 +94,7 @@ export const blocklists = {
     }),
 
   delete: base
-    .route({ method: "DELETE", path: "/blocklists", summary: "Remove a blocklist" })
+    .route({ method: "DELETE", path: "/blocklists", tags: ["Policy"], summary: "Remove a blocklist" })
     .input(listKey)
     .output(z.object({ ok: z.literal(true) }))
     .handler(async ({ input, context }) => {
