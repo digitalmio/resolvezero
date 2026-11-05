@@ -75,6 +75,13 @@ jobs:
             echo "::error::${failed} blocklist(s) failed on the last sync"
             exit 1
           fi
+          rss=$(jq -r '.rssMb // 0' /tmp/rz-ready.json)
+          limit=$(jq -r '.memoryLimitMb // 0' /tmp/rz-ready.json)
+          echo "rss=${rss}MB / ${limit}MB"
+          if [ "$limit" -gt 0 ] && [ $((rss * 100 / limit)) -ge 85 ]; then
+            echo "::error::edge rss ${rss}MB is >=85% of ${limit}MB — resize the machine or investigate the last sync"
+            exit 1
+          fi
           # DNS ingress probe. UDP is lossy by nature: a single packet to a
           # single anycast IP produced false alarms. Try every edge IP twice and
           # only alert when *no* attempt answers.

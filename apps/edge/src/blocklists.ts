@@ -16,7 +16,7 @@ const MAX_LIST_BYTES = 30 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 60_000;
 const MAX_UNIQUE_LISTS = positiveInt(process.env.BLOCKLIST_MAX_LISTS, 256);
 const MAX_LISTS_PER_PROFILE = positiveInt(process.env.BLOCKLIST_MAX_LISTS_PER_PROFILE, 64);
-const MAX_TOTAL_ENTRIES = positiveInt(process.env.BLOCKLIST_MAX_TOTAL_ENTRIES, 2_000_000);
+const MAX_TOTAL_ENTRIES = positiveInt(process.env.BLOCKLIST_MAX_TOTAL_ENTRIES, 5_000_000);
 const CYCLE_DEADLINE_MS = positiveInt(process.env.BLOCKLIST_CYCLE_DEADLINE_MS, 180_000);
 
 export interface BlocklistDeps {

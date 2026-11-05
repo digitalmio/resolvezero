@@ -17,12 +17,13 @@ kill_timeout = 30
   # previous image if the post-deploy smoke checks fail.
   strategy = "bluegreen"
 
-# Node runtime needs 512 MB for the 397k-rule blocklist build (256 MB stalls
-# during boot). Bun ran comfortably in 256 MB.
+# Node runtime needs headroom for blocklist parse transients: 512 MB fit the
+# original 397k-rule set; 1 GB covers the raised 5M-rule budget and 20+ unique
+# lists. FLY_VM_MEMORY_MB drives the RSS warning/alert thresholds.
 [vm]
   cpu_kind = "shared"
   cpus = 1
-  memory = "512mb"
+  memory = "1gb"
 
 [env]
   PORT = "8080"

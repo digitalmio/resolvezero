@@ -16,6 +16,7 @@ import { updateRollups } from "./rollup";
 import { createStatsApp } from "./stats";
 import { createLogsApp } from "./logs";
 import { createHealthApp, startEventLoopMonitor } from "./metrics";
+import { memoryLimitMb, rssMb, startMemoryWatchdog } from "./memory";
 import { createAdminApp } from "./admin";
 import { startBlocklistSync } from "./blocklists";
 import { createDns53Service, type Dns53Handle } from "./dns53";
@@ -191,6 +192,10 @@ try {
 }
 readiness.blocklistsLoaded = true;
 
+// Logs a warning/error on threshold crossings; /readyz carries the live value
+// so the hourly sentinel can alert on a machine that is close to OOM.
+startMemoryWatchdog();
+
 const { app: healthApp, metricsApp, recorder } = createHealthApp({
   store,
   dnsCache,
@@ -217,6 +222,8 @@ const { app: healthApp, metricsApp, recorder } = createHealthApp({
         blocklistLastSyncAt: bs.lastSyncAt,
         blocklistError: bs.lastError != null,
         failedBlocklists: bs.failedUrls.length,
+        rssMb: rssMb(),
+        memoryLimitMb: memoryLimitMb(),
       },
     };
   },
