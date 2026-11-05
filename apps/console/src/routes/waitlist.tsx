@@ -120,17 +120,17 @@ function WaitlistPage() {
             )}
           </div>
 
-          <div className="rz-card flex flex-col p-6">
-            <span className="flex size-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--brand-soft)] text-[var(--brand)]">
+          <div className="rz-mesh rz-card flex flex-col border-white/10 p-6 text-[var(--sidebar-text)]">
+            <span className="flex size-9 items-center justify-center rounded-[var(--radius-sm)] bg-white/10 text-[var(--lime)]">
               <Server size={16} />
             </span>
             <h2 className="mt-4 text-[15px] font-semibold">Prefer to run it yourself?</h2>
-            <p className="mt-1.5 text-[12px] leading-6 text-[var(--muted)]">
+            <p className="mt-1.5 text-[12px] leading-6 text-[var(--sidebar-muted)]">
               The edge and console are self-hostable today. Bring Postgres and a GitHub OAuth app; the README covers the
               rest. No waitlist.
             </p>
             <div className="mt-5 lg:mt-auto lg:pt-5">
-              <Button asChild variant="secondary" className="w-full sm:w-auto">
+              <Button asChild variant="secondary" className="w-full border-white/20 bg-white/5 text-[var(--sidebar-text)] hover:bg-white/10 sm:w-auto">
                 <a href="https://github.com/digitalmio/resolvezero" target="_blank" rel="noreferrer">
                   <ArrowUpRight size={13} /> View on GitHub
                 </a>

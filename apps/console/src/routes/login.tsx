@@ -32,7 +32,7 @@ function Proof({ index, icon, title, detail }: { index: string; icon: ReactNode;
 function LoginPage() {
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)] lg:grid lg:grid-cols-2">
-      <section className="relative flex flex-col overflow-hidden bg-[var(--sidebar)] px-5 py-5 text-[var(--sidebar-text)] lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
+      <section className="rz-mesh relative flex flex-col overflow-hidden px-5 py-5 text-[var(--sidebar-text)] lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute -bottom-16 -right-10 select-none rz-font-display text-[18rem] font-extrabold leading-none tracking-[-0.09em] text-white/[0.035] lg:text-[24rem]"

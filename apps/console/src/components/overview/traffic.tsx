@@ -14,7 +14,7 @@ export function LiveTrafficCard({
   blockRatio: number
 }) {
   return (
-    <div className="rz-card flex flex-1 flex-col border-white/10 bg-[var(--sidebar)] p-5 text-[var(--sidebar-text)]">
+    <div className="rz-mesh rz-card flex flex-1 flex-col border-white/10 p-5 text-[var(--sidebar-text)]">
       <div className="flex items-start justify-between">
         <div>
           <h2 className="rz-section-title text-[var(--sidebar-text)]">Traffic</h2>

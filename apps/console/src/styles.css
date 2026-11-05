@@ -316,3 +316,35 @@ textarea:focus-visible,
 [role="option"]:focus-visible {
   outline: none;
 }
+
+/*
+ * Mesh + grain surface (dark cards and editorial hero panels).
+ * The gradient is layered radial washes from the brand palette; the grain is
+ * a tiling feTurbulence SVG (desaturated, soft-light) so it stays sharp at any
+ * DPR without shipping a bitmap. The pseudo-element sits at z-index:-1 inside
+ * an isolated stacking context: visible above the background, never above the
+ * content, and it does not fight Tailwind `absolute` on children.
+ */
+.rz-mesh {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--ink);
+  background-image:
+    radial-gradient(115% 135% at 8% 0%, rgba(255, 77, 0, 0.6) 0%, rgba(255, 77, 0, 0) 58%),
+    radial-gradient(95% 115% at 94% 6%, rgba(217, 45, 32, 0.55) 0%, rgba(217, 45, 32, 0) 62%),
+    radial-gradient(130% 120% at 50% 118%, rgba(198, 242, 78, 0.18) 0%, rgba(198, 242, 78, 0) 56%),
+    linear-gradient(155deg, #2b1a11 0%, var(--ink) 54%, #1b110b 100%);
+}
+
+.rz-mesh::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.65'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
