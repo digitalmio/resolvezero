@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
 import { AlertCircle, CheckCircle2, ExternalLink, Layers3, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { getBlocklistsData } from '../server/dashboard'
@@ -9,10 +8,13 @@ import { BlocklistRowActions } from '../components/blocklists/blocklist-row-acti
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
 import { Button } from '../components/ui/button'
+import { formatZoned } from '../lib/time'
+import { useTimeZone } from '../lib/use-timezone'
 
 export const Route = createFileRoute('/blocklists')({ component: Blocklists })
 
 function Blocklists() {
+  const { zone } = useTimeZone()
   const [adding, setAdding] = useState(false)
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ['blocklists'],
@@ -98,7 +100,7 @@ function Blocklists() {
                     )}
                   </td>
                   <td className="px-4 py-4 font-mono text-[12px]">{new Intl.NumberFormat('en-GB').format(list.entries)}</td>
-                  <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">{list.lastSyncedAt ? format(parseISO(list.lastSyncedAt), 'dd MMM yyyy, HH:mm') : 'never'}</td>
+                  <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">{list.lastSyncedAt ? formatZoned(list.lastSyncedAt, 'dd MMM yyyy, HH:mm', zone) : 'never'}</td>
                   <td className="px-4 py-4">
                     <StatusPill enabled={list.enabled} status={list.lastStatus} />
                   </td>

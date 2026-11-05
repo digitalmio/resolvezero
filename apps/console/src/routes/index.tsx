@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { format, getHours, parseISO } from 'date-fns'
+import { getHours } from 'date-fns'
 import { useEffect, useState } from 'react'
 import { Ban, Clock3, FileText, Globe2, Monitor, ShieldCheck } from 'lucide-react'
 
@@ -14,6 +14,8 @@ import { LiveTrafficCard, PostureCard } from '../components/overview/traffic'
 import { Button } from '../components/ui/button'
 import { DEVICE_TAG_RE } from '../lib/device'
 import { OVERVIEW_RANGES, overviewRange, type OverviewRangeKey } from '../lib/overview-range'
+import { formatZoned } from '../lib/time'
+import { useTimeZone } from '../lib/use-timezone'
 import { getOverview, getQueryVolume } from '../server/dashboard'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 
@@ -32,6 +34,7 @@ export const Route = createFileRoute('/')({
 function Overview() {
   const { device: deviceParam } = Route.useSearch()
   const navigate = Route.useNavigate()
+  const { zone } = useTimeZone()
   const device = deviceParam ?? ALL_DEVICES
   const deviceFilter = deviceParam
 
@@ -71,8 +74,8 @@ function Overview() {
   // letting a partial window look like the device went quiet.
   const windowStart = data?.series[0]?.bucket
   const deviceHistoryStart =
-    data?.device && data.deviceSince && windowStart && parseISO(data.deviceSince).getTime() - parseISO(windowStart).getTime() > 3_600_000
-      ? format(parseISO(data.deviceSince), 'd MMM HH:mm')
+    data?.device && data.deviceSince && windowStart && new Date(data.deviceSince).getTime() - new Date(windowStart).getTime() > 3_600_000
+      ? formatZoned(data.deviceSince, 'd MMM HH:mm', zone)
       : null
 
   const header = (
@@ -136,13 +139,21 @@ function Overview() {
   if (isPending) return <div className="space-y-7">{header}<OverviewSkeleton /></div>
   if (isError || !data) return <div className="space-y-7">{header}<PageError title="Could not load live stats." onRetry={() => void refetch()} /></div>
 
-  const chartData = (volume?.range === range && (volume.device ?? null) === (deviceFilter ?? null) ? volume.series : range === '24h' ? data.series : []).map((point) => ({
+  const chartSource =
+    volume?.range === range && (volume.device ?? null) === (deviceFilter ?? null)
+      ? volume.series
+      : range === '24h'
+        ? data.series
+        : []
+  const chartData = chartSource.map((point, index) => ({
     key: point.bucket,
-    time: format(parseISO(point.bucket), range === '7d' || range === '30d' ? 'd MMM' : 'HH:mm'),
-    day: format(parseISO(point.bucket), 'd MMM'),
-    full: format(parseISO(point.bucket), 'EEE d MMM, HH:mm'),
+    time: formatZoned(point.bucket, range === '7d' || range === '30d' ? 'd MMM' : 'HH:mm', zone),
+    day: formatZoned(point.bucket, 'd MMM', zone),
+    full: formatZoned(point.bucket, 'EEE d MMM, HH:mm', zone),
     total: point.total,
     blocked: point.blocked,
+    // The final bucket is the current hour/day and is still filling up.
+    partial: index === chartSource.length - 1,
   }))
   const rangeConfig = overviewRange(range)
   const maxBlocked = Math.max(...data.topBlocked.map((d) => d.count), 1)

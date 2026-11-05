@@ -1,9 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
 import { CheckCircle2, Copy, KeyRound, Network, ShieldCheck, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { getOverview, getSettingsData, purgeCache } from '../server/dashboard'
+import { formatZoned } from '../lib/time'
+import { useTimeZone } from '../lib/use-timezone'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
 import { DeleteProfileButton } from '../components/settings/delete-profile'
@@ -26,6 +27,7 @@ const PURGE_TYPES = [
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
 
 function SettingsPage() {
+  const { zone } = useTimeZone()
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ['settings'],
     queryFn: () => getSettingsData(),
@@ -59,7 +61,7 @@ function SettingsPage() {
         <Section title="Profile" icon={<ShieldCheck size={16} />}>
           <Row label="Name" value={data.profileName} />
           <Row label="Profile ID" value={data.profileId} mono />
-          <Row label="Created" value={format(parseISO(data.createdAt), 'dd MMM yyyy')} />
+          <Row label="Created" value={formatZoned(data.createdAt, 'dd MMM yyyy', zone)} />
           <Row label="DoH token" value={data.hasDohToken ? 'configured' : 'not set'} />
         </Section>
 

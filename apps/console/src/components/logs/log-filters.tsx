@@ -4,6 +4,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../ui/switch'
 import { Button } from '../ui/button'
 import type { Pop } from '../../lib/pops'
+import { formatZoned } from '../../lib/time'
+import { useTimeZone } from '../../lib/use-timezone'
 
 export const ALL_DEVICES = '__all_devices__'
 export const ALL_POPS = '__all_pops__'
@@ -43,6 +45,7 @@ export function LogFilters({
   total: number
   onRefresh: () => void
 }) {
+  const { zone } = useTimeZone()
   return (
     <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-[var(--paper)]/50 px-4 py-3 xl:flex-row xl:items-center">
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line-strong)] bg-transparent px-3 py-1.5 text-[11px] text-[var(--muted)]">
@@ -110,7 +113,7 @@ export function LogFilters({
           <>
             <span className="text-[var(--line-strong)]">·</span>
             <span className="rz-mono text-[var(--ink)]">
-              {new Date(updatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {formatZoned(updatedAt, 'HH:mm:ss', zone)}
             </span>
           </>
         ) : null}

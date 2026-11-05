@@ -1,4 +1,5 @@
 import { and, asc, eq, gte } from "drizzle-orm";
+import { formatInTimeZone } from "date-fns-tz";
 import { db } from "@resolvezero/db/client";
 import { statsHourly } from "@resolvezero/db/schema";
 
@@ -6,10 +7,27 @@ import { merge, top } from "./aggregate";
 import { findProfile } from "./profile.server";
 import { HOUR, type AnalyticsData } from "./types";
 
-export async function loadAnalytics(ownerUserId: string, profileId?: string): Promise<AnalyticsData> {
+/** Reject unknown zones rather than letting Intl throw during a render. */
+export function normalizeTimeZone(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 64) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: value });
+    return value;
+  } catch {
+    return "UTC";
+  }
+}
+
+export async function loadAnalytics(
+  ownerUserId: string,
+  profileId?: string,
+  tz?: string,
+): Promise<AnalyticsData> {
   const profile = await findProfile(ownerUserId, profileId);
+  const zone = normalizeTimeZone(tz);
   const now = new Date();
-  const since = new Date(now.getTime() - 30 * 24 * HOUR);
+  // 31 days of rows so the earliest local day is complete in any timezone.
+  const since = new Date(now.getTime() - 31 * 24 * HOUR);
   const rows = await db
     .select({
       hour: statsHourly.hour,
@@ -34,7 +52,7 @@ export async function loadAnalytics(ownerUserId: string, profileId?: string): Pr
     blocked30d += row.blocked;
     merge(domains, row.topDomains);
     merge(blockedDomains, row.topBlocked);
-    const day = row.hour.toISOString().slice(0, 10);
+    const day = formatInTimeZone(row.hour, zone, "yyyy-MM-dd");
     const d = dayMap.get(day) ?? { total: 0, blocked: 0 };
     d.total += row.total;
     d.blocked += row.blocked;
@@ -50,16 +68,16 @@ export async function loadAnalytics(ownerUserId: string, profileId?: string): Pr
   const hourStart = Math.floor((now.getTime() - 24 * HOUR) / HOUR) * HOUR;
   for (let t = hourStart; t <= Math.floor(now.getTime() / HOUR) * HOUR; t += HOUR) {
     const v = hourMap.get(t) ?? { total: 0, blocked: 0 };
-    hourSeries.push({ label: new Date(t).toISOString().slice(11, 16), ...v });
+    hourSeries.push({ label: formatInTimeZone(new Date(t), zone, "HH:mm"), ...v });
   }
 
   const days = (count: number) => {
     const out: AnalyticsData["series"]["7d"] = [];
+    // Build calendar keys from "today in the viewer's zone" instead of UTC
+    // midnight, so a UTC+13 viewer's last bucket really is their today.
+    const [year, month, day] = formatInTimeZone(now, zone, "yyyy-MM-dd").split("-").map(Number);
     for (let i = count - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setUTCHours(0, 0, 0, 0);
-      d.setUTCDate(d.getUTCDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = new Date(Date.UTC(year!, month! - 1, day! - i)).toISOString().slice(0, 10);
       out.push({ label: key.slice(5), ...(dayMap.get(key) ?? { total: 0, blocked: 0 }) });
     }
     return out;

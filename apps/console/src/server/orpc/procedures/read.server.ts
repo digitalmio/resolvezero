@@ -49,10 +49,15 @@ export const reads = {
 
   analytics: base
     .route({ method: "GET", path: "/analytics", tags: ["Insights"], summary: "Analytics rollups" })
+    .input(
+      z
+        .object({ tz: z.string().max(64).describe("IANA time zone for day bucketing (default UTC)").optional() })
+        .optional(),
+    )
     .output(analyticsSchema)
-    .handler(async ({ context }) => {
+    .handler(async ({ input, context }) => {
       requireScope(context, "read");
-      return loadAnalytics(context.principal.userId, context.profileId);
+      return loadAnalytics(context.principal.userId, context.profileId, input?.tz);
     }),
 
   logs: base

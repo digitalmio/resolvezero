@@ -1,9 +1,10 @@
-import { format, formatISO, parseISO } from 'date-fns'
 import { FileText } from 'lucide-react'
 
 import type { LogEntry } from '../../server/dashboard/types'
 import { logEntryKey } from '../../lib/log-tail'
 import { popLabel } from '../../lib/pops'
+import { formatZoned } from '../../lib/time'
+import { useTimeZone } from '../../lib/use-timezone'
 import { DomainLabel } from '../domain-label'
 
 function reasonLabel(entry: { reason: string | null; listLabel: string | null }): string {
@@ -25,6 +26,7 @@ function popDetail(entry: { region: string | null; transport: string | null; ups
 }
 
 export function LogTable({ entries }: { entries: LogEntry[] }) {
+  const { zone } = useTimeZone()
   return (
     <div className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -53,9 +55,9 @@ export function LogTable({ entries }: { entries: LogEntry[] }) {
               <tr key={logEntryKey(entry)} className="hover:bg-[var(--paper)]/60">
                 <td
                   className="whitespace-nowrap px-4 py-2.5 font-mono text-[10px] text-[var(--muted)]"
-                  title={entry.time ? formatISO(parseISO(entry.time)) : undefined}
+                  title={entry.time ? new Date(entry.time).toISOString() : undefined}
                 >
-                  {entry.time ? format(parseISO(entry.time), 'dd MMM, HH:mm:ss') : '—'}
+                  {entry.time ? formatZoned(entry.time, 'dd MMM, HH:mm:ss', zone) : '—'}
                 </td>
                 <td className="max-w-[360px] px-4 py-2.5 font-mono text-[11px]">
                   <DomainLabel domain={entry.domain} />

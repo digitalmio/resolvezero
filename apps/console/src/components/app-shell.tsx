@@ -8,6 +8,7 @@ import { authClient } from '../lib/auth-client'
 import type { SessionUser } from '../server/auth'
 import { accountNav, navGroups, SidebarLink } from './shell/nav'
 import { ProfileMenu } from './shell/profile-menu'
+import { TimeZoneMenu } from './shell/timezone-menu'
 import { UserMenu } from './shell/user-menu'
 import { getOverview } from '../server/dashboard'
 
@@ -62,6 +63,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
         <ProfileMenu profiles={data?.profiles ?? []} activeId={data?.profileId ?? ''} label={profileLabel} loading={!data} />
 
         <div className="ml-auto flex items-center gap-2">
+          <TimeZoneMenu />
           <a
             href="/docs"
             target="_blank"

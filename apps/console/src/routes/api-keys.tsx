@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { format, parseISO } from 'date-fns'
 import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -8,6 +7,8 @@ import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
 import { Button } from '../components/ui/button'
 import { createApiKey, listApiKeys, revokeApiKey, type ApiKeyScope } from '../server/api-keys'
+import { formatZoned } from '../lib/time'
+import { useTimeZone } from '../lib/use-timezone'
 
 export const Route = createFileRoute('/api-keys')({ component: ApiKeys })
 
@@ -17,6 +18,7 @@ const SCOPES: { value: ApiKeyScope; label: string; hint: string; active: string 
 ]
 
 function ApiKeys() {
+  const { zone } = useTimeZone()
   const queryClient = useQueryClient()
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
@@ -181,10 +183,10 @@ function ApiKeys() {
                     </span>
                   </td>
                   <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">
-                    {format(parseISO(key.createdAt), 'dd MMM yyyy')}
+                    {formatZoned(key.createdAt, 'dd MMM yyyy', zone)}
                   </td>
                   <td className="px-4 py-4 font-mono text-[10px] text-[var(--muted)]">
-                    {key.lastRequest ? format(parseISO(key.lastRequest), 'dd MMM HH:mm') : 'never'}
+                    {key.lastRequest ? formatZoned(key.lastRequest, 'dd MMM HH:mm', zone) : 'never'}
                   </td>
                   <td className="px-4 py-4 text-right">
                     <button

@@ -4,6 +4,7 @@ import { parseDeviceTag } from "../lib/device";
 import { DEFAULT_OVERVIEW_RANGE, isOverviewRange } from "../lib/overview-range";
 import { normalizeDomain, normalizeRecordType, normalizeZoneInput, type ZoneInput } from "../lib/zone";
 import { sessionClient } from "./orpc/call.server";
+import { normalizeTimeZone } from "./dashboard/analytics.server";
 
 export type { OverviewData, RulesData, LocalDnsData } from "./dashboard.server";
 
@@ -131,10 +132,12 @@ export const getBlocklistsData = createServerFn({ method: "GET" }).handler(async
   return client.blocklists.list();
 });
 
-export const getAnalyticsData = createServerFn({ method: "GET" }).handler(async () => {
-  const client = await sessionClient();
-  return client.analytics();
-});
+export const getAnalyticsData = createServerFn({ method: "GET" })
+  .validator((data: { tz?: string } | undefined) => ({ tz: normalizeTimeZone(data?.tz) }))
+  .handler(async ({ data }) => {
+    const client = await sessionClient();
+    return client.analytics({ tz: data.tz });
+  });
 
 export const getSettingsData = createServerFn({ method: "GET" }).handler(async () => {
   const client = await sessionClient();

@@ -6,6 +6,7 @@ import { getAnalyticsData } from '../server/dashboard'
 import { DomainLabel } from '../components/domain-label'
 import { PageError, PageLoading } from '../components/data-state'
 import { PageHeader } from '../components/page-header'
+import { useTimeZone } from '../lib/use-timezone'
 
 export const Route = createFileRoute('/analytics')({ component: Analytics })
 
@@ -13,9 +14,10 @@ type Range = '24h' | '7d' | '30d'
 
 function Analytics() {
   const [range, setRange] = useState<Range>('7d')
+  const { zone } = useTimeZone()
   const { data, isPending, isError, refetch } = useQuery({
-    queryKey: ['analytics'],
-    queryFn: () => getAnalyticsData(),
+    queryKey: ['analytics', zone],
+    queryFn: () => getAnalyticsData({ data: { tz: zone } }),
   })
 
   const header = (
@@ -58,7 +60,7 @@ function Analytics() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
-        <div className="rz-card p-6">
+        <div className="rz-card min-w-0 p-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Query volume</h2>
@@ -66,10 +68,10 @@ function Analytics() {
             </div>
             <BarChart3 size={18} className="text-[var(--muted)]" />
           </div>
-          <AnalyticsChart series={series} />
+          <AnalyticsChart series={series} range={range} />
         </div>
 
-        <div className="rz-card p-6">
+        <div className="rz-card min-w-0 p-6">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Top blocked</h2>
@@ -102,36 +104,84 @@ function Analytics() {
   )
 }
 
-function AnalyticsChart({ series }: { series: { label: string; total: number; blocked: number }[] }) {
+function AnalyticsChart({
+  series,
+  range,
+}: {
+  series: { label: string; total: number; blocked: number }[]
+  range: Range
+}) {
   const width = 760
   const height = 240
   const padX = 4
   const padY = 16
   const max = Math.max(...series.map((p) => p.total), 1)
-  const points = (key: 'total' | 'blocked') =>
-    series.map((point, index) => {
-      const x = padX + (index / Math.max(series.length - 1, 1)) * (width - padX * 2)
-      const y = height - padY - (point[key] / max) * (height - padY * 2)
-      return [x, y] as const
-    })
-  const path = (key: 'total' | 'blocked') =>
-    points(key).map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
-  const area = `${path('total')} L ${width - padX} ${height - padY} L ${padX} ${height - padY} Z`
+  const last = series.length - 1
+  const x = (index: number) => padX + (index / Math.max(last, 1)) * (width - padX * 2)
+  const y = (value: number) => height - padY - (value / max) * (height - padY * 2)
+  const line = (key: 'total' | 'blocked', from: number, to: number) => {
+    let path = ''
+    for (let index = from; index <= to; index += 1) {
+      const point = series[index]
+      if (!point) continue
+      path += `${index === from ? 'M' : 'L'} ${x(index).toFixed(1)} ${y(point[key]).toFixed(1)} `
+    }
+    return path.trim()
+  }
+
+  if (series.length === 0) {
+    return <p className="mt-5 py-16 text-center text-[12px] text-[var(--muted)]">No data for this range yet.</p>
+  }
+
+  // The current bucket is still filling up: end the filled area before it and
+  // draw the final segment dashed, so a partial hour/day never reads as a drop.
+  const settled = Math.max(last - 1, 0)
+  const area = `${line('total', 0, settled)} L ${x(settled).toFixed(1)} ${height - padY} L ${padX} ${height - padY} Z`
+  const ticks = [...new Set([0, Math.round(last / 4), Math.round(last / 2), Math.round((last * 3) / 4), last])]
 
   return (
-    <div className="mt-5 h-[240px]">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" role="img" aria-label="Query analytics">
-        <defs>
-          <linearGradient id="rz-analytics-area" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--ink)" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="var(--ink)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0.2, 0.4, 0.6, 0.8].map((f) => <line key={f} x1="0" x2={width} y1={height * f} y2={height * f} stroke="var(--line)" strokeDasharray="2 5" />)}
-        <path d={area} fill="url(#rz-analytics-area)" />
-        <path d={path('total')} fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
-        <path d={path('blocked')} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 4" strokeLinejoin="round" strokeLinecap="round" />
-      </svg>
+    <div className="mt-5">
+      <div className="h-[240px]">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="h-full w-full"
+          role="img"
+          aria-label={`Query volume for the last ${range}`}
+        >
+          <defs>
+            <linearGradient id="rz-analytics-area" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--ink)" stopOpacity="0.1" />
+              <stop offset="100%" stopColor="var(--ink)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0.2, 0.4, 0.6, 0.8].map((f) => (
+            <line key={f} x1="0" x2={width} y1={height * f} y2={height * f} stroke="var(--line)" strokeDasharray="2 5" />
+          ))}
+          <path d={area} fill="url(#rz-analytics-area)" />
+          <path d={line('total', 0, settled)} fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+          <path d={line('blocked', 0, last)} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="4 4" strokeLinejoin="round" strokeLinecap="round" />
+          {last > 0 ? (
+            <>
+              <path d={line('total', settled, last)} fill="none" stroke="var(--ink)" strokeWidth="1.8" strokeDasharray="3 4" strokeLinecap="round" />
+              <path d={line('blocked', settled, last)} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="3 4" strokeLinecap="round" opacity="0.8" />
+            </>
+          ) : null}
+          {last >= 0 ? (
+            <>
+              <circle cx={x(last)} cy={y(series[last]!.total)} r="2.6" fill="var(--card)" stroke="var(--ink)" strokeWidth="1.4" />
+              <circle cx={x(last)} cy={y(series[last]!.blocked)} r="2.6" fill="var(--card)" stroke="var(--accent)" strokeWidth="1.4" />
+            </>
+          ) : null}
+        </svg>
+      </div>
+      <div className="mt-1 flex justify-between gap-2 font-mono text-[10px] text-[var(--muted)]">
+        {ticks.map((index) => (
+          <span key={index}>{series[index]?.label}</span>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-[var(--muted)]">
+        Dashed tail is the current {range === '24h' ? 'hour' : 'day'} and may be incomplete.
+      </p>
     </div>
   )
 }
