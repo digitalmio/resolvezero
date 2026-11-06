@@ -21,6 +21,24 @@ Parser parity was checked against the TypeScript implementation on the four
 live lists: both produce **406,707** entries (171,417 Hagezi, 189,625 AdGuard,
 44,523 KADhosts, 1,142 Polish Pi-hole).
 
+## Capacity probe
+
+`cargo run --release --example memory_probe -- <lists> [rules-per-list]` builds
+real fingerprint tables (no DB, no network) and reports table bytes and RSS.
+
+Measured on this Mac, 500k unique rules per list:
+
+| Lists | Rules | Table bytes | Peak RSS |
+|---:|---:|---:|---:|
+| 10 | 5M | 38 MB | 143 MB |
+| 64 | 32M | 244 MB | 345 MB |
+| 128 | 64M | 488 MB | 413 MB |
+
+Tables are exactly **8 B/rule** (4 MB per 500k list); the process baseline is
+~6 MB for the probe and ~50 MB for the full edge (tokio/sqlx/reqwest/axum).
+macOS compresses idle pages, so `current RSS` can read *below* the table size;
+use table bytes plus baseline for sizing on Linux.
+
 ## What works
 
 - Postgres config snapshot + 5 s `edge_config_state` version polling.
