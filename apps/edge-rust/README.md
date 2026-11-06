@@ -34,6 +34,10 @@ Measured on this Mac, 500k unique rules per list:
 | 64 | 32M | 244 MB | 345 MB |
 | 128 | 64M | 488 MB | 413 MB |
 
+Parse cost per 500k-rule list (release): **0.16 s parse + 0.05 s build**. The
+first parse adds ~80 MB RSS; later lists reuse the allocator and add ~25 MB,
+plus the 4 MB table. A 64-list run peaked at 345 MB with 244 MB of tables.
+
 Tables are exactly **8 B/rule** (4 MB per 500k list); the process baseline is
 ~6 MB for the probe and ~50 MB for the full edge (tokio/sqlx/reqwest/axum).
 macOS compresses idle pages, so `current RSS` can read *below* the table size;

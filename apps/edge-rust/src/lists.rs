@@ -48,8 +48,22 @@ pub async fn sync_once(
     for (url, format) in &unique {
         match fetch_text(&client, url, cfg.max_list_bytes).await {
             Ok(text) => {
-                let parsed = parse_list(&text, ListFormat::parse(format));
-                let table = FingerprintTable::build(&parsed.blocks, &parsed.allows);
+                // Parsing is CPU-bound (~0.2 s per 500k rules). Keep it off the
+                // async workers so DNS queries keep flowing during a 6-hour
+                // resync; the text is moved into the blocking task.
+                let list_format = ListFormat::parse(format);
+                let table = match tokio::task::spawn_blocking(move || {
+                    let parsed = parse_list(&text, list_format);
+                    FingerprintTable::build(&parsed.blocks, &parsed.allows)
+                })
+                .await
+                {
+                    Ok(table) => table,
+                    Err(err) => {
+                        warn!(url, %err, "list parse task failed");
+                        continue;
+                    }
+                };
                 if total + table.entries > cfg.max_total_entries {
                     warn!(
                         url,
