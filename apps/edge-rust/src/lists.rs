@@ -1,0 +1,144 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use tokio::sync::RwLock;
+use tracing::{info, warn};
+
+use crate::cache::DnsCache;
+use crate::config::Config;
+use crate::db::Db;
+use crate::fingerprint::FingerprintTable;
+use crate::parse::{parse_list, ListFormat};
+use crate::store::{RuleStore, Subscription};
+
+/// Fetch + parse every enabled list, rebuild the shared catalog, then re-wire
+/// per-profile subscriptions. Returns whether the effective state changed (the
+/// caller flushes the DNS cache only then).
+pub async fn sync_once(
+    db: &Db,
+    store: &Arc<RwLock<RuleStore>>,
+    cache: &Arc<Mutex<DnsCache>>,
+    cfg: &Config,
+) -> Result<bool, String> {
+    let rows = db.blocklists().await.map_err(|err| err.to_string())?;
+
+    let mut unique: HashMap<String, String> = HashMap::new();
+    let mut by_profile: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    for row in rows {
+        unique.entry(row.url.clone()).or_insert(row.format.clone());
+        by_profile
+            .entry(row.profile_id.clone())
+            .or_default()
+            .push((row.url, row.id));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .user_agent("resolvezero-edge-rust/0.1")
+        .build()
+        .map_err(|err| err.to_string())?;
+
+    let mut changed = false;
+    let mut total = 0usize;
+    let mut fetched: Vec<(String, FingerprintTable)> = Vec::new();
+
+    // Sequential on purpose: a 500k-rule parse is the memory high-water mark,
+    // and parallel parses multiplied the transient enough to OOM 256 MB VMs.
+    for (url, format) in &unique {
+        match fetch_text(&client, url, cfg.max_list_bytes).await {
+            Ok(text) => {
+                let parsed = parse_list(&text, ListFormat::parse(format));
+                let table = FingerprintTable::build(&parsed.blocks, &parsed.allows);
+                if total + table.entries > cfg.max_total_entries {
+                    warn!(
+                        url,
+                        entries = table.entries,
+                        total,
+                        cap = cfg.max_total_entries,
+                        "global rule budget exceeded; list skipped"
+                    );
+                    continue;
+                }
+                total += table.entries;
+                info!(url, entries = table.entries, "list parsed");
+                fetched.push((url.clone(), table));
+            }
+            Err(err) => warn!(url, %err, "list fetch failed; keeping previous table"),
+        }
+    }
+
+    if !fetched.is_empty() {
+        let mut guard = store.write().await;
+        for (url, table) in fetched {
+            changed |= guard.upsert_list(&url, table);
+        }
+    }
+
+    let catalog_urls: HashSet<String> = {
+        let guard = store.read().await;
+        guard.catalog.keys().cloned().collect()
+    };
+
+    let mut guard = store.write().await;
+    for (profile_id, rows) in &by_profile {
+        let mut seen = HashSet::new();
+        let mut subscriptions = Vec::new();
+        for (url, list_id) in rows {
+            if !catalog_urls.contains(url) || !seen.insert(url.clone()) {
+                continue;
+            }
+            if subscriptions.len() >= cfg.max_lists_per_profile {
+                warn!(profile_id, "per-profile list cap reached");
+                break;
+            }
+            subscriptions.push(Subscription {
+                url: url.clone(),
+                list_id: Some(list_id.clone()),
+            });
+        }
+        guard.wire_subscriptions(profile_id, subscriptions);
+    }
+    let stale: Vec<String> = guard
+        .subscriptions
+        .keys()
+        .filter(|profile_id| !by_profile.contains_key(*profile_id))
+        .cloned()
+        .collect();
+    for profile_id in stale {
+        guard.wire_subscriptions(&profile_id, Vec::new());
+    }
+    guard.prune_catalog();
+    drop(guard);
+
+    if changed {
+        cache.lock().expect("cache lock").clear();
+        info!("blocklist state changed; dns cache flushed");
+    }
+    Ok(changed)
+}
+
+async fn fetch_text(
+    client: &reqwest::Client,
+    url: &str,
+    max_bytes: usize,
+) -> Result<String, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+    if let Some(length) = response.content_length() {
+        if length as usize > max_bytes {
+            return Err(format!("content-length {length} exceeds {max_bytes}"));
+        }
+    }
+    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
+    if bytes.len() > max_bytes {
+        return Err(format!("body {} exceeds {max_bytes}", bytes.len()));
+    }
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
