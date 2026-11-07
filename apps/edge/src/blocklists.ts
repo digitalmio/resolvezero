@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import { profileBlocklists } from "@resolvezero/db/schema";
 import { moduleLogger } from "./logger";
-import { SuffixFingerprintBuilder } from "./fingerprint";
+import { SuffixFingerprintBuilder, SuffixFingerprintTable } from "./fingerprint";
+import { decodeArtifact, isArtifact } from "./artifact";
+import { createS3ClientFromEnv, type S3ClientLike } from "./sinks/s3";
 import type { RuleStore } from "./ruleStore";
 import type { DnsCache } from "./dnsCache";
 import { fetchWithSafeRedirects } from "./netGuard";
@@ -29,6 +32,8 @@ export interface BlocklistRow {
   profileId: string;
   url: string;
   format: string;
+  /** Content-addressed compiled artifact; null = parse the text on the edge. */
+  artifactHash: string | null;
 }
 
 export interface ParsedList {
@@ -84,16 +89,22 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
           profileId: profileBlocklists.profileId,
           url: profileBlocklists.url,
           format: profileBlocklists.format,
+          artifactHash: profileBlocklists.artifactHash,
         })
         .from(profileBlocklists)
         .where(eq(profileBlocklists.enabled, true))) as BlocklistRow[];
 
       // Shared-catalog model: parse each unique URL ONCE per cycle, register
       // it in the store's catalog, then wire per-profile subscriptions.
-      const uniqueUrls = new Map<string, { url: string; format: string }>();
+      const uniqueUrls = new Map<string, { url: string; format: string; artifactHash: string | null }>();
       const enabledByProfile = new Map<string, BlocklistRow[]>();
       for (const row of rows) {
-        uniqueUrls.set(row.url, { url: row.url, format: row.format });
+        const existing = uniqueUrls.get(row.url);
+        uniqueUrls.set(row.url, {
+          url: row.url,
+          format: row.format,
+          artifactHash: existing?.artifactHash ?? row.artifactHash ?? null,
+        });
         enabledByProfile.set(row.profileId, enabledByProfile.get(row.profileId) ?? []);
         enabledByProfile.get(row.profileId)!.push(row);
       }
@@ -124,12 +135,15 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
       cycleDeadline = Date.now() + CYCLE_DEADLINE_MS;
       let totalEntries = 0;
 
-      // 1) catalog refresh — each URL fetched + parsed once.
+      // 1) catalog refresh — each URL compiled once per cycle. Prefer the
+      // content-addressed artifact (4 MB, no parse); fall back to the raw
+      // list for self-hosted setups without a compiler.
       // SEQUENTIAL on purpose: parse+build peak-allocates tens of MB per
       // big list (raw text + string sets + fp arrays); running them in
       // parallel OOM'd the 256MB VMs at boot (multiplied transients).
+      const artifactStore = createS3ClientFromEnv();
       let cacheFlushed = false;
-      for (const [index, { url, format }] of cycleUrls.entries()) {
+      for (const [index, { url, format, artifactHash }] of cycleUrls.entries()) {
         if (Date.now() > cycleDeadline) {
           log.error({ url, remaining: cycleUrls.length - index }, "blocklist cycle deadline reached; skipping remaining lists");
           await markFailed(url, "cycle deadline exceeded");
@@ -139,26 +153,42 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
           break;
         }
         try {
-          const text = await fetchListText(url);
-          const resolvedFormat = resolveListFormat(text, format);
-          const parsed = parseList(text, resolvedFormat);
-          const builder = new SuffixFingerprintBuilder();
-          for (const d of parsed.blocks) builder.add(d, "block");
-          for (const d of parsed.allows) builder.add(d, "allow");
-          const entryCount = parsed.blocks.size + parsed.allows.size;
+          const fromArtifact = artifactHash && artifactStore
+            ? await loadArtifactTable(artifactStore, artifactHash).catch((err) => {
+                log.warn({ url, err: err instanceof Error ? err.message : String(err) }, "artifact load failed — falling back to text");
+                return null;
+              })
+            : null;
+
+          let table: SuffixFingerprintTable;
+          let entryCount: number;
+          let resolvedFormat: string;
+          if (fromArtifact) {
+            table = fromArtifact;
+            entryCount = fromArtifact.entryCount;
+            resolvedFormat = "artifact";
+          } else {
+            const text = await fetchListText(url);
+            resolvedFormat = resolveListFormat(text, format);
+            const parsed = parseList(text, resolvedFormat);
+            const builder = new SuffixFingerprintBuilder();
+            for (const d of parsed.blocks) builder.add(d, "block");
+            for (const d of parsed.allows) builder.add(d, "allow");
+            entryCount = parsed.blocks.size + parsed.allows.size;
+            table = builder.seal(entryCount);
+          }
           if (totalEntries + entryCount > MAX_TOTAL_ENTRIES) {
             throw new Error(`global rule budget exceeded (${totalEntries + entryCount} > ${MAX_TOTAL_ENTRIES})`);
           }
           totalEntries += entryCount;
-          const table = builder.seal(entryCount);
           const changed = deps.store.upsertList(url, table);
           if (changed) cacheFlushed = true; // flush flag handled below
-          log.info({ url, entries: table.entryCount, changed }, "list parsed");
+          log.info({ url, entries: table.entryCount, changed, artifact: Boolean(fromArtifact) }, "list loaded");
           // statuses per row that reference this URL
           for (const profileRowGroups of enabledByProfile.values()) {
             for (const row of profileRowGroups) {
               if (row.url === url) {
-                await writeStatus(row.id, "ok", table.entryCount, resolvedFormat).catch((err) =>
+                await writeStatus(row.id, "ok", table.entryCount, fromArtifact ? undefined : resolvedFormat).catch((err) =>
                   log.warn({ err, url }, "blocklist status write failed"),
                 );
               }
@@ -268,6 +298,25 @@ async function writeStatus(
       ...(detectedFormat ? { detectedFormat } : {}),
     })
     .where(and(eq(profileBlocklists.id, id)));
+}
+
+/**
+ * Load and verify a compiled artifact from object storage. The sha256 check is
+ * mandatory: the file name is the content hash, so a truncated/corrupted
+ * upload must never be trusted.
+ */
+async function loadArtifactTable(
+  store: S3ClientLike,
+  hash: string,
+): Promise<SuffixFingerprintTable> {
+  const prefix = process.env.ARTIFACT_PREFIX ?? "artifacts";
+  const key = `${prefix.replace(/^\/+|\/+$/g, "")}/${hash}.bin`;
+  const bytes = new Uint8Array(await store.file(key).arrayBuffer());
+  if (!isArtifact(bytes)) throw new Error(`${key} is not an artifact`);
+  const actual = createHash("sha256").update(bytes).digest("hex");
+  if (actual !== hash) throw new Error(`${key} hash mismatch (${actual})`);
+  const { allow, block } = decodeArtifact(bytes);
+  return SuffixFingerprintTable.fromArrays(allow, block);
 }
 
 /**

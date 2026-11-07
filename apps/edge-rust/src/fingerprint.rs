@@ -64,6 +64,11 @@ impl FingerprintTable {
         }
     }
 
+    /// Consume the table and return the raw sorted arrays (artifact compiler).
+    pub fn into_parts(self) -> (Vec<u64>, Vec<u64>) {
+        (self.allow, self.block)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.allow.is_empty() && self.block.is_empty()
     }

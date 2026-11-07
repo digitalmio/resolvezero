@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+use crate::artifact::{sha256_hex, Artifact, S3Config};
 use crate::cache::DnsCache;
 use crate::config::Config;
 use crate::db::Db;
@@ -23,15 +24,26 @@ pub async fn sync_once(
 ) -> Result<bool, String> {
     let rows = db.blocklists().await.map_err(|err| err.to_string())?;
 
-    let mut unique: HashMap<String, String> = HashMap::new();
+    struct UniqueList {
+        format: String,
+        artifact_hash: Option<String>,
+    }
+    let mut unique: HashMap<String, UniqueList> = HashMap::new();
     let mut by_profile: HashMap<String, Vec<(String, String)>> = HashMap::new();
     for row in rows {
-        unique.entry(row.url.clone()).or_insert(row.format.clone());
+        let entry = unique.entry(row.url.clone()).or_insert(UniqueList {
+            format: row.format.clone(),
+            artifact_hash: row.artifact_hash.clone(),
+        });
+        if entry.artifact_hash.is_none() {
+            entry.artifact_hash = row.artifact_hash;
+        }
         by_profile
             .entry(row.profile_id.clone())
             .or_default()
             .push((row.url, row.id));
     }
+    let s3 = S3Config::from_env();
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
@@ -41,30 +53,54 @@ pub async fn sync_once(
 
     let mut changed = false;
     let mut total = 0usize;
+    let mut artifact_lists = 0usize;
+    let mut raw_lists = 0usize;
     let mut fetched: Vec<(String, FingerprintTable)> = Vec::new();
 
     // Sequential on purpose: a 500k-rule parse is the memory high-water mark,
     // and parallel parses multiplied the transient enough to OOM 256 MB VMs.
-    for (url, format) in &unique {
-        match fetch_text(&client, url, cfg.max_list_bytes).await {
-            Ok(text) => {
-                // Parsing is CPU-bound (~0.2 s per 500k rules). Keep it off the
-                // async workers so DNS queries keep flowing during a 6-hour
-                // resync; the text is moved into the blocking task.
-                let list_format = ListFormat::parse(format);
-                let table = match tokio::task::spawn_blocking(move || {
-                    let parsed = parse_list(&text, list_format);
-                    FingerprintTable::build(&parsed.blocks, &parsed.allows)
-                })
-                .await
-                {
-                    Ok(table) => table,
-                    Err(err) => {
-                        warn!(url, %err, "list parse task failed");
-                        continue;
+    for (url, list) in &unique {
+        let mut table = None;
+        if let (Some(s3), Some(hash)) = (&s3, list.artifact_hash.as_deref()) {
+            match load_artifact(s3, hash).await {
+                Ok(value) => {
+                    artifact_lists += 1;
+                    table = Some(value);
+                }
+                Err(err) => warn!(url, %err, "artifact load failed; falling back to text"),
+            }
+        }
+
+        let table = match table {
+            Some(table) => table,
+            None => match fetch_text(&client, url, cfg.max_list_bytes).await {
+                Ok(text) => {
+                    raw_lists += 1;
+                    // Parsing is CPU-bound (~0.2 s per 500k rules). Keep it off
+                    // the async workers so DNS queries keep flowing during a
+                    // 6-hour resync; the text is moved into the blocking task.
+                    let list_format = ListFormat::parse(&list.format);
+                    match tokio::task::spawn_blocking(move || {
+                        let parsed = parse_list(&text, list_format);
+                        FingerprintTable::build(&parsed.blocks, &parsed.allows)
+                    })
+                    .await
+                    {
+                        Ok(table) => table,
+                        Err(err) => {
+                            warn!(url, %err, "list parse task failed");
+                            continue;
+                        }
                     }
-                };
-                if total + table.entries > cfg.max_total_entries {
+                }
+                Err(err) => {
+                    warn!(url, %err, "list fetch failed; keeping previous table");
+                    continue;
+                }
+            },
+        };
+
+        if total + table.entries > cfg.max_total_entries {
                     warn!(
                         url,
                         entries = table.entries,
@@ -74,12 +110,9 @@ pub async fn sync_once(
                     );
                     continue;
                 }
-                total += table.entries;
-                info!(url, entries = table.entries, "list parsed");
-                fetched.push((url.clone(), table));
-            }
-            Err(err) => warn!(url, %err, "list fetch failed; keeping previous table"),
-        }
+        total += table.entries;
+        info!(url, entries = table.entries, "list loaded");
+        fetched.push((url.clone(), table));
     }
 
     if !fetched.is_empty() {
@@ -95,6 +128,8 @@ pub async fn sync_once(
     };
 
     let mut guard = store.write().await;
+    guard.artifact_lists = artifact_lists;
+    guard.raw_lists = raw_lists;
     for (profile_id, rows) in &by_profile {
         let mut seen = HashSet::new();
         let mut subscriptions = Vec::new();
@@ -155,4 +190,14 @@ async fn fetch_text(
         return Err(format!("body {} exceeds {max_bytes}", bytes.len()));
     }
     Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+
+async fn load_artifact(s3: &S3Config, hash: &str) -> Result<FingerprintTable, String> {
+    let bytes = s3.get(hash).await?;
+    let actual = sha256_hex(&bytes);
+    if actual != hash {
+        return Err(format!("artifact hash mismatch ({actual})"));
+    }
+    Ok(Artifact::decode(&bytes)?.into_table())
 }

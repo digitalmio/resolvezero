@@ -110,6 +110,20 @@ export class SuffixFingerprintTable {
     readonly entryCount = 0,
   ) {}
 
+  /** Raw sorted arrays for artifact encoding / tests. */
+  artifactTables(): { allow: BigUint64Array; block: BigUint64Array } {
+    return { allow: this.allow, block: this.block };
+  }
+
+  /** Rebuild a table from artifact arrays (already sorted, deduped). */
+  static fromArrays(
+    allow: BigUint64Array,
+    block: BigUint64Array,
+    entryCount = allow.length + block.length,
+  ): SuffixFingerprintTable {
+    return new SuffixFingerprintTable(allow, block, entryCount);
+  }
+
   /**
    * Rule action for a queried domain, or undefined when not listed.
    * Probes every label-boundary suffix of the query + the query itself.

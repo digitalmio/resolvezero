@@ -104,6 +104,7 @@ pub struct BlocklistRow {
     pub profile_id: String,
     pub url: String,
     pub format: String,
+    pub artifact_hash: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -122,6 +123,9 @@ pub struct RuleStore {
     /// url -> shared table (one copy per machine).
     pub catalog: HashMap<String, FingerprintTable>,
     pub subscriptions: HashMap<String, Vec<Subscription>>,
+    /// Lists loaded from a compiled artifact / parsed from raw text this cycle.
+    pub artifact_lists: usize,
+    pub raw_lists: usize,
 }
 
 impl RuleStore {

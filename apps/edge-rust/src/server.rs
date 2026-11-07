@@ -576,6 +576,8 @@ async fn readyz(State(state): State<Arc<AppState>>) -> Response {
         "dns53Bound": true,
         "remoteLists": store.remote_rules(),
         "remoteListTables": store.catalog.len(),
+        "artifactLists": store.artifact_lists,
+        "rawLists": store.raw_lists,
         "profiles": store.profiles.len(),
         "rssMb": crate::metrics::rss_bytes() / 1024 / 1024,
         "memoryLimitMb": memory_limit_mb(),

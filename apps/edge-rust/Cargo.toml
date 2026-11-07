@@ -10,6 +10,9 @@ axum = "0.7"
 base64 = "0.22"
 bytes = "1"
 hickory-proto = "0.24"
+hmac = "0.12"
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "macros"] }
 libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2"] }
 serde = { version = "1", features = ["derive"] }

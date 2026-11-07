@@ -138,7 +138,7 @@ impl Db {
 
     pub async fn blocklists(&self) -> Result<Vec<BlocklistRow>, sqlx::Error> {
         sqlx::query(
-            "select id::text as id, profile_id, url, format from profile_blocklists where enabled = true",
+            "select id::text as id, profile_id, url, format, artifact_hash from profile_blocklists where enabled = true",
         )
         .fetch_all(&self.pool)
         .await?
@@ -149,6 +149,7 @@ impl Db {
                 profile_id: row.try_get("profile_id")?,
                 url: row.try_get("url")?,
                 format: row.try_get("format")?,
+                artifact_hash: row.try_get("artifact_hash")?,
             })
         })
         .collect()

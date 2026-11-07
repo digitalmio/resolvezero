@@ -134,6 +134,13 @@
       "when": 1793332800000,
       "tag": "0018_waitlist",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794049862185,
+      "tag": "0019_rule_artifacts",
+      "breakpoints": true
     }
   ]
 }

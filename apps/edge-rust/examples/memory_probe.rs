@@ -9,9 +9,7 @@ use resolvezero_edge::parse::{parse_list, ListFormat};
 
 fn current_rss_mb() -> f64 {
     let pid = std::process::id().to_string();
-    let output = Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid])
-        .output();
+    let output = Command::new("ps").args(["-o", "rss=", "-p", &pid]).output();
     match output {
         Ok(out) => {
             let kb: f64 = String::from_utf8_lossy(&out.stdout)
@@ -63,10 +61,15 @@ fn main() {
         let start = Instant::now();
         let text = generate(list, per_list);
         let text_mb = text.len() as f64 / 1048576.0;
+        let generated = start.elapsed().as_secs_f64();
+        let parse_start = Instant::now();
         let parsed = parse_list(&text, ListFormat::Domains);
+        let parsed_at = parse_start.elapsed().as_secs_f64();
         drop(text);
         let after_parse = current_rss_mb();
+        let build_start = Instant::now();
         let table = FingerprintTable::build(&parsed.blocks, &parsed.allows);
+        let built_at = build_start.elapsed().as_secs_f64();
         let entries = table.entries;
         drop(parsed);
         tables.push(table);
@@ -76,14 +79,16 @@ fn main() {
 
         if list < 3 || (list + 1) % 10 == 0 || list + 1 == lists {
             println!(
-                "list {:>3}: {:>7} rules, text {:.1} MB, after-parse {:.1} MB, after-build {:.1} MB, peak {:.1} MB, {:.2}s",
+                "list {:>3}: {:>7} rules, text {:.1} MB, after-parse {:.1} MB, after-build {:.1} MB, peak {:.1} MB | gen {:.2}s parse {:.2}s build {:.2}s",
                 list + 1,
                 entries,
                 text_mb,
                 after_parse,
                 current_rss_mb(),
                 peak_rss_mb(),
-                elapsed
+                generated,
+                parsed_at,
+                built_at
             );
         }
     }

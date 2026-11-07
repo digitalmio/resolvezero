@@ -477,9 +477,24 @@ export const profileBlocklists = pgTable(
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     lastStatus: varchar("last_status", { length: 50 }), // 'ok' | 'error: ...'
     entryCount: integer("entry_count").notNull().default(0),
+    /** Content-addressed compiled artifact; NULL = parse the text on the edge. */
+    artifactHash: text("artifact_hash"),
+    artifactRules: integer("artifact_rules"),
+    compiledAt: timestamp("compiled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [index("profile_blocklists_profile_idx").on(t.profileId)],
 );
+
+/** Metadata for compiled rule artifacts stored in object storage. */
+export const ruleArtifacts = pgTable("rule_artifacts", {
+  hash: text("hash").primaryKey(),
+  sourceUrl: text("source_url").notNull(),
+  bytes: integer("bytes").notNull(),
+  allowCount: integer("allow_count").notNull(),
+  blockCount: integer("block_count").notNull(),
+  compiler: varchar("compiler", { length: 40 }).notNull().default("rz-compile/0.1"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

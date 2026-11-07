@@ -4,6 +4,7 @@
 //! response shapes are intentionally identical so a Rust machine can be run
 //! side by side with the Node edge behind the same database.
 
+pub mod artifact;
 pub mod cache;
 pub mod config;
 pub mod db;

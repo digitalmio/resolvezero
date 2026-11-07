@@ -80,6 +80,10 @@ impl Metrics {
         out.push_str(&format!("rz_remote_list_tables {}\n", store.catalog.len()));
         out.push_str("# TYPE rz_remote_list_rules gauge\n");
         out.push_str(&format!("rz_remote_list_rules {}\n", store.remote_rules()));
+        out.push_str("# TYPE rz_artifact_lists gauge\n");
+        out.push_str(&format!("rz_artifact_lists {}\n", store.artifact_lists));
+        out.push_str("# TYPE rz_raw_lists gauge\n");
+        out.push_str(&format!("rz_raw_lists {}\n", store.raw_lists));
         out.push_str("# TYPE rz_dns_cache_entries gauge\n");
         out.push_str(&format!("rz_dns_cache_entries {}\n", cache.len()));
         out.push_str("# TYPE rz_uptime_seconds gauge\n");
