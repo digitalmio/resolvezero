@@ -1,8 +1,12 @@
+# Rust agent image (root build context, Cargo workspace).
 FROM rust:1-slim AS build
 WORKDIR /app
-COPY Cargo.toml ./
-COPY src ./src
-RUN cargo build --release
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY apps/agent-rust ./apps/agent-rust
+COPY apps/compiler ./apps/compiler
+COPY apps/edge ./apps/edge
+RUN cargo build --release --locked -p resolvezero-agent --bin resolvezero-agent
 
 FROM debian:bookworm-slim
 RUN useradd --system --uid 10001 --no-create-home resolvezero-agent || true

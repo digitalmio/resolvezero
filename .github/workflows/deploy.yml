@@ -31,6 +31,8 @@ jobs:
           cache: pnpm
       - name: install
         run: pnpm install --frozen-lockfile
+      - name: typecheck (scripts)
+        run: pnpm exec tsc -p scripts
       - name: typecheck (db)
         run: pnpm exec tsc -p packages/db
       - name: tests

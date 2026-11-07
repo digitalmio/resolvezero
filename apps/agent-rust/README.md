@@ -1,6 +1,6 @@
 # ResolveZero Agent (Rust)
 
-A 1:1 rewrite of [`apps/agent`](../apps/agent) in Rust. Same behaviour, same
+A 1:1 rewrite of [`apps/agent`](../agent) in Rust. Same behaviour, same
 environment variables, same wire protocol — just a single static binary with no
 JavaScript runtime.
 
@@ -8,9 +8,9 @@ JavaScript runtime.
 LAN devices → UDP/TCP 53 → resolvezero-agent → DoH → ResolveZero edge
 ```
 
-> Kept aside on purpose: this crate is **not** part of the pnpm workspace, the
-> deploy workflow, or CI yet. `apps/agent` (TypeScript) is still the shipped
-> agent. Build and test it with Cargo while we decide.
+`apps/agent` (TypeScript) is still the shipped agent. This crate is part of the
+Cargo workspace and CI, so the Rust port is built and tested alongside the
+edge/compiler while we decide which one to ship.
 
 ## Parity with the TypeScript agent
 
@@ -42,7 +42,7 @@ Non-parity notes:
 ## Build
 
 ```sh
-cargo build --release
+cargo build --release -p resolvezero-agent --bin resolvezero-agent
 # target/release/resolvezero-agent
 ```
 
@@ -50,13 +50,13 @@ Static-ish Linux builds (musl) if you want a single file without glibc:
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl
+cargo build --release -p resolvezero-agent --bin resolvezero-agent --target x86_64-unknown-linux-musl
 ```
 
 ## Run
 
 ```sh
-PROFILE_ID=... DOH_TOKEN=... DNS_PORT=5353 cargo run
+PROFILE_ID=... DOH_TOKEN=... DNS_PORT=5353 cargo run -p resolvezero-agent --bin resolvezero-agent
 ```
 
 Port 53 is privileged. On Linux either run as root, grant

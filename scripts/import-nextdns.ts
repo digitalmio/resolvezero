@@ -156,7 +156,9 @@ function processLine(line: string): void {
 }
 
 // Stream text, split on newlines (handles chunk boundaries across awaits).
-const stream = Readable.toWeb(createReadStream(csv)).pipeThrough(new TextDecoderStream("utf-8"));
+const stream = (
+  Readable.toWeb(createReadStream(csv)) as ReadableStream<Uint8Array>
+).pipeThrough(new TextDecoderStream("utf-8") as any) as ReadableStream<string>;
 for await (const chunk of stream) {
   const text = remainder + chunk;
   const parts = text.split("\n");

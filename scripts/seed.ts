@@ -51,3 +51,5 @@ console.log("   zone:     nas.lan → 192.168.1.24 (A, ttl 120)");
 console.log("   lists:    polish-ads-filter hostfile.txt, KADhosts (remote blocklists)");
 await rawClient().end();
 process.exit(0);
+
+export {};

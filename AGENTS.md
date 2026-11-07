@@ -22,6 +22,7 @@ If an exception is used, keep the reason obvious in the file or the PR descripti
 ## Project shape
 
 - `apps/edge` — production DNS/DoH/DoT edge (Rust). Keep the hot path allocation-light.
+- `apps/agent-rust` — Rust agent port (in the workspace/CI; `apps/agent` is still the shipped agent).
 - `apps/compiler` — artifact compiler worker (`rz-compiler`) and one-shot `rz-compile` (Rust).
 - `crates/rz-core` — shared artifact, parser, fingerprint, SSRF, and S3 primitives.
 - `crates/rz-db` — shared Postgres access for the edge and compiler.

@@ -9,7 +9,7 @@
  * return the same sinkhole. Forwarded CDN answers are intentionally excluded:
  * upstream GeoDNS legitimately returns different sets between runs.
  */
-import { encode, decode } from "dns-packet";
+import { encode, decode, type RecordType } from "dns-packet";
 
 const args = process.argv.slice(2);
 const value = (name: string, fallback?: string) => {
@@ -34,12 +34,17 @@ interface Answer {
 }
 
 async function ask(base: string, name: string, type: string): Promise<Answer> {
-  const wire = encode({ type: "query", id: 0x1234, flags: 0x0100, questions: [{ type, name }] });
+  const wire = encode({
+    type: "query",
+    id: 0x1234,
+    flags: 0x0100,
+    questions: [{ type: type as RecordType, name }],
+  });
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const response = await fetch(`${base}/v1/${profile}/${token}`, {
       method: "POST",
       headers: { "content-type": "application/dns-message" },
-      body: wire,
+      body: new Uint8Array(wire),
     });
     // Edges enforce DOH_RATE_LIMIT_PER_MIN; pace instead of failing.
     if (response.status === 429) {
@@ -47,10 +52,15 @@ async function ask(base: string, name: string, type: string): Promise<Answer> {
       continue;
     }
     if (!response.ok) throw new Error(`${base} returned HTTP ${response.status}`);
-    const message = decode(Buffer.from(await response.arrayBuffer()));
+    const message = decode(Buffer.from(await response.arrayBuffer())) as {
+      rcode?: string;
+      answers?: Array<{ type: string; data?: string }>;
+    };
     return {
       rcode: String(message.rcode),
-      answers: (message.answers ?? []).map((answer) => `${answer.type}:${answer.data}`).sort(),
+      answers: (message.answers ?? [])
+        .map((answer) => `${answer.type}:${answer.data ?? ""}`)
+        .sort(),
     };
   }
   throw new Error(`${base} kept returning HTTP 429`);
