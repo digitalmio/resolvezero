@@ -33,8 +33,9 @@ jobs:
         run: cargo build --release --bin rz-compile --manifest-path apps/edge-rust/Cargo.toml
       - name: compile + publish
         env:
-          # Admin URL: the script updates profile_blocklists and rule_artifacts.
-          DATABASE_URL: ${{ secrets.DATABASE_URL_ADMIN }}
+          # App role: the compiler only needs DML on rule_artifacts and
+          # profile_blocklists (no DDL/admin rights).
+          DATABASE_URL: ${{ secrets.DATABASE_URL_APP }}
           S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
           S3_REGION: ${{ secrets.S3_REGION }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
