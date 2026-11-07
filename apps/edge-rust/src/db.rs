@@ -40,6 +40,16 @@ impl Db {
         &self.pool
     }
 
+    /// Pool that never connects. Used by unit tests that exercise paths which
+    /// return before touching Postgres.
+    #[cfg(test)]
+    pub(crate) fn lazy_for_test() -> Self {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://user:pass@127.0.0.1:5432/resolvezero_test")
+            .expect("lazy postgres pool");
+        Self { pool }
+    }
+
     pub async fn versions(&self) -> Result<Versions, sqlx::Error> {
         let row = sqlx::query(
             "select config_version, blocklist_version from edge_config_state where id = true limit 1",

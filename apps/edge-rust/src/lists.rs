@@ -12,7 +12,7 @@ use crate::db::Db;
 use crate::fingerprint::FingerprintTable;
 use crate::netguard::{redact_url, SafeFetcher};
 use crate::parse::{parse_list, ListFormat};
-use crate::store::{ListSource, RuleStore, Subscription};
+use crate::store::{BlocklistRow, ListSource, RuleStore, Subscription};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SyncReport {
@@ -20,31 +20,38 @@ pub struct SyncReport {
     pub failed: usize,
 }
 
-/// Point the store at the current blocklist subscriptions without fetching any
-/// list bodies. With lazy loading this is the only blocklist work done at
-/// startup and on a watermark change; artifacts arrive on first use.
-pub async fn sync_metadata(
-    db: &Db,
-    store: &Arc<RwLock<RuleStore>>,
-    cfg: &Config,
-) -> Result<SyncReport, String> {
-    let rows = db.blocklists().await.map_err(|err| err.to_string())?;
+pub(crate) struct SubscriptionPlan {
+    pub by_profile: HashMap<String, Vec<Subscription>>,
+    pub configured: HashSet<String>,
+    pub failed: usize,
+}
+
+/// Group enabled list rows into per-profile subscriptions, applying the unique
+/// and per-profile caps. Pure so the cap/dedupe rules are unit-testable without
+/// Postgres.
+pub(crate) fn build_subscriptions(
+    rows: Vec<BlocklistRow>,
+    max_unique: usize,
+    max_per_profile: usize,
+) -> SubscriptionPlan {
+    let mut plan = SubscriptionPlan {
+        by_profile: HashMap::new(),
+        configured: HashSet::new(),
+        failed: 0,
+    };
     let mut unique: HashSet<String> = HashSet::new();
-    let mut by_profile: HashMap<String, Vec<Subscription>> = HashMap::new();
-    let mut configured: HashSet<String> = HashSet::new();
-    let mut failed = 0usize;
 
     for row in rows {
-        configured.insert(row.profile_id.clone());
-        let subscriptions = by_profile.entry(row.profile_id.clone()).or_default();
+        plan.configured.insert(row.profile_id.clone());
+        let subscriptions = plan.by_profile.entry(row.profile_id.clone()).or_default();
         if !unique.contains(&row.url) {
-            if unique.len() >= cfg.max_unique_lists {
+            if unique.len() >= max_unique {
                 warn!(
                     url = %redact_url(&row.url),
-                    cap = cfg.max_unique_lists,
+                    cap = max_unique,
                     "unique-list cap reached; list skipped"
                 );
-                failed += 1;
+                plan.failed += 1;
                 continue;
             }
             unique.insert(row.url.clone());
@@ -57,24 +64,40 @@ pub async fn sync_metadata(
         });
     }
 
-    let mut guard = store.write().await;
-    for (profile_id, mut subscriptions) in by_profile {
+    for (profile_id, subscriptions) in plan.by_profile.iter_mut() {
         let mut seen = HashSet::new();
         subscriptions.retain(|sub| seen.insert(sub.url.clone()));
-        if subscriptions.len() > cfg.max_lists_per_profile {
+        if subscriptions.len() > max_per_profile {
             warn!(
                 profile_id,
-                cap = cfg.max_lists_per_profile,
+                cap = max_per_profile,
                 "per-profile list cap reached"
             );
-            subscriptions.truncate(cfg.max_lists_per_profile);
+            subscriptions.truncate(max_per_profile);
         }
+    }
+    plan
+}
+
+/// Point the store at the current blocklist subscriptions without fetching any
+/// list bodies. With lazy loading this is the only blocklist work done at
+/// startup and on a watermark change; artifacts arrive on first use.
+pub async fn sync_metadata(
+    db: &Db,
+    store: &Arc<RwLock<RuleStore>>,
+    cfg: &Config,
+) -> Result<SyncReport, String> {
+    let rows = db.blocklists().await.map_err(|err| err.to_string())?;
+    let plan = build_subscriptions(rows, cfg.max_unique_lists, cfg.max_lists_per_profile);
+
+    let mut guard = store.write().await;
+    for (profile_id, subscriptions) in plan.by_profile {
         guard.wire_subscriptions(&profile_id, subscriptions);
     }
     let stale: Vec<String> = guard
         .subscriptions
         .keys()
-        .filter(|profile_id| !configured.contains(*profile_id))
+        .filter(|profile_id| !plan.configured.contains(*profile_id))
         .cloned()
         .collect();
     for profile_id in stale {
@@ -84,7 +107,7 @@ pub async fn sync_metadata(
 
     Ok(SyncReport {
         changed: false,
-        failed,
+        failed: plan.failed,
     })
 }
 
@@ -274,4 +297,70 @@ async fn load_artifact(s3: &S3Config, hash: &str) -> Result<FingerprintTable, St
         return Err(format!("artifact hash mismatch ({actual})"));
     }
     Ok(Artifact::decode(&bytes)?.into_table())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(profile: &str, url: &str, hash: Option<&str>) -> BlocklistRow {
+        BlocklistRow {
+            id: format!("{profile}-{url}"),
+            profile_id: profile.to_string(),
+            url: url.to_string(),
+            format: "hosts".to_string(),
+            artifact_hash: hash.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn dedupes_urls_and_preserves_artifact_metadata() {
+        let plan = build_subscriptions(
+            vec![
+                row("home", "https://lists/a.txt", Some("aaa")),
+                row("home", "https://lists/a.txt", Some("aaa")),
+                row("home", "https://lists/b.txt", None),
+            ],
+            16,
+            16,
+        );
+        let subs = plan.by_profile.get("home").expect("home plan");
+        assert_eq!(subs.len(), 2);
+        assert_eq!(subs[0].url, "https://lists/a.txt");
+        assert_eq!(subs[0].format, "hosts");
+        assert_eq!(subs[0].artifact_hash.as_deref(), Some("aaa"));
+        assert_eq!(subs[1].artifact_hash, None);
+        assert_eq!(plan.failed, 0);
+    }
+
+    #[test]
+    fn unique_cap_skips_rows_but_keeps_profiles_configured() {
+        let plan = build_subscriptions(
+            vec![
+                row("home", "https://lists/a.txt", None),
+                row("phone", "https://lists/b.txt", None),
+            ],
+            1,
+            16,
+        );
+        assert!(plan.configured.contains("home"));
+        assert!(plan.configured.contains("phone"));
+        assert_eq!(plan.by_profile["home"].len(), 1);
+        assert!(plan.by_profile["phone"].is_empty());
+        assert_eq!(plan.failed, 1);
+    }
+
+    #[test]
+    fn per_profile_cap_truncates_after_dedupe() {
+        let plan = build_subscriptions(
+            vec![
+                row("home", "https://lists/a.txt", None),
+                row("home", "https://lists/b.txt", None),
+                row("home", "https://lists/c.txt", None),
+            ],
+            16,
+            2,
+        );
+        assert_eq!(plan.by_profile["home"].len(), 2);
+    }
 }

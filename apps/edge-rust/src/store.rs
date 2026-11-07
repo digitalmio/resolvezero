@@ -730,6 +730,81 @@ mod tests {
     }
 
     #[test]
+    fn pending_lists_tracks_unloaded_subscriptions() {
+        use crate::fingerprint::FingerprintTable;
+        let mut store = RuleStore::default();
+        store.wire_subscriptions(
+            "home",
+            vec![Subscription {
+                url: "list".into(),
+                list_id: None,
+                format: "hosts".into(),
+                artifact_hash: Some("abc".into()),
+            }],
+        );
+        assert_eq!(store.pending_lists(), 1);
+        store.upsert_list(
+            "list",
+            Some("abc"),
+            ListSource::Artifact,
+            FingerprintTable::build(&HashSet::from(["ads.example".to_string()]), &HashSet::new()),
+        );
+        assert_eq!(store.pending_lists(), 0);
+    }
+
+    #[test]
+    fn prune_catalog_drops_unreferenced_tables_and_bookkeeping() {
+        use crate::fingerprint::FingerprintTable;
+        let mut store = RuleStore::default();
+        store.upsert_list(
+            "keep",
+            Some("a"),
+            ListSource::Artifact,
+            FingerprintTable::build(&HashSet::from(["a.example".to_string()]), &HashSet::new()),
+        );
+        store.upsert_list(
+            "drop",
+            None,
+            ListSource::Raw,
+            FingerprintTable::build(&HashSet::from(["b.example".to_string()]), &HashSet::new()),
+        );
+        store.wire_subscriptions("home", vec![Subscription::raw("keep", None)]);
+
+        store.prune_catalog();
+        assert_eq!(store.catalog.len(), 1);
+        assert!(store.catalog.contains_key("keep"));
+        assert_eq!(store.artifact_lists(), 1);
+        assert_eq!(store.raw_lists(), 0);
+        assert!(!store.catalog_hashes.contains_key("drop"));
+        assert!(!store.list_sources.contains_key("drop"));
+    }
+
+    #[test]
+    fn remote_attribution_reports_the_matching_list_id() {
+        use crate::fingerprint::FingerprintTable;
+        let mut store = RuleStore::default();
+        store.upsert_list(
+            "list",
+            None,
+            ListSource::Raw,
+            FingerprintTable::build(&HashSet::from(["ads.example".to_string()]), &HashSet::new()),
+        );
+        store.wire_subscriptions(
+            "home",
+            vec![Subscription {
+                url: "list".into(),
+                list_id: Some("list-id".into()),
+                format: "hosts".into(),
+                artifact_hash: None,
+            }],
+        );
+        assert_eq!(
+            store.resolve_remote_detailed("home", "ads.example"),
+            Some((Action::Block, Some("list-id".into())))
+        );
+    }
+
+    #[test]
     fn remote_allow_wins_across_lists() {
         use crate::fingerprint::FingerprintTable;
         let mut store = RuleStore::default();

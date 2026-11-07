@@ -144,3 +144,37 @@ pub fn rss_bytes() -> u64 {
     }
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fingerprint::FingerprintTable;
+    use crate::store::{ListSource, Subscription};
+    use std::collections::HashSet;
+
+    #[test]
+    fn render_reports_lazy_list_gauges() {
+        let metrics = Metrics::default();
+        let mut store = RuleStore::default();
+        let subscription = Subscription {
+            url: "https://lists/a.txt".into(),
+            list_id: None,
+            format: "hosts".into(),
+            artifact_hash: Some("aaa".into()),
+        };
+        store.wire_subscriptions("home", vec![subscription.clone()]);
+        store.upsert_list(
+            &subscription.url,
+            subscription.artifact_hash.as_deref(),
+            ListSource::Artifact,
+            FingerprintTable::build(&HashSet::from(["ads.example".to_string()]), &HashSet::new()),
+        );
+
+        let out = metrics.render(&store, &DnsCache::default(), 2);
+        assert!(out.contains("rz_remote_list_tables 1"));
+        assert!(out.contains("rz_artifact_lists 1"));
+        assert!(out.contains("rz_raw_lists 0"));
+        assert!(out.contains("rz_pending_lists 0"));
+        assert!(out.contains("rz_blocklist_failed 2"));
+    }
+}

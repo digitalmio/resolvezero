@@ -145,6 +145,54 @@ impl Config {
             _ => "https://cloudflare-dns.com/dns-query".to_string(),
         }
     }
+
+    /// Deterministic config for unit tests that do not read the environment.
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        Self {
+            database_url: "postgres://example".into(),
+            doh_port: 8080,
+            dns_port: 53,
+            metrics_port: 9091,
+            region: "local".into(),
+            upstream_url: None,
+            upstream_preset: None,
+            unknown_source: UnknownSource::Refused,
+            max_total_entries: 5_000_000,
+            max_list_bytes: 30 * 1024 * 1024,
+            max_lists_per_profile: 64,
+            list_interval: Duration::from_secs(60),
+            lazy_lists: true,
+            list_retry: Duration::from_secs(60),
+            poll_interval: Duration::from_millis(500),
+            allow_tokenless: false,
+            drop_privileges: false,
+            doh_rate_limit_per_min: 600,
+            udp_rate_limit_per_min: 600,
+            doh_max_inflight: 256,
+            udp_max_inflight: 1024,
+            tcp_max_connections: 512,
+            tcp_max_per_source: 32,
+            dot_max_per_source: 16,
+            tcp_idle_timeout: Duration::from_secs(30),
+            tcp_lifetime: Duration::from_secs(300),
+            doh_timeout: Duration::from_secs(5),
+            max_doh_body: 65_535,
+            max_doh_get: 4_096,
+            max_unique_lists: 256,
+            list_cycle_deadline: Duration::from_secs(180),
+            udp_bind: "0.0.0.0".into(),
+            hosted: false,
+            probe_domain: None,
+            dot_port: 853,
+            dot_enabled: true,
+            dot_suffix: ".dot.resolvezero.com".into(),
+            dot_idle_timeout: Duration::from_secs(120),
+            dot_lifetime: Duration::from_secs(600),
+            drop_uid: 1000,
+            drop_gid: 1000,
+        }
+    }
 }
 
 fn number<T>(key: &str, default: T) -> T

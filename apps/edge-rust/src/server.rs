@@ -826,6 +826,8 @@ fn dot_label(hostname: &str, suffix: &str) -> Option<String> {
     if label.is_empty()
         || label.contains('.')
         || label.len() > 32
+        || label.starts_with('-')
+        || label.ends_with('-')
         || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
     {
         return None;
@@ -1946,7 +1948,14 @@ fn drop_privileges(gid: u32, uid: u32) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{dot_label, match_probe_nonce};
+    use super::{
+        acquire_conn, caller_ip, dot_label, match_probe_nonce, query_param, record_type_name,
+        token_from, upstream_label, valid_device, valid_purge_domain, valid_purge_type,
+    };
+    use axum::http::{header, HeaderMap, HeaderValue, Uri};
+    use hickory_proto::rr::RecordType;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn matches_probe_nonces() {
@@ -1981,10 +1990,140 @@ mod tests {
             dot_label("abc123.dot.resolvezero.com.", ".dot.resolvezero.com"),
             Some("abc123".into())
         );
+        assert_eq!(
+            dot_label("ABC123.DOT.RESOLVEZERO.COM", ".dot.resolvezero.com"),
+            Some("abc123".into())
+        );
         assert_eq!(dot_label("abc.dot.other.com", ".dot.resolvezero.com"), None);
         assert_eq!(
             dot_label("a.b.dot.resolvezero.com", ".dot.resolvezero.com"),
             None
         );
+        assert_eq!(
+            dot_label("-bad.dot.resolvezero.com", ".dot.resolvezero.com"),
+            None
+        );
+    }
+
+    #[test]
+    fn maps_upstream_labels() {
+        assert_eq!(upstream_label(None), "edge-default");
+        assert_eq!(upstream_label(Some("cloudflare")), "cloudflare");
+        assert_eq!(upstream_label(Some("google")), "google");
+        assert_eq!(upstream_label(Some("quad9")), "quad9");
+        assert_eq!(
+            upstream_label(Some("https://dns.example/dns-query")),
+            "custom"
+        );
+        assert_eq!(upstream_label(Some("unexpected")), "edge-default");
+    }
+
+    #[test]
+    fn validates_probe_nonces() {
+        assert_eq!(
+            match_probe_nonce(
+                "ABC123DEF456ABC123.probe.resolvezero.com.",
+                "probe.resolvezero.com"
+            ),
+            Some("abc123def456abc123".into())
+        );
+        assert_eq!(
+            match_probe_nonce(
+                "abc-123-def-456-abc.probe.resolvezero.com",
+                "probe.resolvezero.com"
+            ),
+            None
+        );
+        assert_eq!(
+            match_probe_nonce("probe.resolvezero.com", "probe.resolvezero.com"),
+            None
+        );
+        assert_eq!(
+            match_probe_nonce(
+                "abc123def456abc123.other.resolvezero.com",
+                "probe.resolvezero.com"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn validates_purge_inputs() {
+        assert_eq!(
+            valid_purge_domain(" Ads.Example.COM. ").as_deref(),
+            Some("ads.example.com")
+        );
+        assert_eq!(
+            valid_purge_domain("_dmarc.example.com").as_deref(),
+            Some("_dmarc.example.com")
+        );
+        assert_eq!(valid_purge_domain("bad..example"), None);
+        assert_eq!(valid_purge_domain("-bad.example"), None);
+        assert_eq!(valid_purge_domain("bad-.example"), None);
+        assert_eq!(valid_purge_domain(""), None);
+        assert_eq!(valid_purge_type(" a ").as_deref(), Some("A"));
+        assert_eq!(valid_purge_type("https").as_deref(), Some("HTTPS"));
+        assert_eq!(valid_purge_type("NOPE"), None);
+    }
+
+    #[test]
+    fn validates_devices() {
+        assert!(valid_device("iphone-13"));
+        assert!(valid_device("a_b"));
+        assert!(!valid_device(""));
+        assert!(!valid_device("has space"));
+        assert!(!valid_device("has/slash"));
+        assert!(!valid_device(&"a".repeat(33)));
+    }
+
+    #[test]
+    fn maps_record_type_names() {
+        assert_eq!(record_type_name(RecordType::A), "A");
+        assert_eq!(record_type_name(RecordType::AAAA), "AAAA");
+        assert_eq!(record_type_name(RecordType::CNAME), "CNAME");
+        assert_eq!(record_type_name(RecordType::TXT), "TXT");
+        assert_eq!(record_type_name(RecordType::MX), "OTHER");
+    }
+
+    #[test]
+    fn token_prefers_query_and_reads_bearer() {
+        let uri = Uri::from_static("https://edge.test/v1/home?token=from-query");
+        assert_eq!(query_param(&uri, "token").as_deref(), Some("from-query"));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer from-header"),
+        );
+        assert_eq!(token_from(&headers, &uri).as_deref(), Some("from-query"));
+
+        let plain = Uri::from_static("https://edge.test/v1/home");
+        assert_eq!(token_from(&headers, &plain).as_deref(), Some("from-header"));
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer "));
+        assert_eq!(token_from(&headers, &plain), None);
+    }
+
+    #[test]
+    fn prefers_fly_client_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert("fly-client-ip", HeaderValue::from_static("203.0.113.9"));
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("198.51.100.7, 10.0.0.1"),
+        );
+        assert_eq!(caller_ip(&headers).as_deref(), Some("203.0.113.9"));
+    }
+
+    #[test]
+    fn connection_caps_release_on_drop() {
+        let map = Arc::new(Mutex::new(HashMap::new()));
+        let first = acquire_conn(&map, "203.0.113.9".into(), 2).expect("first");
+        let second = acquire_conn(&map, "203.0.113.9".into(), 2).expect("second");
+        assert!(acquire_conn(&map, "203.0.113.9".into(), 2).is_none());
+        assert_eq!(map.lock().expect("caps").get("203.0.113.9"), Some(&2));
+
+        drop(first);
+        assert!(acquire_conn(&map, "203.0.113.9".into(), 2).is_some());
+        drop(second);
+        assert!(map.lock().expect("caps").is_empty());
     }
 }

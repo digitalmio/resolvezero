@@ -290,6 +290,23 @@ mod tests {
     }
 
     #[test]
+    fn blocks_more_reserved_ranges() {
+        for ip in [
+            "198.18.0.1",
+            "192.0.2.1",
+            "240.0.0.1",
+            "255.255.255.255",
+            "fd12:3456::1",
+            "::ffff:10.0.0.1",
+        ] {
+            assert!(is_private_ip(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in ["93.184.216.34", "2001:4860:4860::8888"] {
+            assert!(!is_private_ip(ip.parse().unwrap()), "{ip}");
+        }
+    }
+
+    #[test]
     fn rejects_http_and_credentials() {
         let fetcher = SafeFetcher::new(1024, true);
         assert!(fetcher.validate("http://example.com/list.txt").is_err());
