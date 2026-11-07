@@ -98,9 +98,10 @@ the hot-path cost is accepted for correctness.
 - The version is advanced only after a successful sync; failures retry after
   30 s.
 - `/readyz` now reports `blocklistOk`, `blocklistError`, `failedBlocklists`,
-  `blocklistLastSyncAgeMs`, and returns **503** when the initial/last sync is
-  unhealthy. This is deliberately strict: an unfiltered resolver is worse than
-  an unready one. Partial failures are visible to monitoring.
+  `blocklistLastSyncAgeMs`, and `configPollAgeMs`. It returns **503 only when
+  no catalog has loaded at all**; a partial/failed refresh stays HTTP-healthy
+  but flips `blocklistOk:false` and the sentinel fails on `failedBlocklists`.
+  That avoids one tenant's broken list taking DoH out of routing for everyone.
 - Tokenless profiles are re-checked on every snapshot apply and rejected at
   request time in hosted mode (DoH/UDP/TCP), not only at boot.
 

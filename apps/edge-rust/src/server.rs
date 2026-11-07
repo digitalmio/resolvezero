@@ -1710,7 +1710,10 @@ async fn readyz(State(state): State<Arc<AppState>>) -> Response {
     } else {
         Some((now_seconds() - last_poll).max(0) * 1000)
     };
-    let ok = ready && blocklist_ok;
+    // Stay healthy for DoH as long as the catalog loaded at least once.
+    // Partial/failed refreshes are exposed via `blocklistOk`/`failedBlocklists`
+    // and the sentinel, but must not take the whole app out of HTTP routing.
+    let ok = ready && (blocklist_ok || !store.catalog.is_empty());
     let body = serde_json::json!({
         "ok": ok,
         "region": state.cfg.region,
