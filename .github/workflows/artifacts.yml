@@ -4,6 +4,9 @@
 name: artifacts
 
 on:
+  schedule:
+    # Refresh the curated catalog every 6 hours; jitter avoids lockstep with list hosts.
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
