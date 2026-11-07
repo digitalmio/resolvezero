@@ -1,14 +1,16 @@
-# Artifact compiler worker (dedicated Fly machine).
+# Artifact compiler worker (dedicated Fly machine, Cargo workspace).
 FROM rust:1.99-bookworm AS build
 WORKDIR /app
-COPY apps/edge-rust/Cargo.toml apps/edge-rust/Cargo.lock ./
-COPY apps/edge-rust/src ./src
-RUN cargo build --release --locked --bin rz-artifacts
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY apps/edge-rust ./apps/edge-rust
+COPY apps/compiler ./apps/compiler
+RUN cargo build --release --locked -p resolvezero-compiler --bin rz-compiler
 
 FROM debian:bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /app/target/release/rz-artifacts /usr/local/bin/rz-artifacts
+COPY --from=build /app/target/release/rz-compiler /usr/local/bin/rz-compiler
 ENV HOME=/tmp
-CMD ["/usr/local/bin/rz-artifacts"]
+CMD ["/usr/local/bin/rz-compiler"]

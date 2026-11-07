@@ -148,8 +148,8 @@ pub fn rss_bytes() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fingerprint::FingerprintTable;
     use crate::store::{ListSource, Subscription};
+    use rz_core::fingerprint::FingerprintTable;
     use std::collections::HashSet;
 
     #[test]

@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+  "apps/compiler",
+  "apps/edge-rust",
+  "crates/rz-core",
+  "crates/rz-db",
+]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

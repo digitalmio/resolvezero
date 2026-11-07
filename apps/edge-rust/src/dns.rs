@@ -6,8 +6,8 @@ use hickory_proto::op::{Message, MessageType, OpCode, ResponseCode};
 use hickory_proto::rr::rdata::{A, AAAA, CNAME, TXT};
 use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 
-use crate::artifact::sha256_hex;
 use crate::store::{BlockAnswer, BlockMode, SafeSearch, ZoneEntry};
+use rz_core::artifact::sha256_hex;
 
 #[derive(Clone, Debug)]
 pub struct Question {

@@ -1,0 +1,17 @@
+[package]
+name = "resolvezero-compiler"
+version = "0.1.0"
+edition = "2021"
+description = "ResolveZero artifact compiler worker"
+license = "MIT"
+
+[[bin]]
+name = "rz-compiler"
+path = "src/main.rs"
+
+[dependencies]
+rz-core = { path = "../../crates/rz-core" }
+rz-db = { path = "../../crates/rz-db" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: cargo
-    directory: /apps/edge-rust
+    directory: "/"
     schedule:
       interval: weekly
     ignore:

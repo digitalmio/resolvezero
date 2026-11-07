@@ -7,6 +7,8 @@ bun.lockb
 dist/
 build/
 *.tsbuildinfo
+target/
+**/target/
 
 # Runtime / env
 .env

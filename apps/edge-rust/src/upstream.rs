@@ -6,7 +6,7 @@ use reqwest::Client;
 use tokio::sync::Mutex;
 
 use crate::dns;
-use crate::netguard::SafeFetcher;
+use rz_core::netguard::SafeFetcher;
 
 /// Node caps upstream DoH bodies at 65,535 bytes (a DNS message maximum).
 pub const MAX_UPSTREAM_BYTES: usize = 65_535;

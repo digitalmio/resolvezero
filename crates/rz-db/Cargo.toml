@@ -1,0 +1,10 @@
+[package]
+name = "rz-db"
+version = "0.1.0"
+edition = "2021"
+description = "Shared ResolveZero Postgres access"
+license = "MIT"
+
+[dependencies]
+rz-core = { path = "../rz-core" }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
