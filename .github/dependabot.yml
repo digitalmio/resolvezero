@@ -4,3 +4,10 @@ updates:
     directory: /apps/edge-rust
     schedule:
       interval: weekly
+    ignore:
+      # RustCrypto majors are API migrations, not routine bumps. Review them
+      # manually when a security advisory requires it.
+      - dependency-name: "sha2"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "hmac"
+        update-types: ["version-update:semver-major"]
