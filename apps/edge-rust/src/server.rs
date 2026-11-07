@@ -48,6 +48,8 @@ pub struct AppState {
     pub blocklist_failed: AtomicUsize,
     pub blocklist_error: Mutex<Option<String>>,
     pub last_sync_at: AtomicI64,
+    pub last_config_poll_at: AtomicI64,
+    pub config_poll_error: AtomicBool,
     pub purge_since: AtomicI64,
     doh_rate: FixedWindow,
     udp_rate: FixedWindow,
@@ -114,6 +116,8 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         blocklist_failed: AtomicUsize::new(0),
         blocklist_error: Mutex::new(None),
         last_sync_at: AtomicI64::new(0),
+        last_config_poll_at: AtomicI64::new(now_seconds()),
+        config_poll_error: AtomicBool::new(false),
         purge_since: AtomicI64::new(now_seconds() - 60),
         doh_rate: FixedWindow::new(cfg.doh_rate_limit_per_min, Duration::from_secs(60)),
         udp_rate: FixedWindow::new(cfg.udp_rate_limit_per_min, Duration::from_secs(60)),
@@ -307,8 +311,15 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
             }
         }
         let versions = match db.versions().await {
-            Ok(versions) => versions,
+            Ok(versions) => {
+                state
+                    .last_config_poll_at
+                    .store(now_seconds(), Ordering::Relaxed);
+                state.config_poll_error.store(false, Ordering::Relaxed);
+                versions
+            }
             Err(err) => {
+                state.config_poll_error.store(true, Ordering::Relaxed);
                 warn!(%err, "config poll failed");
                 continue;
             }
@@ -1693,6 +1704,12 @@ async fn readyz(State(state): State<Arc<AppState>>) -> Response {
     } else {
         Some((now_seconds() - last_sync).max(0) * 1000)
     };
+    let last_poll = state.last_config_poll_at.load(Ordering::Relaxed);
+    let config_poll_age = if last_poll == 0 {
+        None
+    } else {
+        Some((now_seconds() - last_poll).max(0) * 1000)
+    };
     let ok = ready && blocklist_ok;
     let body = serde_json::json!({
         "ok": ok,
@@ -1704,6 +1721,8 @@ async fn readyz(State(state): State<Arc<AppState>>) -> Response {
         "blocklistError": error.is_some(),
         "failedBlocklists": failed,
         "blocklistLastSyncAgeMs": last_sync_age,
+        "configPollAgeMs": config_poll_age,
+        "configPollError": state.config_poll_error.load(Ordering::Relaxed),
         "remoteLists": store.remote_rules(),
         "remoteListTables": store.catalog.len(),
         "artifactLists": store.artifact_lists,

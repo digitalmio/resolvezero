@@ -1,7 +1,8 @@
 # resolvezero-edge (Rust)
 
-A Rust rewrite of the DNS data plane in `apps/edge`. **Work in progress — not
-deployed and not wired into CI.** The Node edge remains the production server.
+A Rust rewrite of the DNS data plane in `apps/edge`. **Deployed to production
+as the `resolvezero-edge` data plane on 2026-11-07** (fra + lhr, 1 GB); the Node
+implementation remains in-tree as a parity reference and rollback target.
 
 The point is the memory profile: the Node edge carries a ~156 MB baseline and a
 100–165 MB parse transient per 500k-rule list. Rust runs the same rule set in

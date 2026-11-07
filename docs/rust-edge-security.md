@@ -1,7 +1,7 @@
 # Rust Edge — Security Review Follow-up
 
 **Scope:** the 2026-11-07 review of `apps/edge-rust`
-**Status:** fixes are on `feat/rust-edge`; not merged, not deployed
+**Status:** merged to `main` and deployed to production (`resolvezero-edge`, 2026-11-07)
 **Last updated:** 2026-11-07
 
 The Rust edge started as a behavior port of the Node edge, not a security
