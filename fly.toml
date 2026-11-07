@@ -18,10 +18,11 @@ kill_timeout = 30
   strategy = "bluegreen"
 
 # Rust edge (apps/edge-rust). Binds 53/853 as root, then drops to UID/GID 1000.
-# Production shape: 2 shared cores + 512 MB. The Rust edge runs at ~14-20 MB
-# RSS with artifacts loaded; 512 MB leaves >300 MB for the 50 MB DNS cache,
-# log buffers, and a raw-text parse fallback, while the second core keeps the
-# async workers free during list syncs and cache misses.
+# Production shape: 2 shared cores + 512 MB. Blocklists are lazy by default, so
+# a cold machine starts around 8 MB RSS with an empty catalog; the first query
+# for a profile pulls only that profile's artifacts. With lists resident the
+# edge runs at ~14-20 MB RSS, leaving >300 MB for the 50 MB DNS cache and log
+# buffers, while the second core keeps async workers free during lazy loads.
 [vm]
   cpu_kind = "shared"
   cpus = 2
@@ -65,7 +66,7 @@ kill_timeout = 30
   [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
-    grace_period = "120s"   # first boot may fetch/parse remote lists
+    grace_period = "120s"   # config snapshot + subscription metadata; lists load on demand
     method = "GET"
     path = "/readyz"
 

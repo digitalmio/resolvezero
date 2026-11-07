@@ -27,7 +27,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 | Observability | Query log, live stats, top domains/clients/devices, block rate, artifact and lazy-load state |
 | Operations | Health, cache purge, config-version propagation, DNS presence probe |
 | Access | Passwordless email OTP, optional GitHub OAuth, scoped API keys, session-guarded server functions |
-| Hosted | Invite-only console at `my.resolvezero.com`; every query is scoped to the owning user |
+| Hosted | Console at `my.resolvezero.com`; `AUTH_ALLOW_SIGNUP=0` makes signup invite-only; console/API data is owner-scoped |
 
 ## Architecture
 
@@ -161,7 +161,7 @@ node --env-file=.env node_modules/tsx/dist/cli.mjs apps/edge/src/index.ts
 
 ### 4. Compile blocklist artifacts (optional but recommended)
 
-Run the compiler once, on a schedule, or as a Fly worker:
+Run the compiler as a long-lived worker (it polls every 30 seconds; stop it with Ctrl-C), or supervise it with your process manager:
 
 ```sh
 set -a
