@@ -3,6 +3,7 @@ FROM rust:1.99-bookworm AS build
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY apps/agent-rust ./apps/agent-rust
 COPY apps/edge ./apps/edge
 COPY apps/compiler ./apps/compiler
 RUN cargo build --release --locked -p resolvezero-compiler --bin rz-compiler
