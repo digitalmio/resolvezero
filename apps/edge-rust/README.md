@@ -7,6 +7,27 @@ The point is the memory profile: the Node edge carries a ~156 MB baseline and a
 100–165 MB parse transient per 500k-rule list. Rust runs the same rule set in
 **~52 MB RSS** with no GC headroom, and boots the whole catalog in ~1 second.
 
+## Throughput (DoH, local Mac, 435k rules, logging disabled)
+
+`qps-bench` drives one HTTP/1.1 keep-alive connection per worker against
+`/v1/:profile/:token`. Blocked/cached paths never touch the upstream.
+
+| Path | Rust, multi-worker | Rust, 1 worker | Node |
+|---|---:|---:|---:|
+| blocked policy, 64c | **121k qps**, p50 0.5 ms | **63k qps**, p50 1.0 ms | 19k qps, p50 3.2 ms |
+| cached forward, 64c | **118k qps** | **70k qps** | 19k qps |
+| cold upstream miss, 64c | 2.2k qps | 1.5k qps | **2.3k qps** |
+
+Both used ~1.2 CPU cores in the blocked 1-worker vs Node run. Fly's
+`shared-cpu-1x` is effectively one vCPU, so use the middle column for capacity
+planning: **~3.3–3.8× Node per core** on the policy/cache path. Upstream misses
+are the exception — Node's HTTP/2 multiplexing beats reqwest's h1 pool there
+(reqwest h2 measured *worse*: 170 qps at 32c, which is why the edge uses h1 for
+Cloudflare/Google and h2 only for Quad9).
+
+Caveats: the load generator shares the host, and the numbers are relative, not
+a Fly benchmark. `TOKIO_WORKER_THREADS=1` pins the runtime for per-core runs.
+
 ## Artifacts
 
 Rule lists are compiled into content-addressed artifacts (see

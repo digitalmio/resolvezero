@@ -59,7 +59,7 @@ impl Db {
 
     pub async fn snapshot(&self) -> Result<Snapshot, sqlx::Error> {
         let profiles = sqlx::query(
-            "select id, dot_id, doh_token, upstream, upstream_url, block_mode,
+            "select id, dot_id, doh_token, log_queries, upstream, upstream_url, block_mode,
                     block_ipv4, block_ipv6, block_ttl
              from profiles",
         )
@@ -71,6 +71,7 @@ impl Db {
                 id: row.try_get("id")?,
                 dot_id: row.try_get("dot_id")?,
                 doh_token: row.try_get("doh_token")?,
+                log_queries: row.try_get("log_queries")?,
                 upstream: row.try_get("upstream")?,
                 upstream_url: row.try_get("upstream_url")?,
                 block_mode: row.try_get("block_mode")?,

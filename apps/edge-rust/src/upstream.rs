@@ -6,20 +6,43 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 /// underlying reqwest pool keeps HTTP/2 connections warm).
 #[derive(Clone)]
 pub struct Upstream {
-    client: reqwest::Client,
+    /// HTTP/1.1 pool: Cloudflare/Google are materially faster over h1 in
+    /// reqwest than over h2 for this small-body workload (measured 1.1k vs
+    /// 170 qps at 32 concurrent cold misses).
+    h1: reqwest::Client,
+    /// HTTP/2 client for upstreams that require it (Quad9 returns 505 on h1).
+    h2: reqwest::Client,
     default_url: String,
 }
 
 impl Upstream {
     pub fn new(default_url: String) -> Result<Self, String> {
-        let client = reqwest::Client::builder()
+        let h1 = reqwest::Client::builder()
             .timeout(Duration::from_secs(5))
+            .pool_max_idle_per_host(64)
+            .http1_only()
+            .build()
+            .map_err(|err| err.to_string())?;
+        let h2 = reqwest::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .pool_max_idle_per_host(64)
+            .http2_adaptive_window(true)
             .build()
             .map_err(|err| err.to_string())?;
         Ok(Self {
-            client,
+            h1,
+            h2,
             default_url,
         })
+    }
+
+    fn client_for(&self, selector: Option<&str>, url: &str) -> &reqwest::Client {
+        let needs_h2 = selector == Some("quad9") || url.contains("dns.quad9.net");
+        if needs_h2 {
+            &self.h2
+        } else {
+            &self.h1
+        }
     }
 
     /// Preset selector or a custom DoH URL wins over the edge default.
@@ -38,7 +61,7 @@ impl Upstream {
     pub async fn resolve(&self, wire: &[u8], selector: Option<&str>) -> Result<Vec<u8>, String> {
         let url = self.url_for(selector);
         let response = self
-            .client
+            .client_for(selector, &url)
             .post(&url)
             .header(CONTENT_TYPE, "application/dns-message")
             .header(ACCEPT, "application/dns-message")
@@ -46,6 +69,7 @@ impl Upstream {
             .send()
             .await
             .map_err(|err| err.to_string())?;
+        tracing::debug!(version = ?response.version(), status = %response.status(), "upstream response");
         if !response.status().is_success() {
             return Err(format!("upstream returned HTTP {}", response.status()));
         }

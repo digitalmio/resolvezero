@@ -43,6 +43,7 @@ struct QueryContext {
     client_ip: Option<String>,
     device: Option<String>,
     transport: &'static str,
+    log_enabled: bool,
 }
 
 pub async fn run(cfg: Config) -> Result<(), String> {
@@ -428,6 +429,9 @@ fn record(
     upstream: Option<String>,
     rtt_ms: Option<i64>,
 ) {
+    if !context.log_enabled {
+        return;
+    }
     state.logger.log(QueryEvent {
         at: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -483,10 +487,12 @@ async fn udp_loop(socket: Arc<UdpSocket>, state: Arc<AppState>) {
                         .cloned();
                     let response = match profile {
                         Some(profile) => {
+                            let log_enabled = state.store.read().await.should_log(&profile);
                             let context = QueryContext {
                                 client_ip: Some(peer.ip().to_string()),
                                 device: None,
                                 transport: "udp",
+                                log_enabled,
                             };
                             resolve_wire(&state, &wire, &profile, &context).await
                         }
@@ -542,10 +548,15 @@ async fn handle_tcp(
         .await
         .unwrap_or_else(|| peer.ip().to_string());
     let profile = state.store.read().await.authorize_ip(&source).cloned();
+    let log_enabled = match &profile {
+        Some(profile) => state.store.read().await.should_log(profile),
+        None => false,
+    };
     let context = QueryContext {
         client_ip: Some(source.clone()),
         device: None,
         transport: "tcp",
+        log_enabled,
     };
 
     loop {
@@ -705,10 +716,12 @@ async fn doh_handler(
                 .and_then(|value| value.split(',').next())
                 .map(|value| value.trim().to_string())
         });
+    let log_enabled = state.store.read().await.should_log(profile_id);
     let context = QueryContext {
         client_ip,
         device: device.map(str::to_string),
         transport: "doh",
+        log_enabled,
     };
 
     match resolve_wire(&state, &wire, profile_id, &context).await {

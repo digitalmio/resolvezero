@@ -33,6 +33,8 @@ impl Default for BlockAnswer {
 #[derive(Clone, Debug, Default)]
 pub struct ProfileMeta {
     pub token: Option<String>,
+    /// Per-profile query-log opt-out (defaults to true).
+    pub log_queries: Option<bool>,
     pub dot_id: Option<String>,
     pub upstream: Option<String>,
     pub upstream_url: Option<String>,
@@ -68,6 +70,7 @@ pub struct ProfileRow {
     pub id: String,
     pub dot_id: Option<String>,
     pub doh_token: Option<String>,
+    pub log_queries: bool,
     pub upstream: Option<String>,
     pub upstream_url: Option<String>,
     pub block_mode: Option<String>,
@@ -166,6 +169,7 @@ impl RuleStore {
                     row.id,
                     ProfileMeta {
                         token: row.doh_token,
+                        log_queries: Some(row.log_queries),
                         dot_id: row.dot_id,
                         upstream: row.upstream,
                         upstream_url: row.upstream_url,
@@ -212,6 +216,13 @@ impl RuleStore {
         let alive: HashSet<&String> = self.profiles.keys().collect();
         self.subscriptions
             .retain(|profile_id, _| alive.contains(profile_id));
+    }
+
+    pub fn should_log(&self, profile_id: &str) -> bool {
+        self.profiles
+            .get(profile_id)
+            .and_then(|meta| meta.log_queries)
+            .unwrap_or(true)
     }
 
     pub fn tokenless_profiles(&self) -> Vec<String> {
@@ -389,6 +400,7 @@ mod tests {
             id: id.to_string(),
             dot_id: None,
             doh_token: token.map(str::to_string),
+            log_queries: true,
             upstream: None,
             upstream_url: None,
             block_mode: None,
