@@ -138,7 +138,9 @@ async fn cycle(
             Err(err) => {
                 warn!(url = %redact_url(&target.url), %err, "compile failed");
                 let status = format!("error: {}", err.chars().take(42).collect::<String>());
-                let _ = db.write_blocklist_status(&target.url, &status, 0, None).await;
+                let _ = db
+                    .write_blocklist_status(&target.url, &status, 0, None)
+                    .await;
             }
         }
     }
@@ -165,12 +167,8 @@ async fn compile_one(
         .await
         .map_err(|err| err.to_string())?;
     if changed {
-        s3.put(
-            &s3.key(&hash),
-            &bytes,
-            "application/octet-stream",
-        )
-        .await?;
+        s3.put(&s3.key(&hash), &bytes, "application/octet-stream")
+            .await?;
         s3.put(
             &format!("{}/{}.json", s3.prefix.trim_matches('/'), hash),
             meta.to_json().as_bytes(),

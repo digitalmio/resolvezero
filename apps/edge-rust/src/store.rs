@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -91,10 +92,30 @@ pub struct ZoneEntry {
     pub ttl: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Subscription {
     pub url: String,
     pub list_id: Option<String>,
+    pub format: String,
+    pub artifact_hash: Option<String>,
+}
+
+impl Subscription {
+    /// Test/convenience constructor for a raw (uncompiled) list subscription.
+    pub fn raw(url: &str, list_id: Option<String>) -> Self {
+        Self {
+            url: url.to_string(),
+            list_id,
+            format: "hosts".to_string(),
+            artifact_hash: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListSource {
+    Artifact,
+    Raw,
 }
 
 #[derive(Clone, Debug)]
@@ -167,10 +188,20 @@ pub struct RuleStore {
     wildcard_names: HashMap<String, HashSet<String>>,
     /// url -> shared table (one copy per machine).
     pub catalog: HashMap<String, FingerprintTable>,
+    /// url -> artifact hash that produced the table (None for raw text).
+    pub catalog_hashes: HashMap<String, Option<String>>,
+    /// How each loaded table was obtained (reporting only).
+    pub list_sources: HashMap<String, ListSource>,
     pub subscriptions: HashMap<String, Vec<Subscription>>,
-    /// Lists loaded from a compiled artifact / parsed from raw text this cycle.
-    pub artifact_lists: usize,
-    pub raw_lists: usize,
+    /// Profiles whose subscriptions have been loaded into the catalog.
+    loaded_profiles: HashMap<String, ProfileLoad>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ProfileLoad {
+    pub at: Instant,
+    /// Lists that failed the first time; retried after a short backoff.
+    pub failed: usize,
 }
 
 impl RuleStore {
@@ -284,6 +315,8 @@ impl RuleStore {
         // the blocklist sync after re-wiring.
         let alive: HashSet<&String> = self.profiles.keys().collect();
         self.subscriptions
+            .retain(|profile_id, _| alive.contains(profile_id));
+        self.loaded_profiles
             .retain(|profile_id, _| alive.contains(profile_id));
     }
 
@@ -415,19 +448,67 @@ impl RuleStore {
     }
 
     pub fn wire_subscriptions(&mut self, profile_id: &str, urls: Vec<Subscription>) {
+        let unchanged = self
+            .subscriptions
+            .get(profile_id)
+            .is_some_and(|previous| previous == &urls);
         if urls.is_empty() {
             self.subscriptions.remove(profile_id);
         } else {
             self.subscriptions.insert(profile_id.to_string(), urls);
         }
+        if !unchanged {
+            self.loaded_profiles.remove(profile_id);
+        }
     }
 
-    pub fn upsert_list(&mut self, url: &str, table: FingerprintTable) -> bool {
+    pub fn is_profile_loaded(&self, profile_id: &str, retry: Duration) -> bool {
+        match self.loaded_profiles.get(profile_id) {
+            Some(load) => load.failed == 0 || load.at.elapsed() < retry,
+            None => false,
+        }
+    }
+
+    pub fn mark_profile_loaded(&mut self, profile_id: &str, failed: usize) {
+        self.loaded_profiles.insert(
+            profile_id.to_string(),
+            ProfileLoad {
+                at: Instant::now(),
+                failed,
+            },
+        );
+    }
+
+    /// Drop every lazy marker after the blocklist watermark moves, so each
+    /// profile re-checks its lists on its next query.
+    pub fn clear_loaded(&mut self) {
+        self.loaded_profiles.clear();
+    }
+
+    /// True when this exact artifact (or a raw table) is already in the catalog.
+    pub fn list_up_to_date(&self, subscription: &Subscription) -> bool {
+        self.catalog.contains_key(&subscription.url)
+            && self
+                .catalog_hashes
+                .get(&subscription.url)
+                .is_some_and(|hash| hash == &subscription.artifact_hash)
+    }
+
+    pub fn upsert_list(
+        &mut self,
+        url: &str,
+        artifact_hash: Option<&str>,
+        source: ListSource,
+        table: FingerprintTable,
+    ) -> bool {
         let changed = self
             .catalog
             .get(url)
             .is_none_or(|previous| previous.fingerprint != table.fingerprint);
         self.catalog.insert(url.to_string(), table);
+        self.catalog_hashes
+            .insert(url.to_string(), artifact_hash.map(str::to_string));
+        self.list_sources.insert(url.to_string(), source);
         changed
     }
 
@@ -440,6 +521,34 @@ impl RuleStore {
             .collect();
         self.catalog
             .retain(|url, _| referenced.contains(url.as_str()));
+        self.catalog_hashes
+            .retain(|url, _| referenced.contains(url.as_str()));
+        self.list_sources
+            .retain(|url, _| referenced.contains(url.as_str()));
+    }
+
+    pub fn artifact_lists(&self) -> usize {
+        self.list_sources
+            .values()
+            .filter(|source| **source == ListSource::Artifact)
+            .count()
+    }
+
+    pub fn raw_lists(&self) -> usize {
+        self.list_sources
+            .values()
+            .filter(|source| **source == ListSource::Raw)
+            .count()
+    }
+
+    pub fn pending_lists(&self) -> usize {
+        let mut urls: HashSet<&str> = HashSet::new();
+        for subscription in self.subscriptions.values().flatten() {
+            if !self.list_up_to_date(subscription) {
+                urls.insert(subscription.url.as_str());
+            }
+        }
+        urls.len()
     }
 
     pub fn remote_rules(&self) -> usize {
@@ -586,25 +695,64 @@ mod tests {
     }
 
     #[test]
+    fn lazy_markers_reset_when_subscriptions_change() {
+        let mut store = RuleStore::default();
+        store.replace_config(vec![profile("home", None)], vec![], vec![], vec![], vec![]);
+        store.wire_subscriptions("home", vec![Subscription::raw("list", None)]);
+        store.mark_profile_loaded("home", 0);
+        assert!(store.is_profile_loaded("home", std::time::Duration::from_secs(60)));
+
+        // Same subscription: keep the marker (no needless reload).
+        store.wire_subscriptions("home", vec![Subscription::raw("list", None)]);
+        assert!(store.is_profile_loaded("home", std::time::Duration::from_secs(60)));
+
+        // New artifact hash: force a reload on the next query.
+        store.wire_subscriptions(
+            "home",
+            vec![Subscription {
+                url: "list".into(),
+                list_id: None,
+                format: "hosts".into(),
+                artifact_hash: Some("abc".into()),
+            }],
+        );
+        assert!(!store.is_profile_loaded("home", std::time::Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn failed_lazy_load_retries_after_backoff() {
+        let mut store = RuleStore::default();
+        store.mark_profile_loaded("home", 2);
+        let retry = std::time::Duration::from_secs(60);
+        assert!(store.is_profile_loaded("home", retry));
+        store.clear_loaded();
+        assert!(!store.is_profile_loaded("home", retry));
+    }
+
+    #[test]
     fn remote_allow_wins_across_lists() {
         use crate::fingerprint::FingerprintTable;
         let mut store = RuleStore::default();
         store.replace_config(vec![profile("home", None)], vec![], vec![], vec![], vec![]);
         let block: HashSet<String> = ["ads.example".to_string()].into_iter().collect();
         let allow: HashSet<String> = ["good.ads.example".to_string()].into_iter().collect();
-        store.upsert_list("block", FingerprintTable::build(&block, &HashSet::new()));
-        store.upsert_list("allow", FingerprintTable::build(&HashSet::new(), &allow));
+        store.upsert_list(
+            "block",
+            None,
+            ListSource::Raw,
+            FingerprintTable::build(&block, &HashSet::new()),
+        );
+        store.upsert_list(
+            "allow",
+            None,
+            ListSource::Raw,
+            FingerprintTable::build(&HashSet::new(), &allow),
+        );
         store.wire_subscriptions(
             "home",
             vec![
-                Subscription {
-                    url: "block".into(),
-                    list_id: None,
-                },
-                Subscription {
-                    url: "allow".into(),
-                    list_id: None,
-                },
+                Subscription::raw("block", None),
+                Subscription::raw("allow", None),
             ],
         );
         assert_eq!(

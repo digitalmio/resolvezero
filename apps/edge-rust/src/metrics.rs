@@ -95,9 +95,11 @@ impl Metrics {
         out.push_str("# TYPE rz_remote_list_rules gauge\n");
         out.push_str(&format!("rz_remote_list_rules {}\n", store.remote_rules()));
         out.push_str("# TYPE rz_artifact_lists gauge\n");
-        out.push_str(&format!("rz_artifact_lists {}\n", store.artifact_lists));
+        out.push_str(&format!("rz_artifact_lists {}\n", store.artifact_lists()));
         out.push_str("# TYPE rz_raw_lists gauge\n");
-        out.push_str(&format!("rz_raw_lists {}\n", store.raw_lists));
+        out.push_str(&format!("rz_raw_lists {}\n", store.raw_lists()));
+        out.push_str("# TYPE rz_pending_lists gauge\n");
+        out.push_str(&format!("rz_pending_lists {}\n", store.pending_lists()));
         out.push_str("# TYPE rz_blocklist_failed gauge\n");
         out.push_str(&format!("rz_blocklist_failed {}\n", blocklist_failed));
         out.push_str("# TYPE rz_dns_cache_entries gauge\n");

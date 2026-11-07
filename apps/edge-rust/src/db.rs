@@ -344,7 +344,6 @@ mod tests {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct CompileTarget {
     pub url: String,

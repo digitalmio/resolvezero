@@ -10,6 +10,7 @@ pub mod config;
 pub mod db;
 pub mod dns;
 pub mod fingerprint;
+pub mod lazy;
 pub mod limits;
 pub mod lists;
 pub mod metrics;

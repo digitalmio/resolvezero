@@ -52,10 +52,15 @@ bumps `blocklist_version`. GitHub Actions only builds/deploys that worker and
 keeps a manual fallback; the runtime no longer depends on Actions.
 
 Rule lists are compiled into content-addressed artifacts (see
-[`docs/artifact-format.md`](../../docs/artifact-format.md)). With the four live
-lists published as artifacts, the Rust edge loads **4/4 lists from artifacts,
-0 from text** and serves 435,691 rules from **13 MB RSS** on Fly (Node edge at
-the same rules: 164 MB). The compiler is `rz-compile` in this crate.
+[`docs/artifact-format.md`](../../docs/artifact-format.md)). The edge starts
+with an **empty catalog** and loads only the queried profile's artifacts on the
+first request (`EAGER_BLOCKLISTS=1` restores preloading). With the four live
+lists published as artifacts, the first query loads **4/4 lists from artifacts,
+0 from text**; the PoP then serves 435k rules from **13 MB RSS** on Fly (Node
+edge at the same rules: 164 MB). The compiler is `rz-compile` in this crate.
+
+`/readyz` exposes `lazyLists`, `artifactLists`, `rawLists`, `pendingLists`, and
+`remoteLists`, so a cold PoP is distinguishable from a broken one.
 
 ## Measured (local, release build, real database)
 
@@ -64,7 +69,7 @@ the same rules: 164 MB). The compiler is `rz-compile` in this crate.
 | Rules loaded | 397k | **406,707** |
 | Unique list tables | 4 | 4 |
 | RSS after boot | ~156 MB | **51.6 MB** |
-| Boot / initial list sync | tens of seconds (deploy grace is 120 s) | **~1 s** |
+| Boot / initial list sync | tens of seconds (deploy grace is 120 s) | **~1 s** (metadata only; lists load on first query) |
 | Release binary | ~104 MB image | **5.3 MB binary** |
 
 Parser parity was checked against the TypeScript implementation on the four
@@ -96,7 +101,8 @@ use table bytes plus baseline for sizing on Linux.
 ## What works
 
 - Content-addressed rule artifacts: fetch + sha256 verify + zero-parse load,
-  with raw-text fallback; `/readyz` reports `artifactLists` / `rawLists`.
+  with raw-text fallback; `/readyz` reports `lazyLists`, `artifactLists`,
+  `rawLists`, and `pendingLists`.
 - Query-log archive: gzipped NDJSON per profile per minute under the shared
   `logs/{profile}/{date}/{HHmm}.{instance}.{seq}.jsonl.gz` contract, so the
   existing Logs API reads Rust-written objects.

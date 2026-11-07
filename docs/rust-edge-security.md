@@ -48,7 +48,7 @@ production-exposed.
 | UDP 53 | 600/min per source, 1,024 in-flight, TC response when the answer exceeds the client's EDNS payload |
 | TCP 53 | 512 concurrent connections, 30 s idle timeout, 300 s lifetime, 5 s PROXY-header timeout |
 | Fetches | streamed caps for lists, upstreams, artifacts, logs |
-| List sync | 256 unique lists, 180 s cycle deadline, 30 s retry after a failed cycle |
+| List sync | 256 unique lists, 180 s cycle deadline, 30 s retry after a failed cycle; lazy per-profile loading on first query with SHA-256-verified artifacts |
 
 UDP now binds `fly-global-services` when `FLY_REGION` is set (the Node edge's
 requirement; `0.0.0.0` does not receive Fly UDP traffic). DoH-only deployments
@@ -97,10 +97,15 @@ the hot-path cost is accepted for correctness.
 - The version is advanced only after a successful sync; failures retry after
   30 s.
 - `/readyz` now reports `blocklistOk`, `blocklistError`, `failedBlocklists`,
-  `blocklistLastSyncAgeMs`, and `configPollAgeMs`. It returns **503 only when
-  no catalog has loaded at all**; a partial/failed refresh stays HTTP-healthy
-  but flips `blocklistOk:false` and the sentinel fails on `failedBlocklists`.
-  That avoids one tenant's broken list taking DoH out of routing for everyone.
+  `blocklistLastSyncAgeMs`, `configPollAgeMs`, `lazyLists`, `artifactLists`,
+  `rawLists`, and `pendingLists`.
+- In lazy mode (default) readiness means the config snapshot and subscription
+  metadata loaded; an empty catalog is expected until the first query, so it
+  returns 200 with `pendingLists` showing what is not resident yet. In eager
+  mode it returns **503 only when no catalog has loaded at all**; a
+  partial/failed refresh stays HTTP-healthy but flips `blocklistOk:false` and
+  the sentinel fails on `failedBlocklists`. That avoids one tenant's broken
+  list taking DoH out of routing for everyone.
 - Tokenless profiles are re-checked on every snapshot apply and rejected at
   request time in hosted mode (DoH/UDP/TCP), not only at boot.
 

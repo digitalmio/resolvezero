@@ -23,6 +23,10 @@ pub struct Config {
     pub max_list_bytes: usize,
     pub max_lists_per_profile: usize,
     pub list_interval: Duration,
+    /// Load list bodies on first use instead of at startup (default).
+    pub lazy_lists: bool,
+    /// Retry a profile's failed lazy loads after this delay.
+    pub list_retry: Duration,
     pub poll_interval: Duration,
     pub allow_tokenless: bool,
     pub drop_privileges: bool,
@@ -73,6 +77,10 @@ impl Config {
             max_lists_per_profile: number("BLOCKLIST_MAX_LISTS_PER_PROFILE", 64),
             list_interval: Duration::from_secs(
                 number::<u64>("LIST_SYNC_INTERVAL_SECONDS", 6 * 3600).max(60),
+            ),
+            lazy_lists: env::var("EAGER_BLOCKLISTS").as_deref() != Ok("1"),
+            list_retry: Duration::from_secs(
+                number::<u64>("BLOCKLIST_LAZY_RETRY_SECONDS", 60).max(5),
             ),
             poll_interval: Duration::from_millis(number::<u64>("CONFIG_POLL_MS", 5_000).max(500)),
             allow_tokenless: env::var("ALLOW_TOKENLESS_PROFILES").as_deref() == Ok("1"),
@@ -168,6 +176,8 @@ mod tests {
             max_list_bytes: 30 * 1024 * 1024,
             max_lists_per_profile: 64,
             list_interval: Duration::from_secs(60),
+            lazy_lists: true,
+            list_retry: Duration::from_secs(60),
             poll_interval: Duration::from_millis(500),
             allow_tokenless: false,
             drop_privileges: false,

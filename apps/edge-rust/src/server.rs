@@ -26,6 +26,7 @@ use crate::config::{Config, UnknownSource};
 use crate::db::Db;
 use crate::dns;
 use crate::fingerprint::Action;
+use crate::lazy;
 use crate::limits::FixedWindow;
 use crate::lists;
 use crate::metrics::Metrics;
@@ -60,6 +61,9 @@ pub struct AppState {
     admin_rate: FixedWindow,
     purge_rate: FixedWindow,
     sync_lock: tokio::sync::Mutex<()>,
+    /// Serializes first-query list loading so a cold PoP does not download the
+    /// same artifacts many times in parallel.
+    list_gate: tokio::sync::Mutex<()>,
 }
 
 #[derive(Clone, Debug)]
@@ -129,9 +133,15 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         admin_rate: FixedWindow::new(60, Duration::from_secs(60)),
         purge_rate: FixedWindow::new(10, Duration::from_secs(60)),
         sync_lock: tokio::sync::Mutex::new(()),
+        list_gate: tokio::sync::Mutex::new(()),
     });
 
-    match lists::sync_once(&db, &store, &cache, &cfg).await {
+    let initial = if cfg.lazy_lists {
+        lists::sync_metadata(&db, &store, &cfg).await
+    } else {
+        lists::sync_once(&db, &store, &cache, &cfg).await
+    };
+    match initial {
         Ok(report) => {
             state
                 .blocklist_ok
@@ -143,7 +153,8 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             info!(
                 changed = report.changed,
                 failed = report.failed,
-                "initial blocklist sync complete"
+                lazy = cfg.lazy_lists,
+                "initial blocklist metadata sync complete"
             );
         }
         Err(err) => {
@@ -355,11 +366,22 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
             }
         }
 
-        let due =
-            versions.blocklist != last_blocklist || last_sync.elapsed() >= state.cfg.list_interval;
+        let version_changed = versions.blocklist != last_blocklist;
+        let due = version_changed || last_sync.elapsed() >= state.cfg.list_interval;
         if due && Instant::now() >= next_retry {
             let _guard = state.sync_lock.lock().await;
-            match lists::sync_once(&db, &state.store, &state.cache, &state.cfg).await {
+            if version_changed && state.cfg.lazy_lists {
+                // New artifacts are immutable; drop the "loaded" markers so
+                // each profile re-resolves its hashes on the next query.
+                state.store.write().await.clear_loaded();
+                state.cache.lock().expect("cache lock").clear();
+            }
+            let result = if state.cfg.lazy_lists {
+                lists::sync_metadata(&db, &state.store, &state.cfg).await
+            } else {
+                lists::sync_once(&db, &state.store, &state.cache, &state.cfg).await
+            };
+            match result {
                 Ok(report) => {
                     last_blocklist = versions.blocklist;
                     last_sync = Instant::now();
@@ -374,6 +396,7 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
                     info!(
                         changed = report.changed,
                         failed = report.failed,
+                        lazy = state.cfg.lazy_lists,
                         "blocklist sync complete"
                     );
                 }
@@ -412,6 +435,53 @@ async fn resolve_wire(
                 let _ = db.record_probe(&nonce, &region, &transport).await;
             });
             return Some(dns::nxdomain_response(&question));
+        }
+    }
+
+    if state.cfg.lazy_lists {
+        match lazy::ensure_profile_loaded(
+            &state.db,
+            &state.store,
+            &state.cfg,
+            profile,
+            &state.list_gate,
+        )
+        .await
+        {
+            Ok(report) if report.changed => {
+                state.cache.lock().expect("cache lock").clear();
+                state.blocklist_failed.store(0, Ordering::Relaxed);
+                state.blocklist_ok.store(true, Ordering::Relaxed);
+                *state.blocklist_error.lock().expect("blocklist error") = None;
+                info!(
+                    profile,
+                    loaded = report.loaded,
+                    failed = report.failed,
+                    "lazy lists changed; dns cache flushed"
+                );
+            }
+            Ok(report) if report.failed > 0 => {
+                state
+                    .blocklist_failed
+                    .store(report.failed, Ordering::Relaxed);
+                state.blocklist_ok.store(false, Ordering::Relaxed);
+                *state.blocklist_error.lock().expect("blocklist error") =
+                    Some(format!("lazy list load failed for {profile}"));
+                warn!(
+                    profile,
+                    loaded = report.loaded,
+                    failed = report.failed,
+                    "lazy list load incomplete; retrying"
+                );
+            }
+            Ok(report) if report.loaded > 0 => {
+                state.blocklist_failed.store(0, Ordering::Relaxed);
+                state.blocklist_ok.store(true, Ordering::Relaxed);
+                *state.blocklist_error.lock().expect("blocklist error") = None;
+                info!(profile, loaded = report.loaded, "lazy lists ready");
+            }
+            Ok(_) => {}
+            Err(err) => warn!(profile, %err, "lazy list load failed"),
         }
     }
 
@@ -1769,10 +1839,10 @@ async fn readyz(State(state): State<Arc<AppState>>) -> Response {
     } else {
         Some((now_seconds() - last_poll).max(0) * 1000)
     };
-    // Stay healthy for DoH as long as the catalog loaded at least once.
-    // Partial/failed refreshes are exposed via `blocklistOk`/`failedBlocklists`
-    // and the sentinel, but must not take the whole app out of HTTP routing.
-    let ok = ready && (blocklist_ok || !store.catalog.is_empty());
+    // Lazy mode intentionally starts with an empty catalog; readiness means the
+    // config snapshot and subscription metadata loaded, not that every list is
+    // resident. Eager mode keeps the old catalog gate.
+    let ok = ready && (state.cfg.lazy_lists || blocklist_ok || !store.catalog.is_empty());
     let body = serde_json::json!({
         "ok": ok,
         "region": state.cfg.region,
@@ -1785,10 +1855,12 @@ async fn readyz(State(state): State<Arc<AppState>>) -> Response {
         "blocklistLastSyncAgeMs": last_sync_age,
         "configPollAgeMs": config_poll_age,
         "configPollError": state.config_poll_error.load(Ordering::Relaxed),
+        "lazyLists": state.cfg.lazy_lists,
         "remoteLists": store.remote_rules(),
         "remoteListTables": store.catalog.len(),
-        "artifactLists": store.artifact_lists,
-        "rawLists": store.raw_lists,
+        "artifactLists": store.artifact_lists(),
+        "rawLists": store.raw_lists(),
+        "pendingLists": store.pending_lists(),
         "profiles": store.profiles.len(),
         "rssMb": crate::metrics::rss_bytes() / 1024 / 1024,
         "memoryLimitMb": memory_limit_mb(),
