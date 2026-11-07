@@ -370,6 +370,14 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
         let due = version_changed || last_sync.elapsed() >= state.cfg.list_interval;
         if due && Instant::now() >= next_retry {
             let _guard = state.sync_lock.lock().await;
+            // Serialize metadata changes with first-query loads. Otherwise a
+            // load could finish with the old artifact hash after the marker was
+            // cleared, and never reload until the next watermark.
+            let _list_gate = if state.cfg.lazy_lists {
+                Some(state.list_gate.lock().await)
+            } else {
+                None
+            };
             if version_changed && state.cfg.lazy_lists {
                 // New artifacts are immutable; drop the "loaded" markers so
                 // each profile re-resolves its hashes on the next query.
