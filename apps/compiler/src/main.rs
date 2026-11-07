@@ -72,6 +72,7 @@ async fn main() {
     let config = Config::from_env();
     let fetcher = SafeFetcher::new(config.max_bytes, true);
     let mut force = config.force_once;
+    let mut pending_bump = false;
 
     info!(
         interval_secs = config.interval.as_secs(),
@@ -82,8 +83,17 @@ async fn main() {
     loop {
         match cycle(&db, &s3, &fetcher, &config, force).await {
             Ok(bumped) => {
-                if bumped {
-                    info!("blocklist_version bumped");
+                pending_bump |= bumped;
+                if pending_bump {
+                    match db.bump_blocklist_version().await {
+                        Ok(()) => {
+                            pending_bump = false;
+                            info!("blocklist_version bumped");
+                        }
+                        Err(err) => {
+                            error!(%err, "blocklist_version bump failed; will retry")
+                        }
+                    }
                 }
             }
             Err(err) => error!(%err, "compile cycle failed"),
