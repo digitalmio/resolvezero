@@ -7,6 +7,14 @@ The point is the memory profile: the Node edge carries a ~156 MB baseline and a
 100–165 MB parse transient per 500k-rule list. Rust runs the same rule set in
 **~52 MB RSS** with no GC headroom, and boots the whole catalog in ~1 second.
 
+## Artifacts
+
+Rule lists are compiled into content-addressed artifacts (see
+[`docs/artifact-format.md`](../../docs/artifact-format.md)). With the four live
+lists published as artifacts, the Rust edge loads **4/4 lists from artifacts,
+0 from text** and serves 435,691 rules from **13 MB RSS** on Fly (Node edge at
+the same rules: 164 MB). The compiler is `rz-compile` in this crate.
+
 ## Measured (local, release build, real database)
 
 | | Node edge | Rust edge |
