@@ -1,4 +1,4 @@
-//! Minimal JSON-lines logger with the same shape as the TypeScript agent:
+//! Minimal JSON-lines logger:
 //! `{"time":"…","level":"info","msg":"…", …extra}`.
 
 use serde_json::{json, Map, Value};

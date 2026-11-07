@@ -5,9 +5,10 @@ without archaeology. The readme is the *spec*; this file is *where we are*.
 Secrets (tokens, OAuth secrets, DB URLs) live in `.env` / Fly secrets / GitHub
 secrets — never pasted here.
 
-> Historical note: entries before 2026-11-07 refer to the former Node
-> implementation at `apps/edge`, which is preserved in the `node-edge-final` tag.
-> The Rust edge now owns `apps/edge`.
+> Historical note: entries before 2026-11-07 refer to the former Node edge at
+> `apps/edge` and the former TypeScript agent at `apps/agent`. The Node edge is
+> preserved in the `node-edge-final` tag; the Rust edge now owns `apps/edge` and
+> the Rust agent owns `apps/agent`.
 
 ---
 
@@ -29,6 +30,9 @@ secrets — never pasted here.
 ### Artifacts
 - `resolvezero-compiler` polls every 30 s for missing/stale lists, refreshes every 6 h, uploads content-addressed blobs to E2, and bumps `blocklist_version` once per changed cycle (with retry on bump failure).
 - Manual fallback: `scripts/artifacts.ts` + `rz-compile`; GitHub Actions is break-glass only.
+
+### Agent
+- `apps/agent` is now the Rust agent (single static binary); deploy unit at `apps/agent/deploy/resolvezero-agent.service`. The TypeScript agent was removed.
 
 ### Control plane
 - Email OTP is the primary sign-in; optional GitHub OAuth; API keys are session-minted. Profiles are always owner-scoped.
@@ -149,6 +153,7 @@ secrets — never pasted here.
 - **Square form language (2026-10-29):** matched form controls to the Northline contact-page reference: square buttons, pills, inputs, selects, textareas, search shells, segmented controls, and icon buttons; cards now use zero radius. Added a shared `.rz-input` style and uppercase micro-labels for Local DNS fields. The Blocked-only toggle is now a square switch.
 - **Node edge removed; Rust edge now owns `apps/edge` (2026-11-07):** preserved the final Node source in the `node-edge-final` git tag, then deleted `apps/edge/src`, `apps/edge/package.json`, `packages/shared`, the root Node `Dockerfile`, and `fly.node.toml`. Moved the operational scripts to `scripts/`, renamed `apps/edge-rust` → `apps/edge` and `Dockerfile.edge-rust` → `Dockerfile.edge`, and updated CI, Docker paths, Dependabot, docs, and the console image manifests. `pnpm test` is now 74 tests (Node-edge tests removed); the Rust workspace remains at 69. Deployed both images: edge blue-green at `Dockerfile.edge`, compiler rebuilt from `apps/edge`; production stayed at 4/4 artifacts / 441,142 rules, with fra cold at 8 MB and 14 MB after first query.
 - **Compiler version-bump fix (2026-11-07):** the worker logged `blocklist_version bumped` but never called `bump_blocklist_version`; new artifacts were invisible to lazy edges until the next 6-hour metadata sync. The loop now bumps the watermark, retries a failed bump on the next poll, and logs the error. Verified in production by aging one list + deleting its `rule_artifacts` row: the compiler recompiled, reinserted with `compiler=rz-compiler/0.1`, and advanced `blocklist_version` 18 → 19; both edges then reported 441,142 rules from 4/4 artifacts.
+- **Agent consolidation (2026-11-07):** removed the TypeScript agent at `apps/agent` and renamed `apps/agent-rust` → `apps/agent`. The Rust agent is now the only agent, in the Cargo workspace/CI, with its Dockerfile and systemd unit under `apps/agent/`. Updated the console Docker manifests, root scripts, docs, and CI paths. Rust workspace remains **95 tests**; `pnpm test` drops to 67 (TypeScript agent tests removed).
 - **Cleanup pass (2026-11-07):** moved `agent-rust/` → `apps/agent-rust/` and into the Cargo workspace/CI (23 tests); archived review files under `docs/reviews/`; split `server.rs` into `server/{boot,poll,resolve,helpers,transports,udp,dot,http,api,purge,health,privdrop,tests}.rs` and `stats.rs` into `stats/{mod,archive,rollup/…,util}.rs`, all under the 300-line ceiling; added a `scripts/tsconfig.json` and CI typecheck for the moved ops scripts; refreshed the progress snapshot; and added pure PROXY v2 parser tests (IPv4/IPv6/TLV/truncation). Rust workspace is now **95 tests**; `pnpm test` remains 74.
 - **Rust workspace split (2026-11-07):** moved the Rust code into a Cargo workspace. `crates/rz-core` now owns the artifact format, parser, fingerprints, SSRF guard, and S3 client; `crates/rz-db` owns Postgres access and row types; `apps/edge-rust` is the edge only; new `apps/compiler` owns the `rz-compiler` daemon and one-shot `rz-compile`. The daemon binary was renamed from `rz-artifacts` to `rz-compiler`. Dockerfiles build `-p` targets, CI/Dependabot moved to the workspace root, and leftover canary/duplicate `apps/edge-rust/Dockerfile`, `apps/edge-rust/fly.toml`, and `fly.edge-rust-canary.toml` were removed. Verified `cargo test --workspace` (69 tests), clippy `-D warnings`, and both release binaries.
 - **Rust unit coverage expanded (2026-11-07):** 45 → **69** tests. Added pure subscription cap/dedupe tests, lazy-load no-op/resident/skip tests, stats bucket/merge/top-JSON tests, metrics lazy-gauge tests, server validation + connection-cap tests, and more reserved-range SSRF cases. Remaining untested paths are DB/S3/network integration; those are covered by deploy smoke and forced-instance production checks.

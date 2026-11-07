@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-/// Resolved agent configuration. Mirrors `AgentConfig` in `apps/agent/src/config.ts`.
+/// Resolved agent configuration.
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
     pub profile_id: String,
@@ -68,7 +68,7 @@ fn text_env(raw: Option<&str>, fallback: &str) -> String {
     }
 }
 
-/// Port/timeout parser with the same bounds as the TypeScript agent: a whole
+/// Port/timeout parser with strict bounds: a whole
 /// number between 0 and 65535 (yes, it also applies to the timeout).
 fn number_env(raw: Option<&str>, fallback: u16) -> Result<u16, String> {
     let Some(raw) = raw.filter(|value| !value.is_empty()) else {

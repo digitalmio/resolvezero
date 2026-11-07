@@ -8,7 +8,6 @@ WORKDIR /repo
 # Workspace manifests first so dependency installs cache independently of source.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/console/package.json apps/console/package.json
-COPY apps/agent/package.json apps/agent/package.json
 COPY packages/db/package.json packages/db/package.json
 RUN pnpm install --frozen-lockfile
 

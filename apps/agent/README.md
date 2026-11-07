@@ -1,71 +1,71 @@
-# ResolveZero Agent
+# ResolveZero Agent (Rust)
 
-A small local DNS forwarder that sends queries to the ResolveZero edge over DoH.
+The ResolveZero local DNS-to-DoH agent. It listens on UDP/TCP 53, forwards to
+the edge over DoH, and ships as a single static Rust binary with no JavaScript
+runtime. It is part of the Cargo workspace and CI.
 
 ```text
 LAN devices → UDP/TCP 53 → resolvezero-agent → DoH → ResolveZero edge
 ```
 
-Use it when you want:
+## Behavior
 
-- one DNS entry point for every device on your LAN
-- per-device labels in ResolveZero
-- encrypted DNS to the edge
-- no local blocklist or cache maintenance
-- a router that can point its DNS at a single small agent
+| Behaviour | Supported |
+|---|---|
+| UDP + TCP listeners on `DNS_PORT` | ✅ |
+| RFC 1035 TCP framing (2-byte length) | ✅ |
+| DoH `POST /v1/:profile/:device/:token` | ✅ |
+| `DEVICE_MAP` label → device slug | ✅ |
+| IP-derived slug fallback | ✅ |
+| EDNS UDP payload clamp (512–4096) | ✅ |
+| TC response when the answer is too big | ✅ |
+| SERVFAIL on upstream error | ✅ |
+| SERVFAIL on transaction-ID mismatch | ✅ |
+| Optional `/healthz` + `/readyz` | ✅ |
+| Stateless (no cache, no filtering) | ✅ |
+| `.lan` / `.home.arpa` forwarded to the edge | ✅ |
+| JSON-line logs | ✅ |
+| SIGINT/SIGTERM shutdown | ✅ |
 
-The agent is intentionally stateless. Policy, blocklists, logs, and analytics stay on the edge.
+Notes:
 
-## MVP behaviour
-
-- UDP 53 and TCP 53 listeners
-- RFC 1035 TCP framing
-- forwards DNS wire messages to `/v1/:profile/:device/:token` over DoH
-- resolves the LAN source IP to a static device label
-- falls back to an IP-based device slug
-- returns SERVFAIL if the edge is unreachable or the transaction ID is invalid
-- returns TC and lets the client retry over TCP when a response is too large
-- optional localhost health endpoint
-- no DNS cache by default, so the edge sees every query
-- forwards `.lan`/`.home.arpa` queries to the edge; IP-encoded names are answered there
-
-Device hostnames are not discovered automatically in this MVP. They can be supplied
-with `DEVICE_MAP`:
-
-```bash
-DEVICE_MAP="192.168.1.20=macbook,192.168.1.21=iphone,192.168.1.22=apple-tv"
-```
-
-mDNS/PTR/DHCP-lease enrichment can be added later.
+- DNS header/question handling uses `hickory-proto`.
+- TCP responses are written through a per-connection channel; ordering can be
+  out-of-order under pipelining.
+- Log timestamps are RFC 3339 with nanoseconds.
 
 ## Build
 
-The agent is TypeScript and can be compiled to a single executable with Bun:
-
-```bash
-pnpm --filter @resolvezero/agent build
+```sh
+cargo build --release -p resolvezero-agent --bin resolvezero-agent
+# target/release/resolvezero-agent
 ```
 
-Cross-compile:
+Static-ish Linux builds (musl) if you want a single file without glibc:
 
-```bash
-pnpm --filter @resolvezero/agent build:linux-x64
-pnpm --filter @resolvezero/agent build:linux-arm64
-pnpm --filter @resolvezero/agent build:darwin-arm64
+```sh
+rustup target add x86_64-unknown-linux-musl
+cargo build --release -p resolvezero-agent --bin resolvezero-agent --target x86_64-unknown-linux-musl
 ```
 
-For development:
+## Run
 
-```bash
-PROFILE_ID=... DOH_TOKEN=... DNS_PORT=5353 pnpm --filter @resolvezero/agent dev
+```sh
+PROFILE_ID=... DOH_TOKEN=... DNS_PORT=5353 cargo run -p resolvezero-agent --bin resolvezero-agent
 ```
+
+Port 53 is privileged. On Linux either run as root, grant
+`CAP_NET_BIND_SERVICE`, or use Docker with host networking. Do not expose the
+agent directly to the internet.
 
 ## Configuration
 
+Environment variables:
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `PROFILE_ID` | yes | — | ResolveZero profile id |
-| `DOH_TOKEN` | yes | — | DoH token for that profile |
+| `PROFILE_ID` (or `RESOLVEZERO_PROFILE_ID`) | yes | — | ResolveZero profile id |
+| `DOH_TOKEN` (or `RESOLVEZERO_DOH_TOKEN`) | yes | — | DoH token for that profile |
 | `DOH_URL` | no | `https://resolvezero-edge.fly.dev` | Edge base URL |
 | `BIND_HOST` | no | `0.0.0.0` | DNS listen address |
 | `DNS_PORT` | no | `53` | DNS port |
@@ -74,36 +74,22 @@ PROFILE_ID=... DOH_TOKEN=... DNS_PORT=5353 pnpm --filter @resolvezero/agent dev
 | `HEALTH_PORT` | no | `0` (off) | Localhost health/readiness port |
 | `HEALTH_HOST` | no | `127.0.0.1` | Health listen address |
 
-## Router setup
+`DEVICE_MAP="192.168.1.20=macbook,192.168.1.21=iphone"` — labels are slugified
+(`MacBook Pro` → `macbook-pro`), falling back to `ip-<addr>`.
 
-1. Give the agent host a static LAN IP or DHCP reservation.
-2. Run the agent as a service.
-3. Set the router’s primary DNS server to that IP.
-4. Use a second agent or a trusted fallback as secondary DNS if you need redundancy.
+## Test
 
-Port 53 is privileged. On Linux:
-
-- run as root and drop privileges after binding, or
-- grant `CAP_NET_BIND_SERVICE`, or
-- run in Docker with host networking and the capability.
-
-Do not expose the agent directly to the internet.
-
-## systemd
-
-See `deploy/resolvezero-agent.service`.
-
-```bash
-sudo install -m 0755 resolvezero-agent-linux-x64 /usr/local/bin/resolvezero-agent
-sudo install -m 0600 .env /etc/resolvezero-agent.env
-sudo install -m 0644 deploy/resolvezero-agent.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now resolvezero-agent
+```sh
+cargo test
 ```
+
+23 tests cover config parsing/slugging, EDNS clamp, SERVFAIL/TC construction,
+transaction-ID checks, DoH request shaping (against a local HTTP server), UDP +
+TCP end-to-end with an injected resolver, truncation, and the health endpoint.
 
 ## Docker
 
-```bash
+```sh
 docker build -t resolvezero-agent .
 docker run -d --name resolvezero-agent \
   --network host \
@@ -113,13 +99,16 @@ docker run -d --name resolvezero-agent \
   resolvezero-agent
 ```
 
-Host networking is used because DNS must receive UDP/TCP on the LAN interface.
+## systemd
 
-## Test
+See `deploy/resolvezero-agent.service`:
 
-```bash
-pnpm --filter @resolvezero/agent test
-pnpm --filter @resolvezero/agent typecheck
+```sh
+sudo install -m 0755 target/release/resolvezero-agent /usr/local/bin/resolvezero-agent
+sudo install -m 0600 .env /etc/resolvezero-agent.env
+sudo install -m 0644 deploy/resolvezero-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now resolvezero-agent
 ```
 
 ## Not in this MVP

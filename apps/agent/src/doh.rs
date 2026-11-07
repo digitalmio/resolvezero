@@ -1,4 +1,4 @@
-//! DoH forwarding. Mirrors `apps/agent/src/doh.ts`.
+//! DoH forwarding.
 
 use std::fmt;
 use std::sync::Arc;

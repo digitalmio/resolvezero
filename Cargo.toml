@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "apps/agent-rust",
+  "apps/agent",
   "apps/compiler",
   "apps/edge",
   "crates/rz-core",

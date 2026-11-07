@@ -1,5 +1,5 @@
 //! UDP/TCP DNS listeners plus the optional health endpoint.
-//! Mirrors `apps/agent/src/server.ts`.
+//! UDP/TCP listeners and DoH forwarding.
 
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};

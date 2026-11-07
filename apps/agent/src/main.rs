@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! ResolveZero agent entrypoint. Mirrors `apps/agent/src/index.ts`.
+//! ResolveZero agent entrypoint.
 
 use std::net::IpAddr;
 use std::sync::Arc;

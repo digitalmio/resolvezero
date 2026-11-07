@@ -1,4 +1,4 @@
-//! DNS wire helpers. Mirrors `apps/agent/src/dns.ts`.
+//! DNS wire helpers.
 
 use hickory_proto::op::{Message, MessageType, ResponseCode};
 

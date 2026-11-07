@@ -1,5 +1,5 @@
 [Unit]
-Description=ResolveZero local DNS-to-DoH agent
+Description=ResolveZero local DNS-to-DoH agent (Rust)
 After=network-online.target
 Wants=network-online.target
 

@@ -2,7 +2,7 @@
 name = "resolvezero-agent"
 version = "0.1.0"
 edition = "2021"
-description = "Local DNS-to-DoH forwarder for ResolveZero (Rust rewrite of apps/agent)"
+description = "Local DNS-to-DoH forwarder for ResolveZero"
 license = "MIT"
 
 [dependencies]

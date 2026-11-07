@@ -81,8 +81,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 | `apps/edge` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats |
 | `apps/compiler` | Artifact compiler worker (`rz-compiler`) and one-shot `rz-compile` |
 | `apps/console` | TanStack Start console, API docs, and authenticated server functions |
-| `apps/agent` | Local DNS forwarding agent (TypeScript, shipped) |
-| `apps/agent-rust` | Rust agent port, built/tested with the workspace |
+| `apps/agent` | Local DNS-to-DoH forwarding agent (Rust) |
 | `crates/rz-core` | Shared artifact, parser, fingerprint, and SSRF primitives |
 | `crates/rz-db` | Shared Postgres access for the edge and compiler |
 | `packages/db` | Drizzle schema, migrations, database client |
@@ -266,7 +265,7 @@ Useful package scripts:
 ```sh
 cargo run -p resolvezero-edge --bin resolvezero-edge
 pnpm --filter @resolvezero/console dev
-pnpm --filter @resolvezero/agent dev
+cargo run -p resolvezero-agent --bin resolvezero-agent
 pnpm --filter @resolvezero/db db:studio
 ```
 
