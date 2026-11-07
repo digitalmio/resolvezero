@@ -33,6 +33,33 @@ impl Default for BlockAnswer {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SafeSearch {
+    pub google: bool,
+    pub bing: bool,
+    pub duckduckgo: bool,
+    pub youtube: bool,
+}
+
+impl SafeSearch {
+    pub fn from_json(raw: Option<&str>) -> Self {
+        let value: serde_json::Value = raw
+            .and_then(|raw| serde_json::from_str(raw).ok())
+            .unwrap_or(serde_json::Value::Null);
+        let flag = |key: &str| value.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+        Self {
+            google: flag("google"),
+            bing: flag("bing"),
+            duckduckgo: flag("duckduckgo"),
+            youtube: flag("youtube"),
+        }
+    }
+
+    pub fn any(&self) -> bool {
+        self.google || self.bing || self.duckduckgo || self.youtube
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ProfileMeta {
     pub token: Option<String>,
@@ -42,6 +69,7 @@ pub struct ProfileMeta {
     pub upstream: Option<String>,
     pub upstream_url: Option<String>,
     pub block: BlockAnswer,
+    pub safe_search: SafeSearch,
 }
 
 impl ProfileMeta {
@@ -74,6 +102,7 @@ pub struct ProfileRow {
     pub dot_id: Option<String>,
     pub doh_token: Option<String>,
     pub log_queries: bool,
+    pub safe_search: Option<String>,
     pub upstream: Option<String>,
     pub upstream_url: Option<String>,
     pub block_mode: Option<String>,
@@ -181,6 +210,7 @@ impl RuleStore {
                         upstream: row.upstream,
                         upstream_url: row.upstream_url,
                         block,
+                        safe_search: SafeSearch::from_json(row.safe_search.as_deref()),
                     },
                 )
             })
@@ -421,6 +451,7 @@ mod tests {
             dot_id: None,
             doh_token: token.map(str::to_string),
             log_queries: true,
+            safe_search: None,
             upstream: None,
             upstream_url: None,
             block_mode: None,

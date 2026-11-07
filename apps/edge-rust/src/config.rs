@@ -40,6 +40,12 @@ pub struct Config {
     pub list_cycle_deadline: Duration,
     pub udp_bind: String,
     pub hosted: bool,
+    pub probe_domain: Option<String>,
+    pub dot_port: u16,
+    pub dot_enabled: bool,
+    pub dot_suffix: String,
+    pub dot_idle_timeout: Duration,
+    pub dot_lifetime: Duration,
     pub drop_uid: u32,
     pub drop_gid: u32,
 }
@@ -94,6 +100,19 @@ impl Config {
             }),
             hosted: env::var("FLY_REGION").is_ok()
                 && env::var("ALLOW_TOKENLESS_PROFILES").as_deref() != Ok("1"),
+            probe_domain: env::var("PROBE_DOMAIN")
+                .ok()
+                .map(|value| value.trim().to_lowercase().trim_matches('.').to_string())
+                .filter(|value| !value.is_empty()),
+            dot_port: number("DOT_PORT", 853),
+            dot_enabled: env::var("DOT_ENABLED").as_deref() != Ok("0"),
+            dot_suffix: env::var("DOT_SUFFIX")
+                .unwrap_or_else(|_| ".dot.resolvezero.com".into())
+                .to_lowercase(),
+            dot_idle_timeout: Duration::from_secs(
+                number::<u64>("DOT_IDLE_TIMEOUT_SECONDS", 120).max(1),
+            ),
+            dot_lifetime: Duration::from_secs(number::<u64>("DOT_LIFETIME_SECONDS", 600).max(1)),
             drop_uid: number("DROP_UID", 1000),
             drop_gid: number("DROP_GID", 1000),
         })
@@ -157,6 +176,12 @@ mod tests {
             list_cycle_deadline: Duration::from_secs(180),
             udp_bind: "0.0.0.0".into(),
             hosted: false,
+            probe_domain: None,
+            dot_port: 853,
+            dot_enabled: true,
+            dot_suffix: ".dot.resolvezero.com".into(),
+            dot_idle_timeout: Duration::from_secs(120),
+            dot_lifetime: Duration::from_secs(600),
             drop_uid: 1000,
             drop_gid: 1000,
         };

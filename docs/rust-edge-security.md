@@ -132,17 +132,34 @@ checks cost O(label count).
   `clippy --all-targets -- -D warnings`, `cargo test`, and `cargo audit`.
   Dependabot tracks Cargo for `apps/edge-rust`.
 
+## Feature parity pass (same branch)
+
+Added after the security fixes:
+
+- **DoT 853**: listener, PROXY v2 header + authority TLV parsing,
+  `<dot_id>.dot.resolvezero.com` → profile, same policy pipeline and framing.
+- **SafeSearch**: Google/Bing/DuckDuckGo/YouTube CNAME rewrites from the
+  profile's `safe_search` JSON, after explicit rules and before remote lists.
+- **DNS-presence probe**: `<nonce>.probe.<PROBE_DOMAIN>` is recorded in
+  `dns_probes` (after auth) and answered NXDOMAIN.
+- **Management read APIs**: `GET /v1/:profile/logs` (S3 list + gunzip +
+  `limit`/`order`/`date`), `POST /v1/:profile/cache/purge`, `GET whoami`,
+  `POST update-ip`, with console CORS on the browser-driven routes.
+- **Cache purge polling**: `dns_cache_purges` is read every 5 s and matching
+  local entries are evicted.
+- **Blocklist status write-back**: `last_status` / `entry_count` /
+  `detected_format` / `last_synced_at` are updated on every sync.
+- **Device write-behind**: first-seen device tags are inserted into
+  `profile_devices` (deduped in memory), then `last_seen_at` is refreshed.
+- **Upstream transport**: h1 pool for Cloudflare/Google, h2 only for Quad9
+  (the security pass also benchmarked this; reqwest h2 was 7× slower here).
+
 ## Not fixed / partial
 
 | Item | Status |
 |---|---|
-| DoT 853 (SNI/authority TLV) | **Not ported** — Apple/Android private DNS still breaks |
-| SafeSearch | **Not ported** |
-| Blocked-services catalog | **Not ported** |
-| DNS-presence probe | **Not ported** |
-| Edge read APIs (`/logs`, `/stats`, cache purge, admin, whoami) | **Not ported** — console Logs/purge still call the Node edge |
-| Blocklist `last_status` / `entry_count` write-back | **Not ported** — Blocklists page shows stale status |
-| Per-device write-behind (`profile_devices`) | **Not ported** |
+| Blocked-services catalog (`profile_blocked_services`) | **Not ported** |
+| `DELETE /v1/:profile/logs` and unused edge stats/admin endpoints | **Not ported** (console reads stats from Postgres; it only GETs logs) |
 | Single-flight for identical misses | **Not implemented** |
 | Per-source TCP caps | **Not implemented** (global cap only) |
 | DoH metrics/readyz authentication | **Not added** (Fly keeps `/metrics` private; `/readyz` stays public) |
@@ -153,12 +170,17 @@ checks cost O(label count).
 
 ## Verification
 
-- `cargo test`: **36 passed**.
+- `cargo test`: **40 passed**.
 - `cargo clippy --all-targets -- -D warnings`: clean.
 - Local release boot with the published artifacts: 4/4 lists from artifacts,
   **0 raw**, 435,691 rules, ~20 MB RSS.
 - DoH smoke after hardening: `doubleclick.net` → `0.0.0.0`; `example.com` →
-  forwarded answer.
+  forwarded answer; SafeSearch `google.com` → CNAME `forcesafesearch.google.com`.
+- DoT smoke with a synthetic PROXY v2 authority header:
+  `<dot_id>.dot…` → `doubleclick.net` → `0.0.0.0`.
+- Management API smoke: `whoami` reported the linked IP, `logs` read
+  Node-written S3 objects, `cache/purge` queued a row, `update-ip` linked a
+  test IP (removed afterwards).
 - The temporary Fly canary used for the earlier comparison was destroyed; this
   security pass was verified locally only. A fresh canary is required before
   any cutover.

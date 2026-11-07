@@ -1,4 +1,5 @@
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::collections::HashSet;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -16,6 +17,10 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{error, info, warn};
 
+use flate2::read::GzDecoder;
+use std::io::Read;
+
+use crate::artifact::S3Config;
 use crate::cache::DnsCache;
 use crate::config::{Config, UnknownSource};
 use crate::db::Db;
@@ -35,16 +40,21 @@ pub struct AppState {
     pub upstream: Arc<Upstream>,
     pub metrics: Arc<Metrics>,
     pub logger: Arc<QueryLogger>,
+    pub db: Db,
     pub ready: AtomicBool,
+    pub seen_devices: Mutex<HashSet<(String, String)>>,
     pub blocklist_ok: AtomicBool,
     pub blocklist_failed: AtomicUsize,
     pub blocklist_error: Mutex<Option<String>>,
     pub last_sync_at: AtomicI64,
+    pub purge_since: AtomicI64,
     doh_rate: FixedWindow,
     udp_rate: FixedWindow,
     doh_gate: Semaphore,
     udp_gate: Arc<Semaphore>,
     tcp_gate: Arc<Semaphore>,
+    admin_rate: FixedWindow,
+    purge_rate: FixedWindow,
     sync_lock: tokio::sync::Mutex<()>,
 }
 
@@ -94,16 +104,21 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         upstream: Arc::new(Upstream::new(cfg.default_upstream())?),
         metrics,
         logger,
+        db: db.clone(),
         ready: AtomicBool::new(false),
+        seen_devices: Mutex::new(HashSet::new()),
         blocklist_ok: AtomicBool::new(false),
         blocklist_failed: AtomicUsize::new(0),
         blocklist_error: Mutex::new(None),
         last_sync_at: AtomicI64::new(0),
+        purge_since: AtomicI64::new(now_seconds() - 60),
         doh_rate: FixedWindow::new(cfg.doh_rate_limit_per_min, Duration::from_secs(60)),
         udp_rate: FixedWindow::new(cfg.udp_rate_limit_per_min, Duration::from_secs(60)),
         doh_gate: Semaphore::new(cfg.doh_max_inflight.max(1)),
         udp_gate: Arc::new(Semaphore::new(cfg.udp_max_inflight.max(1))),
         tcp_gate: Arc::new(Semaphore::new(cfg.tcp_max_connections.max(1))),
+        admin_rate: FixedWindow::new(60, Duration::from_secs(60)),
+        purge_rate: FixedWindow::new(10, Duration::from_secs(60)),
         sync_lock: tokio::sync::Mutex::new(()),
     });
 
@@ -145,6 +160,17 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     let tcp = TcpListener::bind(("0.0.0.0", cfg.dns_port))
         .await
         .map_err(|err| format!("tcp {} bind failed: {err}", cfg.dns_port))?;
+    let dot_listener = if cfg.dot_enabled {
+        match TcpListener::bind(("0.0.0.0", cfg.dot_port)).await {
+            Ok(listener) => Some(listener),
+            Err(err) => {
+                warn!(%err, port = cfg.dot_port, "dot listener unavailable");
+                None
+            }
+        }
+    } else {
+        None
+    };
     let doh_listener = TcpListener::bind(("0.0.0.0", cfg.doh_port))
         .await
         .map_err(|err| format!("doh {} bind failed: {err}", cfg.doh_port))?;
@@ -171,11 +197,17 @@ pub async fn run(cfg: Config) -> Result<(), String> {
 
     tokio::spawn(udp_loop(Arc::new(udp), state.clone()));
     tokio::spawn(tcp_loop(tcp, state.clone()));
+    if let Some(listener) = dot_listener {
+        tokio::spawn(dot_loop(listener, state.clone()));
+    }
 
     let doh_app = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .route("/v1/*rest", get(doh_handler).post(doh_handler))
+        .route(
+            "/v1/*rest",
+            get(doh_handler).post(doh_handler).options(doh_handler),
+        )
         .layer(DefaultBodyLimit::max(cfg.max_doh_body))
         .with_state(state.clone());
     tokio::spawn(async move {
@@ -255,8 +287,22 @@ async fn wait_for_shutdown() {
 async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_blocklist: i32) {
     let mut last_sync = Instant::now();
     let mut next_retry = Instant::now();
+    let mut last_purge = Instant::now() - Duration::from_secs(60);
     loop {
         tokio::time::sleep(state.cfg.poll_interval).await;
+        if last_purge.elapsed() >= Duration::from_secs(5) {
+            last_purge = Instant::now();
+            let since = state.purge_since.load(Ordering::Relaxed);
+            if let Ok(purges) = db.pending_purges(since).await {
+                if !purges.is_empty() {
+                    let mut cache = state.cache.lock().expect("cache lock");
+                    for (domain, record_type) in purges {
+                        cache.purge(&domain, record_type.as_deref());
+                    }
+                }
+                state.purge_since.store(now_seconds(), Ordering::Relaxed);
+            }
+        }
         let versions = match db.versions().await {
             Ok(versions) => versions,
             Err(err) => {
@@ -340,8 +386,20 @@ async fn resolve_wire(
     };
     Metrics::inc(&state.metrics.queries);
 
+    if let Some(probe_domain) = &state.cfg.probe_domain {
+        if let Some(nonce) = match_probe_nonce(&question.name, probe_domain) {
+            let db = state.db.clone();
+            let region = state.cfg.region.clone();
+            let transport = context.transport.to_string();
+            tokio::spawn(async move {
+                let _ = db.record_probe(&nonce, &region, &transport).await;
+            });
+            return Some(dns::nxdomain_response(&question));
+        }
+    }
+
     let type_name = record_type_name(question.qtype);
-    let (zone, nodata, custom, remote, block, selector) = {
+    let (zone, nodata, custom, remote, block, selector, safe_search) = {
         let store = state.store.read().await;
         let meta = match store.profile_meta(profile) {
             Some(meta) => meta,
@@ -369,6 +427,7 @@ async fn resolve_wire(
             remote,
             meta.block.clone(),
             meta.upstream_selector().map(str::to_string),
+            meta.safe_search,
         )
     };
 
@@ -414,6 +473,24 @@ async fn resolve_wire(
             state, &question, profile, context, "block", reason, list_id, None, None,
         );
         return Some(dns::sinkhole_response(&question, &block));
+    }
+
+    if safe_search.any() {
+        if let Some(target) = dns::safe_search_target(&safe_search, &question.name) {
+            record(
+                state,
+                &question,
+                profile,
+                context,
+                "override",
+                Some("safesearch"),
+                None,
+                None,
+                None,
+            );
+            Metrics::inc(&state.metrics.forwarded);
+            return Some(dns::cname_response(&question, target, 600));
+        }
     }
 
     let mut prelogged = false;
@@ -542,6 +619,20 @@ fn upstream_label(selector: Option<&str>) -> String {
     }
 }
 
+fn match_probe_nonce(name: &str, probe_domain: &str) -> Option<String> {
+    let lower = name.trim_end_matches('.').to_ascii_lowercase();
+    let suffix = format!(".{}", probe_domain.to_ascii_lowercase());
+    let nonce = lower.strip_suffix(&suffix)?;
+    if nonce.is_empty()
+        || nonce.contains('.')
+        || !(16..=64).contains(&nonce.len())
+        || !nonce.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        return None;
+    }
+    Some(nonce.to_string())
+}
+
 fn record_type_name(record_type: RecordType) -> &'static str {
     match record_type {
         RecordType::A => "A",
@@ -549,6 +640,166 @@ fn record_type_name(record_type: RecordType) -> &'static str {
         RecordType::CNAME => "CNAME",
         RecordType::TXT => "TXT",
         _ => "OTHER",
+    }
+}
+
+const PROXY_V2_MAGIC: [u8; 12] = [
+    0x0d, 0x0a, 0x0d, 0x0a, 0x00, 0x0d, 0x0a, 0x51, 0x55, 0x49, 0x54, 0x0a,
+];
+const TLV_AUTHORITY: u8 = 0x02;
+
+/// `<label>.dot.resolvezero.com` -> `label`.
+fn dot_label(hostname: &str, suffix: &str) -> Option<String> {
+    let host = hostname.trim().to_ascii_lowercase();
+    let host = host.trim_end_matches('.');
+    let label = host.strip_suffix(suffix)?;
+    if label.is_empty()
+        || label.contains('.')
+        || label.len() > 32
+        || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return None;
+    }
+    Some(label.to_string())
+}
+
+async fn read_proxy_v2_header(stream: &mut TcpStream) -> Option<(Option<String>, Option<String>)> {
+    let mut fixed = [0u8; 16];
+    stream.read_exact(&mut fixed).await.ok()?;
+    if fixed[..12] != PROXY_V2_MAGIC {
+        return None;
+    }
+    let payload_len = u16::from_be_bytes([fixed[14], fixed[15]]) as usize;
+    if payload_len > 65_535 {
+        return None;
+    }
+    let mut payload = vec![0u8; payload_len];
+    stream.read_exact(&mut payload).await.ok()?;
+    let family = fixed[13] >> 4;
+    let command = fixed[12] & 0x0f;
+    let mut offset = 0usize;
+    let mut source = None;
+    if command == 1 {
+        match family {
+            1 if payload.len() >= 12 => {
+                source =
+                    Some(Ipv4Addr::new(payload[0], payload[1], payload[2], payload[3]).to_string());
+                offset = 12;
+            }
+            2 if payload.len() >= 36 => {
+                let mut octets = [0u8; 16];
+                octets.copy_from_slice(&payload[0..16]);
+                source = Some(Ipv6Addr::from(octets).to_string());
+                offset = 36;
+            }
+            _ => {}
+        }
+    }
+    let mut authority = None;
+    while offset + 3 <= payload.len() {
+        let kind = payload[offset];
+        let length = u16::from_be_bytes([payload[offset + 1], payload[offset + 2]]) as usize;
+        offset += 3;
+        if offset + length > payload.len() {
+            break;
+        }
+        if kind == TLV_AUTHORITY {
+            authority =
+                Some(String::from_utf8_lossy(&payload[offset..offset + length]).to_lowercase());
+        }
+        offset += length;
+    }
+    Some((source, authority))
+}
+
+async fn dot_loop(listener: TcpListener, state: Arc<AppState>) {
+    loop {
+        match listener.accept().await {
+            Ok((stream, peer)) => {
+                let permit = match state.tcp_gate.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => continue,
+                };
+                let state = state.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    if let Err(err) = handle_dot(stream, peer, state).await {
+                        warn!(%err, %peer, "dot connection ended");
+                    }
+                });
+            }
+            Err(err) => {
+                warn!(%err, "dot accept failed");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+    }
+}
+
+async fn handle_dot(
+    mut stream: TcpStream,
+    _peer: SocketAddr,
+    state: Arc<AppState>,
+) -> std::io::Result<()> {
+    let parsed = tokio::time::timeout(Duration::from_secs(5), read_proxy_v2_header(&mut stream))
+        .await
+        .ok()
+        .flatten();
+    let Some((source, authority)) = parsed else {
+        return Ok(());
+    };
+    let Some(authority) = authority else {
+        return Ok(());
+    };
+    let Some(label) = dot_label(&authority, &state.cfg.dot_suffix) else {
+        return Ok(());
+    };
+    let Some(profile_id) = state.store.read().await.authorize_dot_id(&label).cloned() else {
+        return Ok(());
+    };
+    let log_enabled = state.store.read().await.should_log(&profile_id);
+    let context = QueryContext {
+        client_ip: source,
+        device: None,
+        transport: "dot",
+        log_enabled,
+    };
+    let deadline = Instant::now() + state.cfg.dot_lifetime;
+
+    loop {
+        if Instant::now() >= deadline {
+            return Ok(());
+        }
+        let mut length = [0u8; 2];
+        match tokio::time::timeout(state.cfg.dot_idle_timeout, stream.read_exact(&mut length)).await
+        {
+            Ok(Ok(_)) => {}
+            _ => return Ok(()),
+        }
+        let length = u16::from_be_bytes(length) as usize;
+        if length == 0 {
+            return Ok(());
+        }
+        let mut wire = vec![0u8; length];
+        match tokio::time::timeout(state.cfg.dot_idle_timeout, stream.read_exact(&mut wire)).await {
+            Ok(Ok(_)) => {}
+            _ => return Ok(()),
+        }
+        match resolve_wire(&state, &wire, &profile_id, &context).await {
+            Some(bytes) if bytes.len() <= 65_535 => {
+                let len = (bytes.len() as u16).to_be_bytes();
+                stream.write_all(&len).await?;
+                stream.write_all(&bytes).await?;
+            }
+            Some(_) => {
+                Metrics::inc(&state.metrics.drops);
+                return Ok(());
+            }
+            None => {
+                Metrics::inc(&state.metrics.drops);
+                return Ok(());
+            }
+        }
     }
 }
 
@@ -856,6 +1107,28 @@ async fn doh_handler(
     if parts.is_empty() || parts.len() > 3 {
         return StatusCode::NOT_FOUND.into_response();
     }
+    match (
+        method.as_str(),
+        parts.get(1).copied(),
+        parts.get(2).copied(),
+    ) {
+        ("GET", Some("logs"), None) if parts.len() == 2 => {
+            return handle_logs(state.clone(), parts[0].to_string(), headers, uri).await;
+        }
+        ("GET", Some("whoami"), None) if parts.len() == 2 => {
+            return handle_whoami(state.clone(), parts[0].to_string(), headers, uri).await;
+        }
+        ("POST", Some("update-ip"), None) if parts.len() == 2 => {
+            return handle_update_ip(state.clone(), parts[0].to_string(), headers, uri).await;
+        }
+        ("POST", Some("cache"), Some("purge")) if parts.len() == 3 => {
+            return handle_purge(state.clone(), parts[0].to_string(), headers, uri, body).await;
+        }
+        ("OPTIONS", Some("whoami" | "update-ip"), _) => {
+            return cors_preflight(headers).await;
+        }
+        _ => {}
+    }
     let profile_id = parts[0];
 
     let (device, token) = match (parts.get(1), parts.get(2)) {
@@ -938,6 +1211,22 @@ async fn doh_handler(
         log_enabled,
     };
 
+    if let Some(device) = &context.device {
+        let key = (profile_id.to_string(), device.clone());
+        let is_new = {
+            let mut seen = state.seen_devices.lock().expect("device seen");
+            seen.insert(key)
+        };
+        if is_new {
+            let db = state.db.clone();
+            let profile = profile_id.to_string();
+            let device = device.clone();
+            tokio::spawn(async move {
+                let _ = db.touch_device(&profile, &device).await;
+            });
+        }
+    }
+
     match tokio::time::timeout(
         state.cfg.doh_timeout,
         resolve_wire(&state, &wire, profile_id, &context),
@@ -955,6 +1244,383 @@ async fn doh_handler(
         Ok(None) => StatusCode::BAD_REQUEST.into_response(),
         Err(_) => StatusCode::GATEWAY_TIMEOUT.into_response(),
     }
+}
+
+fn token_from(headers: &HeaderMap, uri: &Uri) -> Option<String> {
+    if let Some(token) = query_param(uri, "token") {
+        return Some(token);
+    }
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn query_param(uri: &Uri, key: &str) -> Option<String> {
+    uri.query()?.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        if name == key {
+            Some(value.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+fn caller_ip(headers: &HeaderMap) -> Option<String> {
+    if let Some(value) = headers
+        .get("fly-client-ip")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(value.to_string());
+    }
+    if std::env::var("ALLOW_UNTRUSTED_IP_HEADERS").as_deref() == Ok("1") {
+        return headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(',').next())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+    }
+    None
+}
+
+async fn authorized(state: &AppState, profile: &str, token: Option<String>) -> bool {
+    let store = state.store.read().await;
+    if !store.has_profile(profile, token.as_deref()) {
+        return false;
+    }
+    !(state.cfg.hosted
+        && store
+            .profile_meta(profile)
+            .is_some_and(|meta| meta.token.is_none()))
+}
+
+fn console_origin(headers: &HeaderMap) -> Option<String> {
+    let origin = headers.get(header::ORIGIN)?.to_str().ok()?;
+    let allowed = std::env::var("CONSOLE_ORIGINS").unwrap_or_else(|_| {
+        "https://my.resolvezero.com,http://localhost:3000,http://localhost:3100".into()
+    });
+    allowed
+        .split(',')
+        .map(str::trim)
+        .any(|candidate| candidate == origin)
+        .then(|| origin.to_string())
+}
+
+fn with_cors(mut response: Response, headers: &HeaderMap) -> Response {
+    if let Some(origin) = console_origin(headers) {
+        if let Ok(value) = origin.parse() {
+            response
+                .headers_mut()
+                .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, value);
+        }
+        response
+            .headers_mut()
+            .insert(header::VARY, "Origin".parse().expect("static header"));
+        response.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_METHODS,
+            "GET,POST,OPTIONS".parse().expect("static header"),
+        );
+        response.headers_mut().insert(
+            header::ACCESS_CONTROL_ALLOW_HEADERS,
+            "authorization,content-type".parse().expect("static header"),
+        );
+    }
+    response
+}
+
+async fn cors_preflight(headers: HeaderMap) -> Response {
+    with_cors(StatusCode::NO_CONTENT.into_response(), &headers)
+}
+
+async fn handle_whoami(
+    state: Arc<AppState>,
+    profile: String,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
+    if !authorized(&state, &profile, token_from(&headers, &uri)).await {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Some(ip) = caller_ip(&headers) else {
+        return with_cors(
+            (StatusCode::BAD_REQUEST, "caller IP unavailable").into_response(),
+            &headers,
+        );
+    };
+    if ip.parse::<IpAddr>().is_err() {
+        return with_cors(
+            (StatusCode::BAD_REQUEST, "invalid caller IP").into_response(),
+            &headers,
+        );
+    }
+    let key = format!("{ip}:{profile}");
+    if !state.admin_rate.allow(&key) {
+        return with_cors(StatusCode::TOO_MANY_REQUESTS.into_response(), &headers);
+    }
+    let linked = state.store.read().await.authorize_ip(&ip) == Some(&profile);
+    with_cors(
+        axum::Json(serde_json::json!({
+            "ip": ip,
+            "profileId": profile,
+            "linked": linked,
+        }))
+        .into_response(),
+        &headers,
+    )
+}
+
+async fn handle_update_ip(
+    state: Arc<AppState>,
+    profile: String,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
+    if !authorized(&state, &profile, token_from(&headers, &uri)).await {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let explicit = query_param(&uri, "ip");
+    if explicit.is_some() && std::env::var("ALLOW_EXPLICIT_IP_LINK").as_deref() != Ok("1") {
+        return with_cors(
+            (
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({ "error": "explicit IP linking is disabled" })),
+            )
+                .into_response(),
+            &headers,
+        );
+    }
+    let Some(raw) = explicit.or_else(|| caller_ip(&headers)) else {
+        return with_cors(
+            (StatusCode::BAD_REQUEST, "caller IP unavailable").into_response(),
+            &headers,
+        );
+    };
+    let Ok(ip) = raw.trim_matches(['[', ']']).parse::<IpAddr>() else {
+        return with_cors(
+            (StatusCode::BAD_REQUEST, "invalid IP").into_response(),
+            &headers,
+        );
+    };
+    let key = format!("{ip}:{profile}");
+    if !state.admin_rate.allow(&key) {
+        return with_cors(StatusCode::TOO_MANY_REQUESTS.into_response(), &headers);
+    }
+    match state.db.link_source_ip(&profile, &ip.to_string()).await {
+        Ok(true) => with_cors(
+            axum::Json(
+                serde_json::json!({ "ok": true, "ip": ip.to_string(), "profileId": profile }),
+            )
+            .into_response(),
+            &headers,
+        ),
+        Ok(false) => with_cors(
+            (
+                StatusCode::CONFLICT,
+                axum::Json(serde_json::json!({ "error": "IP is linked to another profile" })),
+            )
+                .into_response(),
+            &headers,
+        ),
+        Err(_) => with_cors(StatusCode::INTERNAL_SERVER_ERROR.into_response(), &headers),
+    }
+}
+
+fn valid_purge_domain(value: &str) -> Option<String> {
+    let domain = value
+        .trim()
+        .to_ascii_lowercase()
+        .trim_end_matches('.')
+        .to_string();
+    if domain.is_empty() || domain.len() > 253 || domain.contains("..") {
+        return None;
+    }
+    let ok = domain.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    });
+    ok.then_some(domain)
+}
+
+fn valid_purge_type(value: &str) -> Option<String> {
+    const TYPES: [&str; 11] = [
+        "A", "AAAA", "CNAME", "TXT", "MX", "NS", "SOA", "SRV", "CAA", "HTTPS", "SVCB",
+    ];
+    let value = value.trim().to_ascii_uppercase();
+    if value.is_empty() {
+        return None;
+    }
+    TYPES.contains(&value.as_str()).then_some(value)
+}
+
+async fn handle_purge(
+    state: Arc<AppState>,
+    profile: String,
+    headers: HeaderMap,
+    uri: Uri,
+    body: Bytes,
+) -> Response {
+    if !authorized(&state, &profile, token_from(&headers, &uri)).await {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let caller = caller_ip(&headers).unwrap_or_else(|| "unknown".into());
+    if !state.purge_rate.allow(&format!("{caller}:{profile}")) {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+    let mut name = query_param(&uri, "name").unwrap_or_default();
+    let mut record_type = query_param(&uri, "type").unwrap_or_default();
+    if name.is_empty() && !body.is_empty() {
+        if body.len() > 4096 {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        }
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&body) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        name = value
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+        record_type = value
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+    }
+    let Some(domain) = valid_purge_domain(&name) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let record_type = valid_purge_type(&record_type);
+    match state
+        .db
+        .insert_purge(&profile, &domain, record_type.as_deref())
+        .await
+    {
+        Ok(()) => axum::Json(serde_json::json!({
+            "ok": true,
+            "domain": domain,
+            "type": record_type,
+        }))
+        .into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+async fn handle_logs(
+    state: Arc<AppState>,
+    profile: String,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Response {
+    if !authorized(&state, &profile, token_from(&headers, &uri)).await {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let caller = caller_ip(&headers).unwrap_or_else(|| "unknown".into());
+    if !state.admin_rate.allow(&format!("logs:{caller}:{profile}")) {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+    let Some(s3) = S3Config::from_env() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({ "error": "raw log archive not configured" })),
+        )
+            .into_response();
+    };
+    let prefix = std::env::var("S3_LOG_PREFIX").unwrap_or_else(|_| "logs".into());
+    let date = query_param(&uri, "date")
+        .filter(|value| value.len() == 10 && value.chars().all(|c| c.is_ascii_digit() || c == '-'));
+    let mut object_prefix = format!("{prefix}/{profile}/");
+    if let Some(date) = &date {
+        object_prefix.push_str(date);
+        object_prefix.push('/');
+    }
+
+    let mut keys = Vec::new();
+    let mut token: Option<String> = None;
+    for _ in 0..10 {
+        match s3.list(&object_prefix, token.as_deref()).await {
+            Ok((page, next)) => {
+                keys.extend(page);
+                token = next;
+                if token.is_none() {
+                    break;
+                }
+            }
+            Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
+        }
+    }
+    keys.sort();
+    const MAX_OBJECTS: usize = 200;
+    let capped = keys.len() > MAX_OBJECTS;
+    if capped {
+        keys = keys.split_off(keys.len() - MAX_OBJECTS);
+    }
+    let newest_first = query_param(&uri, "order").as_deref() == Some("desc");
+    if newest_first {
+        keys.reverse();
+    }
+    let limit = query_param(&uri, "limit")
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(100)
+        .min(10_000);
+
+    let mut out = String::new();
+    if capped {
+        out.push_str("{\"warning\":\"truncated at 200 objects\"}\n");
+    }
+    let mut emitted = 0usize;
+    for key in keys {
+        if emitted >= limit {
+            break;
+        }
+        let Ok(bytes) = s3.get_key(&key).await else {
+            continue;
+        };
+        if bytes.len() > 8 * 1024 * 1024 {
+            continue;
+        }
+        let mut decoder = GzDecoder::new(bytes.as_slice());
+        let mut text = String::new();
+        if decoder.read_to_string(&mut text).is_err() {
+            continue;
+        }
+        let mut lines: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
+        if newest_first {
+            lines.reverse();
+        }
+        for line in lines {
+            out.push_str(line);
+            out.push('\n');
+            emitted += 1;
+            if emitted >= limit {
+                break;
+            }
+        }
+    }
+
+    let disposition = format!(
+        "attachment; filename=\"rz-logs-{profile}{}.jsonl\"",
+        date.map(|date| format!("-{date}")).unwrap_or_default()
+    );
+    (
+        [
+            (header::CONTENT_TYPE, "application/x-ndjson"),
+            (header::CONTENT_DISPOSITION, disposition.as_str()),
+        ],
+        out,
+    )
+        .into_response()
 }
 
 fn valid_device(value: &str) -> bool {
@@ -1072,4 +1738,41 @@ fn drop_privileges(gid: u32, uid: u32) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dot_label, match_probe_nonce};
+
+    #[test]
+    fn matches_probe_nonces() {
+        assert_eq!(
+            match_probe_nonce(
+                "abc123def456abc123.probe.resolvezero.com",
+                "probe.resolvezero.com"
+            ),
+            Some("abc123def456abc123".into())
+        );
+        assert_eq!(
+            match_probe_nonce("a.b.probe.resolvezero.com", "probe.resolvezero.com"),
+            None
+        );
+        assert_eq!(
+            match_probe_nonce("short.probe.resolvezero.com", "probe.resolvezero.com"),
+            None
+        );
+    }
+
+    #[test]
+    fn maps_dot_hostnames() {
+        assert_eq!(
+            dot_label("abc123.dot.resolvezero.com.", ".dot.resolvezero.com"),
+            Some("abc123".into())
+        );
+        assert_eq!(dot_label("abc.dot.other.com", ".dot.resolvezero.com"), None);
+        assert_eq!(
+            dot_label("a.b.dot.resolvezero.com", ".dot.resolvezero.com"),
+            None
+        );
+    }
 }

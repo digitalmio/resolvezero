@@ -236,9 +236,12 @@ impl S3Config {
     }
 
     pub async fn get(&self, hash: &str) -> Result<Vec<u8>, String> {
+        self.get_key(&self.key(hash)).await
+    }
+
+    pub async fn get_key(&self, key: &str) -> Result<Vec<u8>, String> {
         const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
-        let key = self.key(hash);
-        let response = self.request("GET", &key, b"", None).await?;
+        let response = self.request("GET", key, "", b"", None).await?;
         if !response.status().is_success() {
             return Err(format!("artifact GET {} -> {}", key, response.status()));
         }
@@ -259,10 +262,46 @@ impl S3Config {
         Ok(out)
     }
 
+    /// One page of S3 ListObjectsV2. Returns keys and the continuation token.
+    pub async fn list(
+        &self,
+        prefix: &str,
+        continuation: Option<&str>,
+    ) -> Result<(Vec<String>, Option<String>), String> {
+        let mut params: Vec<(String, String)> = vec![
+            ("list-type".into(), "2".into()),
+            ("max-keys".into(), "1000".into()),
+            ("prefix".into(), prefix.to_string()),
+        ];
+        if let Some(token) = continuation {
+            params.push(("continuation-token".into(), token.to_string()));
+        }
+        params.sort_by(|a, b| a.0.cmp(&b.0));
+        let query = params
+            .iter()
+            .map(|(key, value)| {
+                format!("{}={}", encode_uri_segment(key), encode_uri_segment(value))
+            })
+            .collect::<Vec<_>>()
+            .join("&");
+        let response = self.request("GET", "", &query, b"", None).await?;
+        if !response.status().is_success() {
+            return Err(format!("S3 LIST -> {}", response.status()));
+        }
+        let body = response.bytes().await.map_err(|err| err.to_string())?;
+        let text = String::from_utf8_lossy(&body);
+        Ok((
+            xml_values(&text, "Key"),
+            xml_value(&text, "NextContinuationToken"),
+        ))
+    }
+
     /// PUT an object (used by the raw-log archive). Returns an error on any
     /// non-2xx response so the caller can queue a retry.
     pub async fn put(&self, key: &str, body: &[u8], content_type: &str) -> Result<(), String> {
-        let response = self.request("PUT", key, body, Some(content_type)).await?;
+        let response = self
+            .request("PUT", key, "", body, Some(content_type))
+            .await?;
         if !response.status().is_success() {
             return Err(format!("S3 PUT {key} -> {}", response.status()));
         }
@@ -273,6 +312,7 @@ impl S3Config {
         &self,
         method: &str,
         key: &str,
+        query: &str,
         body: &[u8],
         content_type: Option<&str>,
     ) -> Result<reqwest::Response, String> {
@@ -282,15 +322,23 @@ impl S3Config {
             .map(|(_, rest)| rest)
             .unwrap_or(endpoint)
             .trim_end_matches('/');
-        let canonical_uri = format!(
-            "/{}/{}",
-            encode_uri_segment(&self.bucket),
-            key.split('/')
-                .map(encode_uri_segment)
-                .collect::<Vec<_>>()
-                .join("/")
-        );
-        let url = format!("{endpoint}{canonical_uri}");
+        let canonical_uri = if key.is_empty() {
+            format!("/{}", encode_uri_segment(&self.bucket))
+        } else {
+            format!(
+                "/{}/{}",
+                encode_uri_segment(&self.bucket),
+                key.split('/')
+                    .map(encode_uri_segment)
+                    .collect::<Vec<_>>()
+                    .join("/")
+            )
+        };
+        let url = if query.is_empty() {
+            format!("{endpoint}{canonical_uri}")
+        } else {
+            format!("{endpoint}{canonical_uri}?{query}")
+        };
 
         let now = OffsetDateTime::now_utc();
         let amz_date = now
@@ -305,7 +353,7 @@ impl S3Config {
             format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
         let signed_headers = "host;x-amz-content-sha256;x-amz-date";
         let canonical_request = format!(
-            "{method}\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+            "{method}\n{canonical_uri}\n{query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
         );
         let scope = format!("{date}/{}/s3/aws4_request", self.region);
         let string_to_sign = format!(
@@ -334,6 +382,35 @@ impl S3Config {
             .await
             .map_err(|err| err.to_string())
     }
+}
+
+fn xml_value(text: &str, tag: &str) -> Option<String> {
+    let start = text.find(&format!("<{tag}>"))? + tag.len() + 2;
+    let end = text[start..].find(&format!("</{tag}>"))? + start;
+    Some(xml_unescape(&text[start..end]))
+}
+
+fn xml_values(text: &str, tag: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut rest = text;
+    while let Some(start) = rest.find(&open) {
+        let after = &rest[start + open.len()..];
+        let Some(end) = after.find(&close) else { break };
+        out.push(xml_unescape(&after[..end]));
+        rest = &after[end + close.len()..];
+    }
+    out
+}
+
+fn xml_unescape(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
 }
 
 fn encode_uri_segment(value: &str) -> String {

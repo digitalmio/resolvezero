@@ -93,12 +93,20 @@ use table bytes plus baseline for sizing on Linux.
   precedence across lists, 5M global entry budget, 64 lists/profile.
 - Custom rules with subtree semantics, local zones (exact + `*.` wildcard,
   A/AAAA/CNAME/TXT), block modes (`null` / `nxdomain` / `refused` / custom IP).
-- DNS cache keyed by name/type/class/DNSSEC intent/upstream, with the Node
-  edge's TTL caps (positive 300 s, negative 60 s).
+- DNS cache keyed by name/type/class/CD/full EDNS OPT/upstream, with OPT
+  stripped on store/serve, question-case rewrite, TTL countdown, and the Node
+  edge's caps (positive 300 s, negative 60 s).
 - DoH GET (`?dns=`) and POST, path shapes `/v1/:id`, `/v1/:id/:token`,
   `/v1/:id/:device`, `/v1/:id/:device/:token`, constant-time token compare.
 - UDP 53 with source-IP auth and `UDP_UNKNOWN_SOURCE=refused|silent`.
 - TCP 53 with PROXY protocol v1/v2 (Fly's `proxy_proto` ingress).
+- **DoT 853** with PROXY v2 authority-TLV → profile mapping (`<dot_id>.dot…`).
+- SafeSearch CNAME rewrites, DNS-presence probe recording, blocklist status
+  write-back, and per-device `profile_devices` write-behind.
+- Management endpoints on the same origin: `GET /v1/:profile/logs`,
+  `POST /v1/:profile/cache/purge`, `GET /v1/:profile/whoami`,
+  `POST /v1/:profile/update-ip` (with console CORS).
+- Cache purges are queued in `dns_cache_purges` and applied by a 5 s poll.
 - Upstream presets (Cloudflare/Google/Quad9) and custom DoH URLs.
 - `/healthz`, `/readyz` (rules, tables, RSS), `/metrics` on a private port.
 - Privilege drop after binding 53 (UID/GID 1000 by default).
@@ -106,15 +114,15 @@ use table bytes plus baseline for sizing on Linux.
 
 ## Not ported yet (required before cutover)
 
-- DoT on 853 (SNI/authority TLV mapping to a profile). Fly's TLS proxy is in
-  place; the listener is not.
-- Blocked services catalog, SafeSearch, DNS-presence probe.
-- The edge HTTP APIs served by the Node edge: `/v1/:profile/logs`,
-  `/v1/:profile/stats`, cache purge, admin/probe endpoints. Stats and raw log
-  *writes* are done, but a full Rust fleet still needs the read APIs.
-- Rate limiting / semaphores, per-device write-behind, exact TTL rewriting on
-  forwarded answers (the cache is capped, the returned TTL is untouched).
-- Blocklist status write-back (`last_status` / `entry_count`).
+- `profile_blocked_services` catalog (service-level blocking) is not ported.
+- `DELETE /v1/:profile/logs` and the optional edge stats/admin endpoints that
+  the console does not call (stats are read from Postgres directly).
+- Single-flight coalescing for identical cache misses; per-source TCP caps
+  (the global cap is in place).
+- Exact TTL rewriting on forwarded upstream answers (the cache TTL is capped
+  and counted down; the returned wire TTL is upstream's).
+- Non-root container/capability-only bind, `/metrics` + `/readyz` auth, and
+  S3 PUT retry for log objects.
 
 ## Run locally
 

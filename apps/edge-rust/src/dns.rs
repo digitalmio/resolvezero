@@ -7,7 +7,7 @@ use hickory_proto::rr::rdata::{A, AAAA, CNAME, TXT};
 use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 
 use crate::artifact::sha256_hex;
-use crate::store::{BlockAnswer, BlockMode, ZoneEntry};
+use crate::store::{BlockAnswer, BlockMode, SafeSearch, ZoneEntry};
 
 #[derive(Clone, Debug)]
 pub struct Question {
@@ -176,6 +176,65 @@ pub fn zone_response(question: &Question, entry: &ZoneEntry, record_type: &str) 
         }
     }
 
+    response.to_vec().unwrap_or_default()
+}
+
+const GOOGLE_TLDS: [&str; 40] = [
+    "com", "co.uk", "de", "fr", "es", "it", "nl", "pl", "be", "ch", "at", "se", "no", "dk", "fi",
+    "ie", "pt", "cz", "sk", "hu", "ro", "bg", "gr", "tr", "ru", "ua", "ca", "com.au", "co.nz",
+    "co.jp", "co.kr", "co.in", "com.br", "com.mx", "com.ar", "co.za", "com.sg", "com.hk", "com.tw",
+    "ae",
+];
+
+/// Exact-match SafeSearch rewrite; a wildcard would rewrite search assets too.
+pub fn safe_search_target(settings: &SafeSearch, name: &str) -> Option<&'static str> {
+    let name = name.trim_end_matches('.').to_ascii_lowercase();
+    if settings.google
+        && GOOGLE_TLDS
+            .iter()
+            .any(|tld| name == format!("google.{tld}") || name == format!("www.google.{tld}"))
+    {
+        return Some("forcesafesearch.google.com");
+    }
+    if settings.bing && matches!(name.as_str(), "bing.com" | "www.bing.com") {
+        return Some("strict.bing.com");
+    }
+    if settings.duckduckgo
+        && matches!(
+            name.as_str(),
+            "duckduckgo.com"
+                | "www.duckduckgo.com"
+                | "start.duckduckgo.com"
+                | "html.duckduckgo.com"
+                | "lite.duckduckgo.com"
+        )
+    {
+        return Some("safe.duckduckgo.com");
+    }
+    if settings.youtube
+        && matches!(
+            name.as_str(),
+            "youtube.com" | "www.youtube.com" | "m.youtube.com"
+        )
+    {
+        return Some("restrict.youtube.com");
+    }
+    None
+}
+
+/// CNAME rewrite used by SafeSearch (provider addresses rotate).
+pub fn cname_response(question: &Question, target: &str, ttl: u32) -> Vec<u8> {
+    let mut response = base_response(question);
+    response.metadata.authoritative = true;
+    let owner = question
+        .query
+        .queries
+        .first()
+        .map(|query| query.name().clone())
+        .unwrap_or_else(Name::root);
+    if let Ok(target) = Name::from_str(target) {
+        response.add_answer(Record::from_rdata(owner, ttl, RData::CNAME(CNAME(target))));
+    }
     response.to_vec().unwrap_or_default()
 }
 
@@ -354,6 +413,31 @@ mod tests {
         };
         let response = Message::from_vec(&zone_response(&q, &entry, "TXT")).unwrap();
         assert_eq!(response.answers.len(), 1);
+    }
+
+    #[test]
+    fn safesearch_matches_known_engines() {
+        let settings = SafeSearch {
+            google: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            safe_search_target(&settings, "google.com"),
+            Some("forcesafesearch.google.com")
+        );
+        assert_eq!(
+            safe_search_target(&settings, "www.google.co.uk"),
+            Some("forcesafesearch.google.com")
+        );
+        assert_eq!(safe_search_target(&settings, "youtube.com"), None);
+        let youtube = SafeSearch {
+            youtube: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            safe_search_target(&youtube, "m.youtube.com"),
+            Some("restrict.youtube.com")
+        );
     }
 
     #[test]

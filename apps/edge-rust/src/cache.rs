@@ -69,6 +69,23 @@ impl DnsCache {
         self.bytes = 0;
     }
 
+    /// Evict one name (optionally one record type) after a console purge.
+    pub fn purge(&mut self, domain: &str, record_type: Option<&str>) {
+        let prefix = format!("{}|", domain.trim_end_matches('.').to_ascii_lowercase());
+        let mut bytes = 0usize;
+        self.entries.retain(|key, entry| {
+            let hit = key.starts_with(&prefix)
+                && record_type.is_none_or(|wanted| key.split('|').nth(1) == Some(wanted));
+            if hit {
+                false
+            } else {
+                bytes += entry.bytes.len();
+                true
+            }
+        });
+        self.bytes = bytes;
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -110,6 +127,30 @@ mod tests {
         std::thread::sleep(Duration::from_millis(5));
         assert!(cache.get("k").is_none());
         assert_eq!(cache.misses, 1);
+    }
+
+    #[test]
+    fn purge_matches_name_and_type() {
+        let mut cache = DnsCache::default();
+        cache.put(
+            "example.com|A|IN|false|none|u".into(),
+            vec![1],
+            Duration::from_secs(30),
+        );
+        cache.put(
+            "example.com|AAAA|IN|false|none|u".into(),
+            vec![2],
+            Duration::from_secs(30),
+        );
+        cache.put(
+            "other.com|A|IN|false|none|u".into(),
+            vec![3],
+            Duration::from_secs(30),
+        );
+        cache.purge("example.com", Some("A"));
+        assert!(cache.get("example.com|A|IN|false|none|u").is_none());
+        assert!(cache.get("example.com|AAAA|IN|false|none|u").is_some());
+        assert!(cache.get("other.com|A|IN|false|none|u").is_some());
     }
 
     #[test]

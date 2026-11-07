@@ -107,6 +107,11 @@ pub async fn sync_once(
                         Err(err) => {
                             warn!(url = %redact_url(url), %err, "list parse task failed");
                             failed += 1;
+                            let status = format!(
+                                "error: {}",
+                                err.to_string().chars().take(42).collect::<String>()
+                            );
+                            let _ = db.write_blocklist_status(url, &status, 0, None).await;
                             continue;
                         }
                     }
@@ -114,6 +119,8 @@ pub async fn sync_once(
                 Err(err) => {
                     warn!(url = %redact_url(url), %err, "list fetch failed; keeping previous table");
                     failed += 1;
+                    let status = format!("error: {}", err.chars().take(42).collect::<String>());
+                    let _ = db.write_blocklist_status(url, &status, 0, None).await;
                     continue;
                 }
             },
@@ -131,6 +138,9 @@ pub async fn sync_once(
         }
         total += table.entries;
         info!(url = %redact_url(url), entries = table.entries, "list loaded");
+        let _ = db
+            .write_blocklist_status(url, "ok", table.entries as i32, Some(&list.format))
+            .await;
         fetched.push((url.clone(), table));
     }
 
