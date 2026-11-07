@@ -416,6 +416,7 @@ async fn resolve_wire(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // one call site per decision; a struct hides the shape
 fn record(
     state: &AppState,
     question: &dns::Question,
