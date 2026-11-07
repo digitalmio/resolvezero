@@ -5,7 +5,6 @@
 # Usage:
 #   ./scripts/rollback.sh                 # previous release, fly.toml
 #   ./scripts/rollback.sh <image-ref>     # explicit image
-#   FLY_CONFIG=fly.node.toml ./scripts/rollback.sh
 set -euo pipefail
 
 FLY_CONFIG="${FLY_CONFIG:-fly.toml}"

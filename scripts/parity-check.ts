@@ -1,7 +1,7 @@
 /**
  * Compare policy answers between two edges for the same profile.
  *
- *   pnpm exec tsx apps/edge/scripts/parity-check.ts \
+ *   pnpm exec tsx scripts/parity-check.ts \
  *     --a http://127.0.0.1:8088 --b http://127.0.0.1:8089 \
  *     --profile <id> --token <token> --limit 100
  *
@@ -41,7 +41,7 @@ async function ask(base: string, name: string, type: string): Promise<Answer> {
       headers: { "content-type": "application/dns-message" },
       body: wire,
     });
-    // The Node edge enforces DOH_RATE_LIMIT_PER_MIN; pace instead of failing.
+    // Edges enforce DOH_RATE_LIMIT_PER_MIN; pace instead of failing.
     if (response.status === 429) {
       await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
       continue;

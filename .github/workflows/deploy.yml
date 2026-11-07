@@ -31,8 +31,6 @@ jobs:
           cache: pnpm
       - name: install
         run: pnpm install --frozen-lockfile
-      - name: typecheck (edge)
-        run: pnpm exec tsc -p apps/edge
       - name: typecheck (db)
         run: pnpm exec tsc -p packages/db
       - name: tests
@@ -55,7 +53,7 @@ jobs:
       - name: install
         run: pnpm install --frozen-lockfile
       - name: migrate (drizzle + version triggers, idempotent)
-        run: pnpm exec tsx apps/edge/scripts/migrate.ts
+        run: pnpm exec tsx scripts/migrate.ts
         env:
           DATABASE_URL_ADMIN: ${{ secrets.DATABASE_URL_ADMIN }}
 
@@ -106,7 +104,7 @@ jobs:
         env:
           DATABASE_URL_ADMIN: ${{ secrets.DATABASE_URL_ADMIN }}
           EDGE_IP: 37.16.24.46
-        run: pnpm exec tsx apps/edge/scripts/smoke-edge.ts
+        run: pnpm exec tsx scripts/smoke-edge.ts
 
       - name: parity — all machines healthy on one image
         env:

@@ -49,11 +49,11 @@ Current edge flow:
 
 Relevant files:
 
-- `apps/edge/src/blocklists.ts` — fetch, parse, sync loop, status writes.
-- `apps/edge/src/fingerprint.ts` — builder/table, xxhash64.
-- `apps/edge/src/ruleStore.ts` — shared list catalog and `resolveRemote()`.
-- `apps/edge/src/ruleSync.ts` — config version polling.
-- `apps/edge/src/index.ts` — boot-time `initialSync()` before binding 53.
+- `crates/rz-core/src/parse.rs` — list parsing.
+- `crates/rz-core/src/fingerprint.rs` — builder/table, xxhash64.
+- `apps/edge/src/store.rs` — shared list catalog and remote resolution.
+- `apps/edge/src/lists.rs` / `apps/edge/src/lazy.rs` — metadata sync and on-demand artifact loading.
+- `apps/edge/src/server.rs` — boot, version polling, and listener wiring.
 
 ---
 
@@ -388,7 +388,7 @@ The numbers in this document came from:
 
 - Production Bun RSS/CPU via private metrics on port 9091.
 - Node staging on `resolvezero-edge-staging` (fra, 512 MB, ingress IP `213.188.210.31`).
-- External UDP/TCP/DoH benchmark from the same client (`apps/edge/scripts/bench-node-vs-bun.ts`).
+- External UDP/TCP/DoH benchmark from the same client (`scripts/bench-node-vs-bun.ts`).
 - Synthetic local parse/build probes with generated unique domains.
 
 Caveats:

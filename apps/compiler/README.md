@@ -47,7 +47,7 @@ cargo run --release -p resolvezero-compiler --bin rz-compile -- \
 ```
 
 The manual GitHub Actions fallback (`artifacts.yml`) builds `rz-compile` and
-uses `apps/edge/scripts/artifacts.ts` to upload and record the result. Runtime
+uses `scripts/artifacts.ts` to upload and record the result. Runtime
 freshness does not depend on Actions.
 
 ## Deploy

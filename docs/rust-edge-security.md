@@ -1,6 +1,6 @@
 # Rust Edge — Security Review Follow-up
 
-**Scope:** the 2026-11-07 review of `apps/edge-rust`, `crates/rz-core`, and `crates/rz-db`
+**Scope:** the 2026-11-07 review of `apps/edge`, `crates/rz-core`, and `crates/rz-db`
 **Status:** merged to `main` and deployed to production (`resolvezero-edge`, 2026-11-07)
 **Last updated:** 2026-11-07
 
@@ -13,7 +13,7 @@ production-exposed.
 
 ### 1. SSRF guard for tenant-controlled URLs — fixed
 
-`crates/rz-core/src/netguard.rs` is a port of `apps/edge/src/netGuard.ts`:
+`crates/rz-core/src/netguard.rs` is a port of the former Node edge's `netGuard.ts`:
 
 - https-only by default (lists **and** custom upstreams); `ALLOW_HTTP_TARGETS=1`
   is the explicit self-host escape hatch (requires `ALLOW_PRIVATE_TARGETS=1`).
@@ -50,7 +50,7 @@ production-exposed.
 | Fetches | streamed caps for lists, upstreams, artifacts, logs |
 | List sync | 256 unique lists, 180 s cycle deadline, 30 s retry after a failed cycle; lazy per-profile loading on first query with SHA-256-verified artifacts |
 
-UDP now binds `fly-global-services` when `FLY_REGION` is set (the Node edge's
+UDP now binds `fly-global-services` when `FLY_REGION` is set (a Fly
 requirement; `0.0.0.0` does not receive Fly UDP traffic). DoH-only deployments
 set `UDP_BIND=0.0.0.0`.
 

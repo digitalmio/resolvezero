@@ -4,7 +4,7 @@
  *   2. relies on version-bump triggers from the migration journal
  *   3. verifies: tables + expected triggers + watermark row
  *
- * Usage: bun --env-file=.env apps/edge/scripts/migrate.ts
+ * Usage: node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/migrate.ts
  */
 // Admin connection string swap BEFORE lazy client init.
 if (!process.env.DATABASE_URL_ADMIN) {

@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "apps/compiler",
-  "apps/edge-rust",
+  "apps/edge",
   "crates/rz-core",
   "crates/rz-db",
 ]

@@ -1,11 +1,12 @@
 {
   "name": "resolvezero",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.2.0",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p apps/edge --noEmit && tsc -p apps/agent --noEmit && tsc -p packages/db --noEmit",
+    "typecheck": "tsc -p apps/agent --noEmit && tsc -p packages/db --noEmit",
     "db:generate": "pnpm --filter '@resolvezero/db' db:generate",
     "db:migrate": "pnpm --filter '@resolvezero/db' db:migrate",
     "db:push": "pnpm --filter '@resolvezero/db' db:push",
@@ -17,11 +18,17 @@
     "build:agent": "pnpm --filter @resolvezero/agent build"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@types/dns-packet": "^5.6.5",
     "@types/node": "^24.0.0",
+    "dns-packet": "^5.6.1",
+    "drizzle-orm": "^0.45.3",
+    "postgres": "^3.4.9",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@resolvezero/db": "workspace:*",
     "better-auth": "^1.7.7",
     "tsx": "^4.19.0",
     "yaml": "^2.9.1"

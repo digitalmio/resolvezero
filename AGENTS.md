@@ -21,14 +21,14 @@ If an exception is used, keep the reason obvious in the file or the PR descripti
 
 ## Project shape
 
-- `apps/edge` — Node reference DNS/DoH data plane (24). Parity/rollback only.
-- `apps/edge-rust` — production DNS/DoH/DoT edge (Rust). Keep the hot path allocation-light.
+- `apps/edge` — production DNS/DoH/DoT edge (Rust). Keep the hot path allocation-light.
 - `apps/compiler` — artifact compiler worker (`rz-compiler`) and one-shot `rz-compile` (Rust).
 - `crates/rz-core` — shared artifact, parser, fingerprint, SSRF, and S3 primitives.
 - `crates/rz-db` — shared Postgres access for the edge and compiler.
 - `apps/agent` — per-host agent.
 - `apps/console` — TanStack Start console and authenticated server functions (React 19 + Vite + Tailwind 4).
 - `packages/db` — Drizzle schema and client. Schema changes need a migration.
+- `scripts/` — operational TypeScript and shell scripts (migrations, smoke tests, compiler fallback).
 
 ## Working rules
 

@@ -10,14 +10,14 @@ primary_region = "fra"
 kill_timeout = 30
 
 [build]
-  dockerfile = "Dockerfile.edge-rust"
+  dockerfile = "Dockerfile.edge"
 
 [deploy]
   # Fly starts a new set, waits for health, then cuts over; CI rolls back the
   # previous image if the post-deploy smoke checks fail.
   strategy = "bluegreen"
 
-# Rust edge (apps/edge-rust). Binds 53/853 as root, then drops to UID/GID 1000.
+# Rust edge (apps/edge). Binds 53/853 as root, then drops to UID/GID 1000.
 # Production shape: 2 shared cores + 512 MB. Blocklists are lazy by default, so
 # a cold machine starts around 8 MB RSS with an empty catalog; the first query
 # for a profile pulls only that profile's artifacts. With lists resident the

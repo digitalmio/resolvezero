@@ -1,10 +1,10 @@
 # resolvezero-edge (Rust)
 
-A Rust rewrite of the DNS data plane in `apps/edge`. **Deployed to production
-as the `resolvezero-edge` data plane on 2026-11-07** (fra + lhr, 2c/512 MB); the Node
-implementation remains in-tree as a parity reference and rollback target.
+The production DNS data plane. **Deployed as the `resolvezero-edge` service on
+2026-11-07** (fra + lhr, 2c/512 MB). The former Node implementation is preserved
+in the `node-edge-final` git tag for historical reference.
 
-The point is the memory profile: the Node edge carries a ~156 MB baseline and a
+The point is the memory profile: the former Node edge carried a ~156 MB baseline and a
 100–165 MB parse transient per 500k-rule list. Rust runs the same rule set in
 **~52 MB RSS** with no GC headroom, and boots the whole catalog in ~1 second.
 
@@ -163,7 +163,7 @@ Tests: `cargo test` (25 tests). Lint: `cargo clippy --all-targets`.
 
 ## Environment
 
-Same names as the Node edge where possible: `DATABASE_URL`, `PORT` (DoH),
+Same names as the former Node edge where possible: `DATABASE_URL`, `PORT` (DoH),
 `DNS_PORT`, `METRICS_PORT`, `FLY_REGION`, `UPSTREAM_DOH_URL`,
 `UPSTREAM_PRESET`, `UDP_UNKNOWN_SOURCE`, `BLOCKLIST_MAX_TOTAL_ENTRIES`,
 `BLOCKLIST_MAX_LISTS_PER_PROFILE`, `LIST_SYNC_INTERVAL_SECONDS`,

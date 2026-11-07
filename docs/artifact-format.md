@@ -27,8 +27,8 @@ offset  size  field
 …       …     block: u64 × blockCount, sorted ascending
 ```
 
-- Each entry is the **xxhash64 (seed 0)** of a normalized domain, identical in
-  `apps/edge/src/fingerprint.ts` and `crates/rz-core/src/fingerprint.rs`.
+- Each entry is the **xxhash64 (seed 0)** of a normalized domain, implemented
+  in `crates/rz-core/src/fingerprint.rs`.
 - Rules are stored exactly as written; the query side probes every label
   suffix, which preserves subtree semantics.
 - Allow entries are checked before block entries, across all lists.
@@ -90,11 +90,11 @@ It reuses the same parser and fingerprint builder as the edge. Output is the
 
 ## 5. Publishing
 
-`apps/edge/scripts/artifacts.ts`:
+`scripts/artifacts.ts`:
 
 ```sh
-pnpm exec tsx apps/edge/scripts/artifacts.ts --all
-pnpm exec tsx apps/edge/scripts/artifacts.ts --status
+pnpm exec tsx scripts/artifacts.ts --all
+pnpm exec tsx scripts/artifacts.ts --status
 ```
 
 For every distinct enabled `profile_blocklists.url` it:
@@ -113,11 +113,10 @@ status columns (`artifact_hash` was added after) to avoid sync loops.
 
 ## 6. Loading
 
-- **Node edge** (`apps/edge/src/blocklists.ts`): if `artifact_hash` is set,
-  GET the object, verify sha256, decode into `SuffixFingerprintTable`. On any
-  failure it logs and falls back to fetching + parsing the raw text.
-- **Rust edge** (`apps/edge-rust/src/lists.rs`, shared decode in `crates/rz-core`): same, with a small SigV4 GET
-  client (no AWS SDK). Falls back to text identically.
+- **Rust edge** (`apps/edge/src/lists.rs`, shared decode in `crates/rz-core`):
+  if `artifact_hash` is set, GET the object, verify sha256, and decode it into a
+  fingerprint table with a small SigV4 client (no AWS SDK). On any failure it
+  logs and falls back to fetching + parsing the raw text.
 
 `/readyz` exposes `artifactLists` / `rawLists`, and metrics expose
 `rz_artifact_lists` / `rz_raw_lists`, so a mixed rollout is visible.

@@ -50,7 +50,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
                                  └──▶ Edge pulls on first use
 ```
 
-**Edge data plane (`apps/edge-rust`; the Node reference is `apps/edge`)**
+**Edge data plane (`apps/edge`)**
 - Holds profile policies in memory and resolves from an O(1) rule lookup.
 - Authenticates via DoH profile token, per-device tag, UDP source-IP allowlist, or DoT SNI.
 - Answers local zones first, then rules/blocklists, then cache or upstream DoH.
@@ -78,24 +78,23 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 
 | Path | Purpose |
 |---|---|
-| `apps/edge-rust` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats |
+| `apps/edge` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats |
 | `apps/compiler` | Artifact compiler worker (`rz-compiler`) and one-shot `rz-compile` |
-| `apps/edge` | Node reference implementation and shared scripts (migrations, seeding) |
 | `apps/console` | TanStack Start console, API docs, and authenticated server functions |
 | `apps/agent` | Local DNS forwarding agent |
 | `crates/rz-core` | Shared artifact, parser, fingerprint, and SSRF primitives |
 | `crates/rz-db` | Shared Postgres access for the edge and compiler |
 | `packages/db` | Drizzle schema, migrations, database client |
-| `packages/shared` | Shared runtime helpers |
+| `scripts` | Operational TS/shell scripts: migrations, seeding, smoke tests, compiler fallback |
 | `docs` | Artifact format, rules-at-scale, Rust edge security, token-at-rest notes |
-| `Dockerfile.edge-rust`, `fly.toml` | Production edge image and Fly config |
+| `Dockerfile.edge`, `fly.toml` | Production edge image and Fly config |
 | `Dockerfile.compiler`, `fly.compiler.toml` | Dedicated artifact compiler worker |
 
 ## Self-hosting
 
 ### Requirements
 
-- Node.js 24 (console, scripts, Node reference)
+- Node.js 24 (console, operational scripts)
 - Rust 1.99+ (edge and compiler)
 - pnpm 10
 - Postgres
@@ -136,7 +135,7 @@ http://localhost:3000/api/auth/callback/github
 ### 2. Migrate
 
 ```sh
-node --env-file=.env node_modules/tsx/dist/cli.mjs apps/edge/scripts/migrate.ts
+node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/migrate.ts
 ```
 
 `DATABASE_URL_ADMIN` is used only for migrations. Runtime uses `DATABASE_URL`.
@@ -148,19 +147,13 @@ set -a
 source .env
 set +a
 
-cd apps/edge-rust
+cd apps/edge
 cargo run --release --bin resolvezero-edge
 ```
 
 Port 53 requires root or `CAP_NET_BIND_SERVICE`. For local development, set `DNS_PORT=5353` and use DoH on `http://localhost:8080`, or set `DROP_PRIVILEGES=0` if you are not running as root.
 
 With no S3 bucket configured, set `EAGER_BLOCKLISTS=1` so raw list text is fetched and parsed at startup instead of waiting for compiled artifacts that cannot exist.
-
-The Node reference edge still runs for parity work:
-
-```sh
-node --env-file=.env node_modules/tsx/dist/cli.mjs apps/edge/src/index.ts
-```
 
 ### 4. Compile blocklist artifacts (optional but recommended)
 
@@ -189,7 +182,7 @@ Open `http://localhost:3000`, enter your email, and use the six-digit code from 
 The console expects a profile owned by your signed-in user. The dev seed creates a usable `home` profile:
 
 ```sh
-node --env-file=.env node_modules/tsx/dist/cli.mjs apps/edge/scripts/seed.ts
+node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/seed.ts
 ```
 
 After signing in once, assign the seeded profile to your user:
@@ -270,7 +263,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 Useful package scripts:
 
 ```sh
-pnpm --filter @resolvezero/edge dev
+cargo run -p resolvezero-edge --bin resolvezero-edge
 pnpm --filter @resolvezero/console dev
 pnpm --filter @resolvezero/agent dev
 pnpm --filter @resolvezero/db db:studio
@@ -280,7 +273,7 @@ Source files should stay small and focused. See [`AGENTS.md`](AGENTS.md) for the
 
 ## Roadmap
 
-- Canary replay: run stored query logs against the Rust and Node edges and diff answers
+- Canary replay: run stored query logs against a canary and production edge and diff answers
 - Idle eviction for lazily loaded list tables on very long-lived PoPs
 - NextDNS import for easier migration
 - Exploratory: AI-assisted weekly reports, anomaly explanations, and natural-language rule suggestions

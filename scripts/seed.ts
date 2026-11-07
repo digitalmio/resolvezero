@@ -2,7 +2,7 @@
  * Dev seed: `home` profile (token-free DoH auth), a block rule, a zone
  * override. Idempotent — upserts by natural key.
  *
- * Usage: bun --env-file=.env apps/edge/scripts/seed.ts
+ * Usage: node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/seed.ts
  */
 const { db, rawClient } = await import("@resolvezero/db/client");
 const { profiles, profileRules, profileZones, profileBlocklists } = await import("@resolvezero/db/schema");

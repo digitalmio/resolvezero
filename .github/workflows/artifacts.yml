@@ -40,4 +40,4 @@ jobs:
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
           ARTIFACT_PREFIX: ${{ vars.ARTIFACT_PREFIX || 'artifacts' }}
           RZ_COMPILE: target/release/rz-compile
-        run: pnpm exec tsx apps/edge/scripts/artifacts.ts --all
+        run: pnpm exec tsx scripts/artifacts.ts --all

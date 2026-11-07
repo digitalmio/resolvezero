@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
  * - DoH must forward, sinkhole a configured block rule, and answer a zone
  *
  * Usage:
- *   DATABASE_URL_ADMIN=... EDGE_IP=37.16.24.46 pnpm exec tsx apps/edge/scripts/smoke-edge.ts
+ *   DATABASE_URL_ADMIN=... EDGE_IP=37.16.24.46 pnpm exec tsx scripts/smoke-edge.ts
  */
 if (process.env.SMOKE_USE_ADMIN === "1" && process.env.DATABASE_URL_ADMIN) {
   process.env.DATABASE_URL = process.env.DATABASE_URL_ADMIN;

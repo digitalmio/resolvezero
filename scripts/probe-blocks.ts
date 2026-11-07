@@ -2,7 +2,7 @@ import { encode, decode } from "dns-packet";
 
 /**
  * Usage:
- *   node --env-file=.env node_modules/tsx/dist/cli.mjs apps/edge/scripts/probe-blocks.ts
+ *   node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/probe-blocks.ts
  *
  * Requires PROBE_PROFILE_ID and PROBE_DOH_TOKEN. Never commit real values.
  */
