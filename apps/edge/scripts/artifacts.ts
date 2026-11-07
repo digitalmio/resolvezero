@@ -37,7 +37,7 @@ const value = (name: string, fallback?: string) => {
 };
 
 const compiler = value("--compiler", process.env.RZ_COMPILE ?? "apps/edge-rust/target/release/rz-compile");
-const prefix = (process.env.ARTIFACT_PREFIX ?? "artifacts").replace(/^\/+|\/+$/g, "");
+const prefix = (process.env.ARTIFACT_PREFIX || "artifacts").replace(/^\/+|\/+$/g, "");
 const dryRun = flag("--dry-run");
 const updateDb = !flag("--no-db") && !dryRun;
 
