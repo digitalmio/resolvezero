@@ -57,7 +57,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         }
     }
 
-    let cache = Arc::new(Mutex::new(DnsCache::default()));
+    let cache = Arc::new(DnsCache::default());
     let metrics = Arc::new(Metrics::default());
     let logger = Arc::new(stats::start(db.clone(), cfg.clone(), metrics.clone()));
     let state = Arc::new(AppState {

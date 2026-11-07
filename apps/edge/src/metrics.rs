@@ -104,6 +104,12 @@ impl Metrics {
         out.push_str(&format!("rz_blocklist_failed {}\n", blocklist_failed));
         out.push_str("# TYPE rz_dns_cache_entries gauge\n");
         out.push_str(&format!("rz_dns_cache_entries {}\n", cache.len()));
+        out.push_str("# TYPE rz_dns_cache_bytes gauge\n");
+        out.push_str(&format!("rz_dns_cache_bytes {}\n", cache.bytes()));
+        out.push_str("# TYPE rz_dns_cache_hits_total counter\n");
+        out.push_str(&format!("rz_dns_cache_hits_total {}\n", cache.hits()));
+        out.push_str("# TYPE rz_dns_cache_misses_total counter\n");
+        out.push_str(&format!("rz_dns_cache_misses_total {}\n", cache.misses()));
         out.push_str("# TYPE rz_uptime_seconds gauge\n");
         out.push_str(&format!(
             "rz_uptime_seconds {}\n",

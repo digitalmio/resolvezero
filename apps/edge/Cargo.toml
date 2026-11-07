@@ -13,6 +13,7 @@ flate2 = "1"
 futures-util = "0.3"
 hickory-proto = "0.26"
 libc = "0.2"
+moka = { version = "0.12", features = ["sync"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream"] }
 rz-core = { path = "../../crates/rz-core" }
 rz-db = { path = "../../crates/rz-db" }

@@ -25,9 +25,8 @@ pub(super) async fn poll_loop(
             let since = state.purge_since.load(Ordering::Relaxed);
             if let Ok(purges) = db.pending_purges(since).await {
                 if !purges.is_empty() {
-                    let mut cache = state.cache.lock().expect("cache lock");
                     for (domain, record_type) in purges {
-                        cache.purge(&domain, record_type.as_deref());
+                        state.cache.purge(&domain, record_type.as_deref());
                     }
                 }
                 state.purge_since.store(now_seconds(), Ordering::Relaxed);
@@ -92,7 +91,7 @@ pub(super) async fn poll_loop(
                 // New artifacts are immutable; drop the "loaded" markers so
                 // each profile re-resolves its hashes on the next query.
                 state.store.write().await.clear_loaded();
-                state.cache.lock().expect("cache lock").clear();
+                state.cache.clear();
             }
             let result = if state.cfg.lazy_lists {
                 lists::sync_metadata(&db, &state.store, &state.cfg).await

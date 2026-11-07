@@ -85,7 +85,9 @@ coalescing and per-source TCP/DoT connection caps are implemented.
   is never replayed to another;
 - rewrite the question name to the requesting query's exact case (0x20-safe);
 - count TTLs down while cached;
-- cache only NOERROR/NXDOMAIN.
+- cache only NOERROR/NXDOMAIN;
+- use a concurrent Moka cache with per-entry TTL and weighted capacity, so
+  expired entries do not linger and the 50 MB bound is enforced by the cache.
 
 Cache hits are parsed and re-encoded (hickory 0.26 fixed the O(n²) encoder);
 the hot-path cost is accepted for correctness.

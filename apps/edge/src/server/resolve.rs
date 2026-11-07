@@ -46,7 +46,7 @@ pub(super) async fn resolve_wire(
         .await
         {
             Ok(report) if report.changed => {
-                state.cache.lock().expect("cache lock").clear();
+                state.cache.clear();
                 state.blocklist_failed.store(0, Ordering::Relaxed);
                 state.blocklist_ok.store(true, Ordering::Relaxed);
                 *state.blocklist_error.lock().expect("blocklist error") = None;
@@ -188,7 +188,7 @@ pub(super) async fn resolve_wire(
     let label = upstream_label(selector.as_deref());
     let url = state.upstream.url_for(selector.as_deref());
     let key = dns::cache_key(&question, &url);
-    if let Some((bytes, age)) = state.cache.lock().expect("cache lock").get(&key) {
+    if let Some((bytes, age)) = state.cache.get(&key) {
         Metrics::inc(&state.metrics.cache_hits);
         if !prelogged {
             record(
@@ -204,7 +204,10 @@ pub(super) async fn resolve_wire(
             );
         }
         // Strip OPT, rewrite the question case, count TTLs down, patch id.
-        return Some(dns::normalize_for_client(&bytes, &question, age).unwrap_or(bytes));
+        return Some(
+            dns::normalize_for_client(&bytes, &question, age)
+                .unwrap_or_else(|| bytes.as_ref().to_vec()),
+        );
     }
     Metrics::inc(&state.metrics.cache_misses);
 
@@ -217,7 +220,7 @@ pub(super) async fn resolve_wire(
             .clone()
     };
     let guard = gate.lock().await;
-    if let Some((bytes, age)) = state.cache.lock().expect("cache lock").get(&key) {
+    if let Some((bytes, age)) = state.cache.get(&key) {
         if !prelogged {
             record(
                 state,
@@ -236,7 +239,10 @@ pub(super) async fn resolve_wire(
         if Arc::strong_count(&gate) <= 2 {
             map.remove(&key);
         }
-        return Some(dns::normalize_for_client(&bytes, &question, age).unwrap_or(bytes));
+        return Some(
+            dns::normalize_for_client(&bytes, &question, age)
+                .unwrap_or_else(|| bytes.as_ref().to_vec()),
+        );
     }
 
     let started = Instant::now();
@@ -248,11 +254,7 @@ pub(super) async fn resolve_wire(
                 dns::normalize_for_client(&response, &question, Duration::ZERO).unwrap_or(response);
             let ttl = dns::cache_ttl(&normalized);
             if !ttl.is_zero() {
-                state
-                    .cache
-                    .lock()
-                    .expect("cache lock")
-                    .put(key.clone(), normalized.clone(), ttl);
+                state.cache.put(key.clone(), normalized.clone(), ttl);
             }
             Metrics::inc(&state.metrics.forwarded);
             if !prelogged {

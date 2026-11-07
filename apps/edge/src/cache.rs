@@ -1,108 +1,168 @@
-use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const MAX_ENTRIES: usize = 100_000;
-const MAX_BYTES: usize = 50 * 1024 * 1024;
+use moka::sync::Cache;
+use moka::Expiry;
 
-#[derive(Debug)]
+/// Approximate per-entry bookkeeping (Arc, Instant, hash table/linked list).
+/// Moka's capacity is a weight, so include it to bound entry count as well as
+/// raw response bytes.
+const ENTRY_OVERHEAD: u64 = 512;
+const MAX_WEIGHT: u64 = 50 * 1024 * 1024;
+const MAX_TTL: Duration = Duration::from_secs(300);
+
+#[derive(Clone, Debug)]
 struct Entry {
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
     stored_at: Instant,
-    expires: Instant,
+    ttl: Duration,
 }
 
-#[derive(Debug, Default)]
+impl Entry {
+    fn weight(&self) -> u32 {
+        (self.bytes.len() as u64 + ENTRY_OVERHEAD).min(u32::MAX as u64) as u32
+    }
+
+    fn expired(&self) -> bool {
+        self.stored_at.elapsed() >= self.ttl
+    }
+}
+
+struct DnsExpiry;
+
+impl Expiry<String, Entry> for DnsExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &String,
+        value: &Entry,
+        _created_at: Instant,
+    ) -> Option<Duration> {
+        Some(value.ttl)
+    }
+
+    fn expire_after_update(
+        &self,
+        _key: &String,
+        value: &Entry,
+        _updated_at: Instant,
+        _duration_until_expiry: Option<Duration>,
+    ) -> Option<Duration> {
+        Some(value.ttl)
+    }
+}
+
+/// Per-PoP DNS answer cache. Moka provides concurrent access, TinyLFU/LRU
+/// eviction, and per-entry TTL; policy is still checked before this cache.
 pub struct DnsCache {
-    entries: HashMap<String, Entry>,
-    bytes: usize,
-    pub hits: u64,
-    pub misses: u64,
+    entries: Cache<String, Entry>,
+    hits: AtomicU64,
+    misses: AtomicU64,
+}
+
+impl Default for DnsCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DnsCache {
+    pub fn new() -> Self {
+        let entries = Cache::<String, Entry>::builder()
+            .max_capacity(MAX_WEIGHT)
+            .weigher(|_key: &String, value: &Entry| value.weight())
+            .expire_after(DnsExpiry)
+            .build();
+        Self {
+            entries,
+            hits: AtomicU64::new(0),
+            misses: AtomicU64::new(0),
+        }
+    }
+
     /// Returns the cached wire response plus how long it has been stored;
     /// callers normalize (strip OPT, rewrite question case, count TTLs down,
     /// patch transaction id) before returning it to a client.
-    pub fn get(&mut self, key: &str) -> Option<(Vec<u8>, Duration)> {
-        let now = Instant::now();
+    pub fn get(&self, key: &str) -> Option<(Arc<[u8]>, Duration)> {
         match self.entries.get(key) {
-            Some(entry) if entry.expires > now => {
-                self.hits += 1;
-                Some((entry.bytes.clone(), now.duration_since(entry.stored_at)))
+            Some(entry) if !entry.expired() => {
+                self.hits.fetch_add(1, Ordering::Relaxed);
+                Some((entry.bytes.clone(), entry.stored_at.elapsed()))
             }
             Some(_) => {
-                if let Some(removed) = self.entries.remove(key) {
-                    self.bytes = self.bytes.saturating_sub(removed.bytes.len());
-                }
-                self.misses += 1;
+                // Moka's housekeeping is lazy; never serve a stale answer even
+                // if the expiry sweep has not run yet.
+                self.entries.invalidate(key);
+                self.misses.fetch_add(1, Ordering::Relaxed);
                 None
             }
             None => {
-                self.misses += 1;
+                self.misses.fetch_add(1, Ordering::Relaxed);
                 None
             }
         }
     }
 
-    pub fn put(&mut self, key: String, bytes: Vec<u8>, ttl: Duration) {
-        if bytes.len() > MAX_BYTES || ttl.is_zero() {
+    pub fn put(&self, key: String, bytes: Vec<u8>, ttl: Duration) {
+        let ttl = ttl.min(MAX_TTL);
+        if ttl.is_zero() {
             return;
         }
-        if let Some(previous) = self.entries.remove(&key) {
-            self.bytes = self.bytes.saturating_sub(previous.bytes.len());
-        }
-        self.bytes += bytes.len();
-        let stored_at = Instant::now();
         self.entries.insert(
             key,
             Entry {
-                bytes,
-                stored_at,
-                expires: stored_at + ttl,
+                bytes: bytes.into(),
+                stored_at: Instant::now(),
+                ttl,
             },
         );
-        self.evict();
     }
 
-    pub fn clear(&mut self) {
-        self.entries.clear();
-        self.bytes = 0;
+    pub fn clear(&self) {
+        self.entries.invalidate_all();
+        self.entries.run_pending_tasks();
     }
 
     /// Evict one name (optionally one record type) after a console purge.
-    pub fn purge(&mut self, domain: &str, record_type: Option<&str>) {
+    pub fn purge(&self, domain: &str, record_type: Option<&str>) {
         let prefix = format!("{}|", domain.trim_end_matches('.').to_ascii_lowercase());
-        let mut bytes = 0usize;
-        self.entries.retain(|key, entry| {
-            let hit = key.starts_with(&prefix)
-                && record_type.is_none_or(|wanted| key.split('|').nth(1) == Some(wanted));
-            if hit {
-                false
-            } else {
-                bytes += entry.bytes.len();
-                true
-            }
-        });
-        self.bytes = bytes;
+        let keys: Vec<String> = self
+            .entries
+            .iter()
+            .filter_map(|(key, _)| {
+                let key = key.as_ref();
+                let hit = key.starts_with(&prefix)
+                    && record_type.is_none_or(|wanted| key.split('|').nth(1) == Some(wanted));
+                hit.then(|| key.clone())
+            })
+            .collect();
+        for key in keys {
+            self.entries.invalidate(&key);
+        }
+        self.entries.run_pending_tasks();
     }
 
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.run_pending_tasks();
+        self.entries.entry_count() as usize
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.len() == 0
     }
 
-    fn evict(&mut self) {
-        while self.entries.len() > MAX_ENTRIES || self.bytes > MAX_BYTES {
-            let Some(key) = self.entries.keys().next().cloned() else {
-                break;
-            };
-            if let Some(removed) = self.entries.remove(&key) {
-                self.bytes = self.bytes.saturating_sub(removed.bytes.len());
-            }
-        }
+    pub fn hits(&self) -> u64 {
+        self.hits.load(Ordering::Relaxed)
+    }
+
+    pub fn misses(&self) -> u64 {
+        self.misses.load(Ordering::Relaxed)
+    }
+
+    /// Weighted bytes, including the per-entry overhead.
+    pub fn bytes(&self) -> usize {
+        self.entries.run_pending_tasks();
+        self.entries.weighted_size() as usize
     }
 }
 
@@ -112,53 +172,55 @@ mod tests {
 
     #[test]
     fn hit_returns_bytes_and_age() {
-        let mut cache = DnsCache::default();
+        let cache = DnsCache::default();
         cache.put("k".into(), vec![0, 0, 9, 9], Duration::from_secs(30));
         let (bytes, age) = cache.get("k").unwrap();
         assert_eq!(&bytes[0..2], &[0, 0]);
         assert!(age < Duration::from_secs(1));
-        assert_eq!(cache.hits, 1);
+        assert_eq!(cache.hits(), 1);
     }
 
     #[test]
     fn expired_entries_miss() {
-        let mut cache = DnsCache::default();
+        let cache = DnsCache::default();
         cache.put("k".into(), vec![0, 0, 9, 9], Duration::from_millis(1));
         std::thread::sleep(Duration::from_millis(5));
         assert!(cache.get("k").is_none());
-        assert_eq!(cache.misses, 1);
+        assert_eq!(cache.misses(), 1);
+    }
+
+    #[test]
+    fn clear_resets_size() {
+        let cache = DnsCache::default();
+        cache.put("a".into(), vec![0; 8], Duration::from_secs(30));
+        cache.put("b".into(), vec![0; 8], Duration::from_secs(30));
+        assert_eq!(cache.len(), 2);
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+        assert!(cache.is_empty());
     }
 
     #[test]
     fn purge_matches_name_and_type() {
-        let mut cache = DnsCache::default();
+        let cache = DnsCache::default();
         cache.put(
             "example.com|A|IN|false|none|u".into(),
-            vec![1],
+            vec![0; 8],
             Duration::from_secs(30),
         );
         cache.put(
             "example.com|AAAA|IN|false|none|u".into(),
-            vec![2],
+            vec![0; 8],
             Duration::from_secs(30),
         );
         cache.put(
             "other.com|A|IN|false|none|u".into(),
-            vec![3],
+            vec![0; 8],
             Duration::from_secs(30),
         );
         cache.purge("example.com", Some("A"));
         assert!(cache.get("example.com|A|IN|false|none|u").is_none());
         assert!(cache.get("example.com|AAAA|IN|false|none|u").is_some());
         assert!(cache.get("other.com|A|IN|false|none|u").is_some());
-    }
-
-    #[test]
-    fn clear_resets_size() {
-        let mut cache = DnsCache::default();
-        cache.put("k".into(), vec![0u8; 64], Duration::from_secs(30));
-        cache.clear();
-        assert!(cache.is_empty());
-        assert_eq!(cache.bytes, 0);
     }
 }

@@ -114,9 +114,10 @@ use table bytes plus baseline for sizing on Linux.
   precedence across lists, 5M global entry budget, 64 lists/profile.
 - Custom rules with subtree semantics, local zones (exact + `*.` wildcard,
   A/AAAA/CNAME/TXT), block modes (`null` / `nxdomain` / `refused` / custom IP).
-- DNS cache keyed by name/type/class/CD/full EDNS OPT/upstream, with OPT
-  stripped on store/serve, question-case rewrite, TTL countdown, and the Node
-  edge's caps (positive 300 s, negative 60 s).
+- Per-PoP Moka DNS cache keyed by name/type/class/CD/full EDNS OPT/upstream,
+  with OPT stripped on store/serve, question-case rewrite, TTL countdown,
+  per-entry expiry, weighted 50 MB capacity, and positive 300 s / negative 60 s
+  caps.
 - DoH GET (`?dns=`) and POST, path shapes `/v1/:id`, `/v1/:id/:token`,
   `/v1/:id/:device`, `/v1/:id/:device/:token`, constant-time token compare.
 - UDP 53 with source-IP auth and `UDP_UNKNOWN_SOURCE=refused|silent`.

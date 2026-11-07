@@ -16,7 +16,7 @@ use rz_db::Db;
 pub struct AppState {
     pub cfg: Arc<Config>,
     pub store: Arc<RwLock<RuleStore>>,
-    pub cache: Arc<Mutex<DnsCache>>,
+    pub cache: Arc<DnsCache>,
     pub upstream: Arc<Upstream>,
     pub metrics: Arc<Metrics>,
     pub logger: Arc<QueryLogger>,

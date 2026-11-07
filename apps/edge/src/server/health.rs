@@ -76,12 +76,12 @@ fn memory_limit_mb() -> u64 {
 
 pub(super) async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     let store = state.store.read().await;
-    let cache = state.cache.lock().expect("cache lock");
+    let cache = &state.cache;
     (
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
         state.metrics.render(
             &store,
-            &cache,
+            cache,
             state.blocklist_failed.load(Ordering::Relaxed),
         ),
     )

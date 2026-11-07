@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::RwLock;
@@ -118,7 +118,7 @@ pub async fn sync_metadata(
 pub async fn sync_once(
     db: &Db,
     store: &Arc<RwLock<RuleStore>>,
-    cache: &Arc<Mutex<DnsCache>>,
+    cache: &DnsCache,
     cfg: &Config,
 ) -> Result<SyncReport, String> {
     let rows = db.blocklists().await.map_err(|err| err.to_string())?;
@@ -249,7 +249,7 @@ pub async fn sync_once(
     drop(guard);
 
     if changed {
-        cache.lock().expect("cache lock").clear();
+        cache.clear();
         info!("blocklist state changed; dns cache flushed");
     }
     Ok(SyncReport { changed, failed })
