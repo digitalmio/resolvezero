@@ -123,15 +123,13 @@ use table bytes plus baseline for sizing on Linux.
 
 ## Not ported yet (required before cutover)
 
-- `profile_blocked_services` catalog (service-level blocking) is not ported.
 - `DELETE /v1/:profile/logs` and the optional edge stats/admin endpoints that
   the console does not call (stats are read from Postgres directly).
-- Single-flight coalescing for identical cache misses; per-source TCP caps
-  (the global cap is in place).
 - Exact TTL rewriting on forwarded upstream answers (the cache TTL is capped
   and counted down; the returned wire TTL is upstream's).
-- Non-root container/capability-only bind, `/metrics` + `/readyz` auth, and
-  S3 PUT retry for log objects.
+- Non-root container/capability-only bind and `/metrics` + `/readyz` auth.
+- PROXY-header trust: safe only when port 53 is reachable exclusively through
+  Fly's `proxy_proto` ingress.
 
 ## Run locally
 

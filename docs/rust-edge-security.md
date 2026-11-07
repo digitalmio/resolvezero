@@ -54,9 +54,8 @@ UDP now binds `fly-global-services` when `FLY_REGION` is set (the Node edge's
 requirement; `0.0.0.0` does not receive Fly UDP traffic). DoH-only deployments
 set `UDP_BIND=0.0.0.0`.
 
-**Still open:** single-flight coalescing for identical cache misses; per-source
-TCP connection caps (only a global cap exists); DoH limiting is per client IP,
-not per profile.
+**Still open:** DoH limiting is per client IP, not per profile. Single-flight
+coalescing and per-source TCP/DoT connection caps are implemented.
 
 ### 4. hickory-proto advisory — fixed
 
@@ -159,15 +158,15 @@ Added after the security fixes:
 
 | Item | Status |
 |---|---|
-| Blocked-services catalog (`profile_blocked_services`) | **Not ported** |
+| Blocked-services catalog (`profile_blocked_services`) | **Fixed** — static catalog ported and expanded at snapshot time |
 | `DELETE /v1/:profile/logs` and unused edge stats/admin endpoints | **Not ported** (console reads stats from Postgres; it only GETs logs) |
-| Single-flight for identical misses | **Not implemented** |
-| Per-source TCP caps | **Not implemented** (global cap only) |
+| Single-flight for identical misses | **Fixed** — per-key in-flight gate |
+| Per-source TCP/DoT caps | **Fixed** — 32 TCP / 16 DoT |
 | DoH metrics/readyz authentication | **Not added** (Fly keeps `/metrics` private; `/readyz` stays public) |
 | Non-root container / capability-only bind | **Not changed** — root then checked drop |
-| S3 PUT retry | **Not implemented** — failed log uploads are logged/dropped |
+| S3 PUT retry | **Fixed** — 3 attempts with backoff |
 | PROXY header trust | **Unchanged** — safe only if port 53 is reachable exclusively through Fly's `proxy_proto`; UDP now binds `fly-global-services` |
-| Query-log timestamps | Second precision (Node uses ms) |
+| Query-log timestamps | **Fixed** — millisecond precision |
 
 ## Verification
 
@@ -188,8 +187,8 @@ Added after the security fixes:
 
 ## Recommended next steps
 
-1. Port the edge read APIs + DoT + SafeSearch/blocked services (feature parity).
-2. Add single-flight and per-source TCP caps.
-3. Deploy a fresh canary with its own IP; replay stored query logs against Node
-   and diff answers.
-4. Only then consider a regional cutover, with Node still as rollback.
+1. Fresh canary with its own IP; replay stored query logs against Node and diff
+   answers (the production cutover already passed DNS/DoT/API smoke).
+2. Add `DELETE /logs` and the unused stats/admin endpoints if the console needs
+   them.
+3. Consider non-root container/capability bind and `/metrics` auth.
