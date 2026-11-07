@@ -53,6 +53,14 @@ use table bytes plus baseline for sizing on Linux.
 
 ## What works
 
+- Content-addressed rule artifacts: fetch + sha256 verify + zero-parse load,
+  with raw-text fallback; `/readyz` reports `artifactLists` / `rawLists`.
+- Query-log archive: gzipped NDJSON per profile per minute under the shared
+  `logs/{profile}/{date}/{HHmm}.{instance}.{seq}.jsonl.gz` contract, so the
+  existing Logs API reads Rust-written objects.
+- Stats rollups: `stats_minute`, `stats_hourly`, `stats_hourly_device`,
+  `stats_minute_device`, including top domains/blocked/clients/devices with
+  advisory-lock read-merge-write (same tables the console reads).
 - Postgres config snapshot + 5 s `edge_config_state` version polling.
 - Shared per-URL blocklist catalog, ABP/hosts/bare-domain parsing, allow-first
   precedence across lists, 5M global entry budget, 64 lists/profile.
@@ -71,15 +79,15 @@ use table bytes plus baseline for sizing on Linux.
 
 ## Not ported yet (required before cutover)
 
-- Query-log batching + S3 archive, stats/rollups to Postgres, per-device
-  rollups, the logs/stats/admin APIs. A Rust machine currently serves DNS but
-  writes no analytics.
 - DoT on 853 (SNI/authority TLV mapping to a profile). Fly's TLS proxy is in
   place; the listener is not.
 - Blocked services catalog, SafeSearch, DNS-presence probe.
+- The edge HTTP APIs served by the Node edge: `/v1/:profile/logs`,
+  `/v1/:profile/stats`, cache purge, admin/probe endpoints. Stats and raw log
+  *writes* are done, but a full Rust fleet still needs the read APIs.
 - Rate limiting / semaphores, per-device write-behind, exact TTL rewriting on
   forwarded answers (the cache is capped, the returned TTL is untouched).
-- Content-addressed artifacts (same format is planned for both runtimes).
+- Blocklist status write-back (`last_status` / `entry_count`).
 
 ## Run locally
 
