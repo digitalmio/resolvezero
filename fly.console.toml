@@ -5,7 +5,7 @@ kill_signal = "SIGTERM"
 kill_timeout = 20
 
 [build]
-  dockerfile = "apps/console/Dockerfile"
+  dockerfile = "Dockerfile.console"
 
 [deploy]
   strategy = "bluegreen"

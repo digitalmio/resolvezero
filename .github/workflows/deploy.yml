@@ -82,6 +82,7 @@ jobs:
           FLY_REGIONS: fra lhr
           FLY_SCALE: 1
           FLY_STRATEGY: bluegreen
+          FLY_CONFIG: fly.edge.toml
       - name: smoke — post-deploy healthz gate
         run: |
           sleep 20
@@ -136,7 +137,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           echo "::warning::post-deploy checks failed; rolling back edge to $PREVIOUS_EDGE_IMAGE"
-          flyctl deploy --config fly.toml --image "$PREVIOUS_EDGE_IMAGE" --strategy bluegreen --yes
+          flyctl deploy --config fly.edge.toml --image "$PREVIOUS_EDGE_IMAGE" --strategy bluegreen --yes
           sleep 10
           code=$(curl -s -o /dev/null -w '%{http_code}' -m 15 https://resolvezero-edge.fly.dev/healthz || echo 000)
           echo "rollback healthz: $code"

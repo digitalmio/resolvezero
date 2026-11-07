@@ -3,11 +3,11 @@
 # blue-green path used by CI when post-deploy smoke checks fail.
 #
 # Usage:
-#   ./scripts/rollback.sh                 # previous release, fly.toml
+#   ./scripts/rollback.sh                 # previous release, fly.edge.toml
 #   ./scripts/rollback.sh <image-ref>     # explicit image
 set -euo pipefail
 
-FLY_CONFIG="${FLY_CONFIG:-fly.toml}"
+FLY_CONFIG="${FLY_CONFIG:-fly.edge.toml}"
 APP="$(sed -n 's/^app = "\([^"]*\)"/\1/p' "$FLY_CONFIG" | head -1)"
 FLY="fly"
 command -v fly >/dev/null 2>&1 || FLY="flyctl"

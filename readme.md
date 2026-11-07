@@ -87,8 +87,9 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 | `packages/db` | Drizzle schema, migrations, database client |
 | `scripts` | Operational TS/shell scripts: migrations, seeding, smoke tests, compiler fallback |
 | `docs` | Artifact format, rules-at-scale, Rust edge security, token-at-rest notes |
-| `Dockerfile.edge`, `fly.toml` | Production edge image and Fly config |
+| `Dockerfile.edge`, `fly.edge.toml` | Production edge image and Fly config |
 | `Dockerfile.compiler`, `fly.compiler.toml` | Dedicated artifact compiler worker |
+| `Dockerfile.console`, `fly.console.toml` | Console image and Fly config |
 
 ## Self-hosting
 

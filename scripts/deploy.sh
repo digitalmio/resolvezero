@@ -9,7 +9,7 @@ set -euo pipefail
 
 FLY_REGIONS="${FLY_REGIONS:-fra}"
 FLY_SCALE="${FLY_SCALE:-1}"
-FLY_CONFIG="${FLY_CONFIG:-fly.toml}"
+FLY_CONFIG="${FLY_CONFIG:-fly.edge.toml}"
 # Blue-green keeps the current set serving while the new set boots and passes
 # health checks. Override with FLY_STRATEGY=rolling for emergency/manual use.
 FLY_STRATEGY="${FLY_STRATEGY:-bluegreen}"
@@ -23,7 +23,7 @@ echo "==> Deploying $APP ($FLY_CONFIG) to [$FLY_REGIONS], $FLY_SCALE machine(s) 
 $FLY deploy --config "$FLY_CONFIG" --strategy "$FLY_STRATEGY"
 
 for region in $FLY_REGIONS; do
-  # Route is per region; scale ensures N warm machines (min_machines_running=1 in fly.toml)
+  # Route is per region; scale ensures N warm machines (min_machines_running=1 in fly.edge.toml)
   $FLY scale count "$FLY_SCALE" --region "$region" --app "$APP" --yes
   echo "==> $region: $FLY_SCALE machine(s) live"
 done
