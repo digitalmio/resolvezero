@@ -100,10 +100,15 @@ impl Config {
             }),
             hosted: env::var("FLY_REGION").is_ok()
                 && env::var("ALLOW_TOKENLESS_PROFILES").as_deref() != Ok("1"),
-            probe_domain: env::var("PROBE_DOMAIN")
-                .ok()
-                .map(|value| value.trim().to_lowercase().trim_matches('.').to_string())
-                .filter(|value| !value.is_empty()),
+            probe_domain: Some(
+                env::var("PROBE_DOMAIN")
+                    .unwrap_or_else(|_| "probe.resolvezero.com".into())
+                    .trim()
+                    .to_lowercase()
+                    .trim_matches('.')
+                    .to_string(),
+            )
+            .filter(|value| !value.is_empty()),
             dot_port: number("DOT_PORT", 853),
             dot_enabled: env::var("DOT_ENABLED").as_deref() != Ok("0"),
             dot_suffix: env::var("DOT_SUFFIX")

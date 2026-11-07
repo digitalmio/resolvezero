@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -43,6 +43,7 @@ pub struct AppState {
     pub db: Db,
     pub ready: AtomicBool,
     pub seen_devices: Mutex<HashSet<(String, String)>>,
+    inflight: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     pub blocklist_ok: AtomicBool,
     pub blocklist_failed: AtomicUsize,
     pub blocklist_error: Mutex<Option<String>>,
@@ -82,6 +83,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
             snapshot.rules,
             snapshot.ips,
             snapshot.zones,
+            snapshot.services,
         );
     }
 
@@ -107,6 +109,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         db: db.clone(),
         ready: AtomicBool::new(false),
         seen_devices: Mutex::new(HashSet::new()),
+        inflight: Mutex::new(HashMap::new()),
         blocklist_ok: AtomicBool::new(false),
         blocklist_failed: AtomicUsize::new(0),
         blocklist_error: Mutex::new(None),
@@ -320,6 +323,7 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
                         snapshot.rules,
                         snapshot.ips,
                         snapshot.zones,
+                        snapshot.services,
                     );
                     if state.cfg.hosted {
                         let tokenless = guard.tokenless_profiles();
@@ -524,8 +528,39 @@ async fn resolve_wire(
     }
     Metrics::inc(&state.metrics.cache_misses);
 
+    // Single-flight: coalesce identical cache misses. The first request does
+    // the upstream call; waiters re-check the cache and share the result.
+    let gate = {
+        let mut map = state.inflight.lock().expect("inflight");
+        map.entry(key.clone())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    let guard = gate.lock().await;
+    if let Some((bytes, age)) = state.cache.lock().expect("cache lock").get(&key) {
+        if !prelogged {
+            record(
+                state,
+                &question,
+                profile,
+                context,
+                "forward",
+                None,
+                None,
+                Some(label.clone()),
+                None,
+            );
+        }
+        drop(guard);
+        let mut map = state.inflight.lock().expect("inflight");
+        if Arc::strong_count(&gate) <= 2 {
+            map.remove(&key);
+        }
+        return Some(dns::normalize_for_client(&bytes, &question, age).unwrap_or(bytes));
+    }
+
     let started = Instant::now();
-    match state.upstream.resolve(wire, selector.as_deref()).await {
+    let result = match state.upstream.resolve(wire, selector.as_deref()).await {
         Ok(response) => {
             let rtt = started.elapsed().as_millis() as i64;
             // Normalize before returning and caching: no OPT/ECS replay.
@@ -537,7 +572,7 @@ async fn resolve_wire(
                     .cache
                     .lock()
                     .expect("cache lock")
-                    .put(key, normalized.clone(), ttl);
+                    .put(key.clone(), normalized.clone(), ttl);
             }
             Metrics::inc(&state.metrics.forwarded);
             if !prelogged {
@@ -573,7 +608,15 @@ async fn resolve_wire(
             }
             Some(dns::servfail_response(&question))
         }
+    };
+    drop(guard);
+    {
+        let mut map = state.inflight.lock().expect("inflight");
+        if Arc::strong_count(&gate) <= 2 {
+            map.remove(&key);
+        }
     }
+    result
 }
 
 #[allow(clippy::too_many_arguments)] // one call site per decision; a struct hides the shape
@@ -1547,7 +1590,7 @@ async fn handle_logs(
 
     let mut keys = Vec::new();
     let mut token: Option<String> = None;
-    for _ in 0..10 {
+    for _ in 0..50 {
         match s3.list(&object_prefix, token.as_deref()).await {
             Ok((page, next)) => {
                 keys.extend(page);

@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use crate::fingerprint::{Action, FingerprintTable};
+use crate::services::blocked_service_domains;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum BlockMode {
@@ -134,6 +135,11 @@ pub struct ZoneRow {
 }
 
 #[derive(Clone, Debug)]
+pub struct BlockedServiceRow {
+    pub profile_id: String,
+    pub service: String,
+}
+
 pub struct BlocklistRow {
     pub id: String,
     pub profile_id: String,
@@ -174,6 +180,7 @@ impl RuleStore {
         rules: Vec<RuleRow>,
         ips: Vec<SourceIpRow>,
         zones: Vec<ZoneRow>,
+        services: Vec<BlockedServiceRow>,
     ) {
         let mut rule_map: HashMap<String, HashMap<String, Action>> = HashMap::new();
         for row in rules {
@@ -184,6 +191,21 @@ impl RuleStore {
                 .entry(row.profile_id)
                 .or_default()
                 .insert(domain, row.action);
+        }
+        // Blocked services expand into synthetic suffix rules. Existing custom
+        // rules win, so an explicit allow can carve a host out of a service.
+        let mut services_by_profile: HashMap<String, Vec<String>> = HashMap::new();
+        for row in services {
+            services_by_profile
+                .entry(row.profile_id)
+                .or_default()
+                .push(row.service);
+        }
+        for (profile_id, ids) in services_by_profile {
+            let profile = rule_map.entry(profile_id).or_default();
+            for domain in blocked_service_domains(&ids) {
+                profile.entry(domain.to_string()).or_insert(Action::Block);
+            }
         }
         self.rules = rule_map;
 
@@ -487,6 +509,7 @@ mod tests {
             vec![],
             vec![],
             vec![],
+            vec![],
         );
         assert!(store.has_profile("home", Some("secret")));
         assert!(!store.has_profile("home", Some("wrong")));
@@ -500,6 +523,7 @@ mod tests {
         store.replace_config(
             vec![profile("home", None)],
             vec![rule("home", "corp.example.com", Action::Block)],
+            vec![],
             vec![],
             vec![],
         );
@@ -521,6 +545,7 @@ mod tests {
                 zone("home", "nas.lan", "A"),
                 zone("home", "*.home.lan", "A"),
             ],
+            vec![],
         );
         assert!(store.zone_lookup("home", "nas.lan", "A").is_some());
         assert!(store.zone_lookup("home", "tv.home.lan", "A").is_some());
@@ -528,10 +553,43 @@ mod tests {
     }
 
     #[test]
+    fn blocked_services_expand_but_explicit_rules_win() {
+        let mut store = RuleStore::default();
+        store.replace_config(
+            vec![profile("home", None)],
+            vec![rule("home", "youtube.com", Action::Allow)],
+            vec![],
+            vec![],
+            vec![
+                BlockedServiceRow {
+                    profile_id: "home".into(),
+                    service: "youtube".into(),
+                },
+                BlockedServiceRow {
+                    profile_id: "home".into(),
+                    service: "tiktok".into(),
+                },
+            ],
+        );
+        assert_eq!(
+            store.resolve_custom("home", "youtube.com"),
+            Some(Action::Allow)
+        );
+        assert_eq!(
+            store.resolve_custom("home", "www.youtube.com"),
+            Some(Action::Allow)
+        );
+        assert_eq!(
+            store.resolve_custom("home", "tiktok.com"),
+            Some(Action::Block)
+        );
+    }
+
+    #[test]
     fn remote_allow_wins_across_lists() {
         use crate::fingerprint::FingerprintTable;
         let mut store = RuleStore::default();
-        store.replace_config(vec![profile("home", None)], vec![], vec![], vec![]);
+        store.replace_config(vec![profile("home", None)], vec![], vec![], vec![], vec![]);
         let block: HashSet<String> = ["ads.example".to_string()].into_iter().collect();
         let allow: HashSet<String> = ["good.ads.example".to_string()].into_iter().collect();
         store.upsert_list("block", FingerprintTable::build(&block, &HashSet::new()));

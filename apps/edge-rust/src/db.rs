@@ -4,7 +4,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
 
 use crate::fingerprint::Action;
-use crate::store::{BlocklistRow, ProfileRow, RuleRow, SourceIpRow, ZoneRow};
+use crate::store::{BlockedServiceRow, BlocklistRow, ProfileRow, RuleRow, SourceIpRow, ZoneRow};
 
 #[derive(Clone)]
 pub struct Db {
@@ -23,6 +23,7 @@ pub struct Snapshot {
     pub rules: Vec<RuleRow>,
     pub ips: Vec<SourceIpRow>,
     pub zones: Vec<ZoneRow>,
+    pub services: Vec<BlockedServiceRow>,
 }
 
 impl Db {
@@ -134,11 +135,24 @@ impl Db {
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()?;
 
+        let services = sqlx::query("select profile_id, service from profile_blocked_services")
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(|row| {
+                Ok(BlockedServiceRow {
+                    profile_id: row.try_get("profile_id")?,
+                    service: row.try_get("service")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()?;
+
         Ok(Snapshot {
             profiles,
             rules,
             ips,
             zones,
+            services,
         })
     }
 

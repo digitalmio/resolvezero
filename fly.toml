@@ -10,16 +10,15 @@ primary_region = "fra"
 kill_timeout = 30
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile.edge-rust"
 
 [deploy]
   # Fly starts a new set, waits for health, then cuts over; CI rolls back the
   # previous image if the post-deploy smoke checks fail.
   strategy = "bluegreen"
 
-# Node runtime needs headroom for blocklist parse transients: 512 MB fit the
-# original 397k-rule set; 1 GB covers the raised 5M-rule budget and 20+ unique
-# lists. FLY_VM_MEMORY_MB drives the RSS warning/alert thresholds.
+# Rust edge (apps/edge-rust). Binds 53/853 as root, then drops to UID/GID 1000.
+# 1 GB covers the 5M-rule budget and artifact loading with large headroom.
 [vm]
   cpu_kind = "shared"
   cpus = 1
