@@ -214,7 +214,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route(
-            "/v1/*rest",
+            DOH_ROUTE,
             get(doh_handler).post(doh_handler).options(doh_handler),
         )
         .layer(DefaultBodyLimit::max(cfg.max_doh_body))
@@ -1184,6 +1184,10 @@ async fn read_proxy_source(stream: &mut TcpStream) -> Option<String> {
     None
 }
 
+/// Axum 0.8 requires named wildcard captures; this is also asserted by a unit
+/// test so a future bump cannot reintroduce the runtime-only panic.
+const DOH_ROUTE: &str = "/v1/{*rest}";
+
 async fn doh_handler(
     State(state): State<Arc<AppState>>,
     Path(rest): Path<String>,
@@ -1880,6 +1884,14 @@ mod tests {
         assert_eq!(
             match_probe_nonce("short.probe.resolvezero.com", "probe.resolvezero.com"),
             None
+        );
+    }
+
+    #[test]
+    fn doh_route_is_valid() {
+        let _ = axum::Router::<()>::new().route(
+            super::DOH_ROUTE,
+            axum::routing::get(|| async { axum::http::StatusCode::NO_CONTENT }),
         );
     }
 
