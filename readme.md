@@ -9,7 +9,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 ## Why ResolveZero
 
 - **Profiles, not tenants.** Small isolated configs for `home`, `laptop`, or `phone`, each with its own rules, blocklists, devices, and DoH URL.
-- **Cloud-native.** No local box to babysit and no DHCP integration. Run the edge anywhere with Node and Postgres.
+- **Cloud-native.** No local box to babysit and no DHCP integration. Run the edge as a single static binary, with Postgres.
 - **Privacy-respecting logs.** Raw query logs are optional and live in S3-compatible storage you choose. Postgres keeps bounded rollups, not raw logs.
 - **Local names work.** Split-horizon `.lan` records and overrides are answered before blocklists or upstream.
 - **API-first.** Edge endpoints and configuration are designed as data primitives, so the UI is not the only way to manage a profile.
@@ -30,7 +30,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 
 ```text
                  DoH / UDP / TCP
-   Clients ─────────────────────────▶ Edge (Node 24)
+   Clients ─────────────────────────▶ Edge (Rust)
                                       │  in-memory policy + DNS cache
                                       │  DoH upstream / sinkhole
                                       │
@@ -42,7 +42,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
                               Console / API
 ```
 
-**Edge data plane (`apps/edge`)**
+**Edge data plane (`apps/edge-rust`; the Node reference is `apps/edge`)**
 - Holds all profile policies in memory and resolves from an O(1) rule lookup.
 - Authenticates via DoH profile token or UDP source-IP allowlist.
 - Answers local zones first, then rules/blocklists, then cache or upstream DoH.
@@ -62,7 +62,8 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 
 | Path | Purpose |
 |---|---|
-| `apps/edge` | DNS/DoH edge, policy cache, logging, stats, cache purge |
+| `apps/edge-rust` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats |
+| `apps/edge` | Node reference implementation (kept for parity/reference) |
 | `apps/console` | TanStack Start console and authenticated server functions |
 | `apps/agent` | Local DNS forwarding agent |
 | `packages/db` | Drizzle schema, migrations, database client |
@@ -73,7 +74,8 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 
 ### Requirements
 
-- Node.js 24
+- Node.js 24 (console, scripts, Node reference)
+- Rust 1.99+ (edge; `cargo build --release`)
 - pnpm 10
 - Postgres
 - Optional: an S3-compatible bucket for raw logs
