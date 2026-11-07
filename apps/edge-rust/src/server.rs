@@ -56,6 +56,7 @@ pub struct AppState {
     doh_gate: Semaphore,
     udp_gate: Arc<Semaphore>,
     tcp_gate: Arc<Semaphore>,
+    conn_sources: Arc<Mutex<HashMap<String, usize>>>,
     admin_rate: FixedWindow,
     purge_rate: FixedWindow,
     sync_lock: tokio::sync::Mutex<()>,
@@ -124,6 +125,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         doh_gate: Semaphore::new(cfg.doh_max_inflight.max(1)),
         udp_gate: Arc::new(Semaphore::new(cfg.udp_max_inflight.max(1))),
         tcp_gate: Arc::new(Semaphore::new(cfg.tcp_max_connections.max(1))),
+        conn_sources: Arc::new(Mutex::new(HashMap::new())),
         admin_rate: FixedWindow::new(60, Duration::from_secs(60)),
         purge_rate: FixedWindow::new(10, Duration::from_secs(60)),
         sync_lock: tokio::sync::Mutex::new(()),
@@ -645,11 +647,13 @@ fn record(
     if !context.log_enabled {
         return;
     }
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
     state.logger.log(QueryEvent {
-        at: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64,
+        at: now_ms / 1000,
+        at_ms: now_ms,
         profile: profile.to_string(),
         domain: question.name.clone(),
         action,
@@ -701,6 +705,40 @@ const PROXY_V2_MAGIC: [u8; 12] = [
     0x0d, 0x0a, 0x0d, 0x0a, 0x00, 0x0d, 0x0a, 0x51, 0x55, 0x49, 0x54, 0x0a,
 ];
 const TLV_AUTHORITY: u8 = 0x02;
+
+struct ConnGuard {
+    map: Arc<Mutex<HashMap<String, usize>>>,
+    key: String,
+}
+
+impl Drop for ConnGuard {
+    fn drop(&mut self) {
+        let mut map = self.map.lock().expect("connection sources");
+        if let Some(count) = map.get_mut(&self.key) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                map.remove(&self.key);
+            }
+        }
+    }
+}
+
+fn acquire_conn(
+    map: &Arc<Mutex<HashMap<String, usize>>>,
+    key: String,
+    cap: usize,
+) -> Option<ConnGuard> {
+    let mut sources = map.lock().expect("connection sources");
+    let count = sources.entry(key.clone()).or_insert(0);
+    if *count >= cap {
+        return None;
+    }
+    *count += 1;
+    Some(ConnGuard {
+        map: map.clone(),
+        key,
+    })
+}
 
 /// `<label>.dot.resolvezero.com` -> `label`.
 fn dot_label(hostname: &str, suffix: &str) -> Option<String> {
@@ -808,6 +846,15 @@ async fn handle_dot(
     let Some(label) = dot_label(&authority, &state.cfg.dot_suffix) else {
         return Ok(());
     };
+    let source_key = source.clone().unwrap_or_else(|| _peer.ip().to_string());
+    let _source_guard = acquire_conn(
+        &state.conn_sources,
+        format!("dot:{source_key}"),
+        state.cfg.dot_max_per_source,
+    );
+    if _source_guard.is_none() {
+        return Ok(());
+    }
     let Some(profile_id) = state.store.read().await.authorize_dot_id(&label).cloned() else {
         return Ok(());
     };
@@ -999,6 +1046,14 @@ async fn handle_tcp(
             _ => peer.ip().to_string(),
         };
 
+    let _source_guard = acquire_conn(
+        &state.conn_sources,
+        format!("tcp:{source}"),
+        state.cfg.tcp_max_per_source,
+    );
+    if _source_guard.is_none() {
+        return Ok(());
+    }
     let profile = state.store.read().await.authorize_ip(&source).cloned();
     let profile = match profile {
         Some(profile) => {

@@ -29,6 +29,14 @@ Cloudflare/Google and h2 only for Quad9).
 Caveats: the load generator shares the host, and the numbers are relative, not
 a Fly benchmark. `TOKIO_WORKER_THREADS=1` pins the runtime for per-core runs.
 
+## Production shape
+
+`resolvezero-edge` runs **2 shared cores / 512 MB** on Fly. The Rust edge sits
+at ~14-20 MB RSS with artifacts loaded, so 512 MB leaves ample room for the
+50 MB DNS cache, log buffers, and a raw-text parse fallback; the second core
+keeps the async workers free during list syncs and upstream misses. The old
+Node edge needed 1 GB for the same rule set.
+
 ## Security
 
 The SSRF guard, upstream validation, ingress limits, cache normalization,

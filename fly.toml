@@ -18,11 +18,14 @@ kill_timeout = 30
   strategy = "bluegreen"
 
 # Rust edge (apps/edge-rust). Binds 53/853 as root, then drops to UID/GID 1000.
-# 1 GB covers the 5M-rule budget and artifact loading with large headroom.
+# Production shape: 2 shared cores + 512 MB. The Rust edge runs at ~14-20 MB
+# RSS with artifacts loaded; 512 MB leaves >300 MB for the 50 MB DNS cache,
+# log buffers, and a raw-text parse fallback, while the second core keeps the
+# async workers free during list syncs and cache misses.
 [vm]
   cpu_kind = "shared"
-  cpus = 1
-  memory = "1gb"
+  cpus = 2
+  memory = "512mb"
 
 [env]
   PORT = "8080"

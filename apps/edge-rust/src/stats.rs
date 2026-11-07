@@ -39,6 +39,7 @@ const MAX_DEVICE_TOP: usize = 50;
 #[derive(Clone, Debug)]
 pub struct QueryEvent {
     pub at: i64,
+    pub at_ms: i64,
     pub profile: String,
     pub domain: String,
     pub action: &'static str,
@@ -657,7 +658,7 @@ impl Archive {
     fn line(&self, event: &QueryEvent) -> String {
         let mut map = Map::new();
         map.insert("kind".into(), json!("query"));
-        map.insert("time".into(), json!(format_time(event.at)));
+        map.insert("time".into(), json!(format_time(event.at_ms)));
         map.insert("profile".into(), json!(event.profile));
         map.insert("domain".into(), json!(event.domain));
         map.insert("action".into(), json!(event.action));
@@ -747,8 +748,8 @@ impl Archive {
     }
 }
 
-fn format_time(at: i64) -> String {
-    OffsetDateTime::from_unix_timestamp(at)
+fn format_time(at_ms: i64) -> String {
+    OffsetDateTime::from_unix_timestamp_nanos((at_ms as i128) * 1_000_000)
         .ok()
         .and_then(|time| {
             time.format(&format_description!(
