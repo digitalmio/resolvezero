@@ -1,12 +1,9 @@
-# Compile blocklists into content-addressed artifacts and publish them to E2.
-# Manual only + double-gated: it rewrites artifact_hash and bumps
-# blocklist_version, which makes every edge reload its list catalog.
+# Break-glass/manual artifact compilation. The primary compiler is the
+# dedicated `resolvezero-compiler` Fly worker (apps/edge-rust/src/bin/rz-artifacts.rs);
+# this workflow remains as a fallback if that machine is unavailable.
 name: artifacts
 
 on:
-  schedule:
-    # Refresh the curated catalog every 6 hours; jitter avoids lockstep with list hosts.
-    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:

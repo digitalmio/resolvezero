@@ -1,0 +1,25 @@
+# Dedicated artifact compiler worker. No public ingress; it only needs
+# Postgres + E2 credentials and runs every COMPILE_INTERVAL_SECONDS, polling
+# for new user lists every COMPILE_POLL_SECONDS.
+app = "resolvezero-compiler"
+primary_region = "fra"
+kill_timeout = 30
+
+[build]
+  dockerfile = "Dockerfile.compiler"
+
+[deploy]
+  strategy = "immediate"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"
+
+[env]
+  LOG_LEVEL = "info"
+  ARTIFACT_PREFIX = "artifacts"
+  COMPILE_INTERVAL_SECONDS = "21600"
+  COMPILE_POLL_SECONDS = "30"
+  # Force one full compile on every process start; later cycles respect freshness.
+  FORCE_COMPILE = "1"

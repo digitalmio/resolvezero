@@ -1,0 +1,14 @@
+# Artifact compiler worker (dedicated Fly machine).
+FROM rust:1.99-bookworm AS build
+WORKDIR /app
+COPY apps/edge-rust/Cargo.toml apps/edge-rust/Cargo.lock ./
+COPY apps/edge-rust/src ./src
+RUN cargo build --release --locked --bin rz-artifacts
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app/target/release/rz-artifacts /usr/local/bin/rz-artifacts
+ENV HOME=/tmp
+CMD ["/usr/local/bin/rz-artifacts"]

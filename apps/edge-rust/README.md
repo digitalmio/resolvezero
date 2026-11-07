@@ -45,6 +45,12 @@ gaps) in [`docs/rust-edge-security.md`](../../docs/rust-edge-security.md).
 
 ## Artifacts
 
+Compilation runs on the dedicated **`resolvezero-compiler` Fly machine**
+(`src/bin/rz-artifacts.rs`): every 30 s it picks up new user lists (no artifact),
+refreshes artifacts older than 6 h, uploads content-addressed blobs to E2, and
+bumps `blocklist_version`. GitHub Actions only builds/deploys that worker and
+keeps a manual fallback; the runtime no longer depends on Actions.
+
 Rule lists are compiled into content-addressed artifacts (see
 [`docs/artifact-format.md`](../../docs/artifact-format.md)). With the four live
 lists published as artifacts, the Rust edge loads **4/4 lists from artifacts,
