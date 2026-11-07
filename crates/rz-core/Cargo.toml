@@ -1,0 +1,15 @@
+[package]
+name = "rz-core"
+version = "0.1.0"
+edition = "2021"
+description = "Shared ResolveZero artifact, fingerprint, parser, and SSRF primitives"
+license = "MIT"
+
+[dependencies]
+futures-util = "0.3"
+hmac = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream"] }
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "macros"] }
+tokio = { version = "1", features = ["net"] }
+xxhash-rust = { version = "0.8", features = ["xxh64"] }

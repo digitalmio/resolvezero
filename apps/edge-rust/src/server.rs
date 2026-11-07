@@ -20,12 +20,9 @@ use tracing::{error, info, warn};
 use flate2::read::GzDecoder;
 use std::io::Read;
 
-use crate::artifact::S3Config;
 use crate::cache::DnsCache;
 use crate::config::{Config, UnknownSource};
-use crate::db::Db;
 use crate::dns;
-use crate::fingerprint::Action;
 use crate::lazy;
 use crate::limits::FixedWindow;
 use crate::lists;
@@ -33,6 +30,9 @@ use crate::metrics::Metrics;
 use crate::stats::{self, QueryEvent, QueryLogger};
 use crate::store::RuleStore;
 use crate::upstream::Upstream;
+use rz_core::artifact::S3Config;
+use rz_core::fingerprint::Action;
+use rz_db::Db;
 
 pub struct AppState {
     pub cfg: Arc<Config>,
@@ -258,7 +258,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     Ok(())
 }
 
-async fn initial_snapshot(db: &Db) -> Result<(crate::db::Versions, crate::db::Snapshot), String> {
+async fn initial_snapshot(db: &Db) -> Result<(rz_db::Versions, rz_db::Snapshot), String> {
     let mut attempt = 0u32;
     loop {
         match async {

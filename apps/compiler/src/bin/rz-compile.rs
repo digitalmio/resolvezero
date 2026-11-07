@@ -8,10 +8,10 @@
 
 use std::path::PathBuf;
 
-use resolvezero_edge::artifact::{sha256_hex, Artifact, ArtifactMeta};
-use resolvezero_edge::fingerprint::FingerprintTable;
-use resolvezero_edge::netguard::SafeFetcher;
-use resolvezero_edge::parse::{parse_list, ListFormat};
+use rz_core::artifact::{sha256_hex, Artifact, ArtifactMeta};
+use rz_core::fingerprint::FingerprintTable;
+use rz_core::netguard::SafeFetcher;
+use rz_core::parse::{parse_list, ListFormat};
 
 struct Args {
     url: Option<String>,

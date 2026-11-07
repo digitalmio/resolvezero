@@ -1320,6 +1320,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "resolvezero-compiler"
+version = "0.1.0"
+dependencies = [
+ "rz-core",
+ "rz-db",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "resolvezero-edge"
 version = "0.1.0"
 dependencies = [
@@ -1329,20 +1340,19 @@ dependencies = [
  "flate2",
  "futures-util",
  "hickory-proto",
- "hmac",
  "libc",
  "reqwest",
+ "rz-core",
+ "rz-db",
  "serde",
  "serde_json",
  "sha2",
  "sqlx",
  "subtle",
- "thiserror",
  "time",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "xxhash-rust",
 ]
 
 [[package]]
@@ -1420,6 +1430,27 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "rz-core"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "hmac",
+ "reqwest",
+ "sha2",
+ "time",
+ "tokio",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "rz-db"
+version = "0.1.0"
+dependencies = [
+ "rz-core",
+ "sqlx",
+]
 
 [[package]]
 name = "same-file"

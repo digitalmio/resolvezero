@@ -1,5 +1,5 @@
 # Break-glass/manual artifact compilation. The primary compiler is the
-# dedicated `resolvezero-compiler` Fly worker (apps/edge-rust/src/bin/rz-artifacts.rs);
+# dedicated `resolvezero-compiler` Fly worker (apps/compiler/src/main.rs);
 # this workflow remains as a fallback if that machine is unavailable.
 name: artifacts
 
@@ -27,7 +27,7 @@ jobs:
       - name: install
         run: pnpm install --frozen-lockfile
       - name: build compiler
-        run: cargo build --release --bin rz-compile --manifest-path apps/edge-rust/Cargo.toml
+        run: cargo build --release -p resolvezero-compiler --bin rz-compile
       - name: compile + publish
         env:
           # App role: the compiler only needs DML on rule_artifacts and
@@ -39,5 +39,5 @@ jobs:
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
           ARTIFACT_PREFIX: ${{ vars.ARTIFACT_PREFIX || 'artifacts' }}
-          RZ_COMPILE: apps/edge-rust/target/release/rz-compile
+          RZ_COMPILE: target/release/rz-compile
         run: pnpm exec tsx apps/edge/scripts/artifacts.ts --all

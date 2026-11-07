@@ -6,7 +6,7 @@
  *   pnpm tsx apps/edge/scripts/artifacts.ts --status
  *   pnpm tsx apps/edge/scripts/artifacts.ts --all --dry-run
  *
- * The compiler itself is Rust (`apps/edge-rust/target/release/rz-compile`);
+ * The compiler itself is Rust (`target/release/rz-compile`);
  * this script only orchestrates: run compiler → upload to E2 → record the
  * hash in Postgres. Edges then fetch the 4 MB artifact instead of parsing.
  */
@@ -36,7 +36,7 @@ const value = (name: string, fallback?: string) => {
   return index >= 0 ? args[index + 1] : fallback;
 };
 
-const compiler = value("--compiler", process.env.RZ_COMPILE ?? "apps/edge-rust/target/release/rz-compile");
+const compiler = value("--compiler", process.env.RZ_COMPILE ?? "target/release/rz-compile");
 const prefix = (process.env.ARTIFACT_PREFIX || "artifacts").replace(/^\/+|\/+$/g, "");
 const dryRun = flag("--dry-run");
 const updateDb = !flag("--no-db") && !dryRun;

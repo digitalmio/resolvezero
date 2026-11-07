@@ -1,21 +1,16 @@
-//! ResolveZero edge — Rust data plane (work in progress).
+//! ResolveZero edge — Rust data plane.
 //!
-//! Ported from `apps/edge/src/*.ts`. The artifact/fingerprint semantics and
-//! response shapes are intentionally identical so a Rust machine can be run
-//! side by side with the Node edge behind the same database.
+//! Ported from `apps/edge/src/*.ts`. Shared artifact/parser/database code lives
+//! in the `rz-core` and `rz-db` workspace crates so the compiler uses the same
+//! implementation as the edge.
 
-pub mod artifact;
 pub mod cache;
 pub mod config;
-pub mod db;
 pub mod dns;
-pub mod fingerprint;
 pub mod lazy;
 pub mod limits;
 pub mod lists;
 pub mod metrics;
-pub mod netguard;
-pub mod parse;
 pub mod server;
 pub mod services;
 pub mod stats;

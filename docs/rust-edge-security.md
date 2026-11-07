@@ -1,6 +1,6 @@
 # Rust Edge — Security Review Follow-up
 
-**Scope:** the 2026-11-07 review of `apps/edge-rust`
+**Scope:** the 2026-11-07 review of `apps/edge-rust`, `crates/rz-core`, and `crates/rz-db`
 **Status:** merged to `main` and deployed to production (`resolvezero-edge`, 2026-11-07)
 **Last updated:** 2026-11-07
 
@@ -13,7 +13,7 @@ production-exposed.
 
 ### 1. SSRF guard for tenant-controlled URLs — fixed
 
-`apps/edge-rust/src/netguard.rs` is a port of `apps/edge/src/netGuard.ts`:
+`crates/rz-core/src/netguard.rs` is a port of `apps/edge/src/netGuard.ts`:
 
 - https-only by default (lists **and** custom upstreams); `ALLOW_HTTP_TARGETS=1`
   is the explicit self-host escape hatch (requires `ALLOW_PRIVATE_TARGETS=1`).
@@ -135,7 +135,7 @@ checks cost O(label count).
   stats and archive rows instead of dropping them with the runtime.
 - CI: `.github/workflows/edge-rust.yml` runs `cargo fmt --check`,
   `clippy --all-targets -- -D warnings`, `cargo test`, and `cargo audit`.
-  Dependabot tracks Cargo for `apps/edge-rust`.
+  Dependabot tracks the Cargo workspace at the repository root.
 
 ## Feature parity pass (same branch)
 

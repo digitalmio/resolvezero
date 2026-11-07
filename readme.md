@@ -58,7 +58,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 - Emits raw logs to S3-compatible storage and bounded rollups to Postgres.
 - Polls a Postgres watermark every few seconds; no `LISTEN`/`NOTIFY` on the hot path.
 
-**Compiler worker (`apps/edge-rust/src/bin/rz-artifacts.rs`)**
+**Compiler worker (`apps/compiler/src/main.rs`, binary `rz-compiler`)**
 - Runs on a dedicated Fly machine (`fly.compiler.toml`, `Dockerfile.compiler`), not on the request path.
 - Polls every 30 seconds for new user lists and refreshes artifacts older than six hours.
 - Uploads content-addressed blobs to S3 and bumps `blocklist_version` once per changed cycle.
@@ -78,10 +78,13 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 
 | Path | Purpose |
 |---|---|
-| `apps/edge-rust` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats, compiler binaries |
+| `apps/edge-rust` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats |
+| `apps/compiler` | Artifact compiler worker (`rz-compiler`) and one-shot `rz-compile` |
 | `apps/edge` | Node reference implementation and shared scripts (migrations, seeding) |
 | `apps/console` | TanStack Start console, API docs, and authenticated server functions |
 | `apps/agent` | Local DNS forwarding agent |
+| `crates/rz-core` | Shared artifact, parser, fingerprint, and SSRF primitives |
+| `crates/rz-db` | Shared Postgres access for the edge and compiler |
 | `packages/db` | Drizzle schema, migrations, database client |
 | `packages/shared` | Shared runtime helpers |
 | `docs` | Artifact format, rules-at-scale, Rust edge security, token-at-rest notes |
@@ -168,8 +171,7 @@ set -a
 source .env
 set +a
 
-cd apps/edge-rust
-ARTIFACT_PREFIX=artifacts FORCE_COMPILE=1 cargo run --release --bin rz-artifacts
+cargo run --release -p resolvezero-compiler --bin rz-compiler
 ```
 
 In production the compiler is a dedicated Fly app (`fly.compiler.toml`) with no public ingress. It only needs `DATABASE_URL` and the `S3_*` credentials. The edge pulls the resulting artifacts lazily.
@@ -261,9 +263,8 @@ pnpm typecheck
 pnpm typecheck:console
 pnpm build:console
 
-cd apps/edge-rust
-cargo test
-cargo clippy --all-targets
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 Useful package scripts:

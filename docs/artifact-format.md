@@ -28,7 +28,7 @@ offset  size  field
 ```
 
 - Each entry is the **xxhash64 (seed 0)** of a normalized domain, identical in
-  `apps/edge/src/fingerprint.ts` and `apps/edge-rust/src/fingerprint.rs`.
+  `apps/edge/src/fingerprint.ts` and `crates/rz-core/src/fingerprint.rs`.
 - Rules are stored exactly as written; the query side probes every label
   suffix, which preserves subtree semantics.
 - Allow entries are checked before block entries, across all lists.
@@ -78,7 +78,7 @@ Postgres is the manifest:
 
 ## 4. Compiler
 
-`apps/edge-rust/src/bin/rz-compile.rs`:
+`apps/compiler/src/bin/rz-compile.rs`:
 
 ```sh
 rz-compile --url https://example/list.txt --out ./artifacts
@@ -116,7 +116,7 @@ status columns (`artifact_hash` was added after) to avoid sync loops.
 - **Node edge** (`apps/edge/src/blocklists.ts`): if `artifact_hash` is set,
   GET the object, verify sha256, decode into `SuffixFingerprintTable`. On any
   failure it logs and falls back to fetching + parsing the raw text.
-- **Rust edge** (`apps/edge-rust/src/lists.rs`): same, with a small SigV4 GET
+- **Rust edge** (`apps/edge-rust/src/lists.rs`, shared decode in `crates/rz-core`): same, with a small SigV4 GET
   client (no AWS SDK). Falls back to text identically.
 
 `/readyz` exposes `artifactLists` / `rawLists`, and metrics expose

@@ -11,11 +11,11 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use resolvezero_edge::artifact::{sha256_hex, Artifact, ArtifactMeta, S3Config};
-use resolvezero_edge::db::Db;
-use resolvezero_edge::fingerprint::FingerprintTable;
-use resolvezero_edge::netguard::{redact_url, SafeFetcher};
-use resolvezero_edge::parse::{parse_list, ListFormat};
+use rz_core::artifact::{sha256_hex, Artifact, ArtifactMeta, S3Config};
+use rz_core::fingerprint::FingerprintTable;
+use rz_core::netguard::{redact_url, SafeFetcher};
+use rz_core::parse::{parse_list, ListFormat};
+use rz_db::Db;
 use tracing::{error, info, warn};
 
 struct Config {

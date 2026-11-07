@@ -11,12 +11,12 @@ use std::time::Instant;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{info, warn};
 
-use crate::artifact::S3Config;
 use crate::config::Config;
-use crate::db::Db;
 use crate::lists;
-use crate::netguard::{redact_url, SafeFetcher};
 use crate::store::RuleStore;
+use rz_core::artifact::S3Config;
+use rz_core::netguard::{redact_url, SafeFetcher};
+use rz_db::Db;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LoadReport {
@@ -160,8 +160,9 @@ pub async fn ensure_profile_loaded(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fingerprint::FingerprintTable;
-    use crate::store::{ListSource, ProfileRow, Subscription};
+    use crate::store::{ListSource, Subscription};
+    use rz_core::fingerprint::FingerprintTable;
+    use rz_db::ProfileRow;
     use std::collections::HashSet;
 
     fn profile(id: &str) -> ProfileRow {

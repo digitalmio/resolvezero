@@ -4,8 +4,8 @@
 use std::process::Command;
 use std::time::Instant;
 
-use resolvezero_edge::fingerprint::FingerprintTable;
-use resolvezero_edge::parse::{parse_list, ListFormat};
+use rz_core::fingerprint::FingerprintTable;
+use rz_core::parse::{parse_list, ListFormat};
 
 fn current_rss_mb() -> f64 {
     let pid = std::process::id().to_string();

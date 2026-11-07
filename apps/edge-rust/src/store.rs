@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::fingerprint::{Action, FingerprintTable};
+use rz_core::fingerprint::{Action, FingerprintTable};
+use rz_db::{BlockedServiceRow, ProfileRow, RuleRow, SourceIpRow, ZoneRow};
+
 use crate::services::blocked_service_domains;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -116,57 +118,6 @@ impl Subscription {
 pub enum ListSource {
     Artifact,
     Raw,
-}
-
-#[derive(Clone, Debug)]
-pub struct ProfileRow {
-    pub id: String,
-    pub dot_id: Option<String>,
-    pub doh_token: Option<String>,
-    pub log_queries: bool,
-    pub safe_search: Option<String>,
-    pub upstream: Option<String>,
-    pub upstream_url: Option<String>,
-    pub block_mode: Option<String>,
-    pub block_ipv4: Option<String>,
-    pub block_ipv6: Option<String>,
-    pub block_ttl: Option<i32>,
-}
-
-#[derive(Clone, Debug)]
-pub struct RuleRow {
-    pub profile_id: String,
-    pub domain: String,
-    pub action: Action,
-}
-
-#[derive(Clone, Debug)]
-pub struct SourceIpRow {
-    pub ip_address: String,
-    pub profile_id: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct ZoneRow {
-    pub profile_id: String,
-    pub domain: String,
-    pub record_type: String,
-    pub values: Vec<String>,
-    pub ttl: i32,
-}
-
-#[derive(Clone, Debug)]
-pub struct BlockedServiceRow {
-    pub profile_id: String,
-    pub service: String,
-}
-
-pub struct BlocklistRow {
-    pub id: String,
-    pub profile_id: String,
-    pub url: String,
-    pub format: String,
-    pub artifact_hash: Option<String>,
 }
 
 #[derive(Default)]
@@ -731,7 +682,7 @@ mod tests {
 
     #[test]
     fn pending_lists_tracks_unloaded_subscriptions() {
-        use crate::fingerprint::FingerprintTable;
+        use rz_core::fingerprint::FingerprintTable;
         let mut store = RuleStore::default();
         store.wire_subscriptions(
             "home",
@@ -754,7 +705,7 @@ mod tests {
 
     #[test]
     fn prune_catalog_drops_unreferenced_tables_and_bookkeeping() {
-        use crate::fingerprint::FingerprintTable;
+        use rz_core::fingerprint::FingerprintTable;
         let mut store = RuleStore::default();
         store.upsert_list(
             "keep",
@@ -781,7 +732,7 @@ mod tests {
 
     #[test]
     fn remote_attribution_reports_the_matching_list_id() {
-        use crate::fingerprint::FingerprintTable;
+        use rz_core::fingerprint::FingerprintTable;
         let mut store = RuleStore::default();
         store.upsert_list(
             "list",
@@ -806,7 +757,7 @@ mod tests {
 
     #[test]
     fn remote_allow_wins_across_lists() {
-        use crate::fingerprint::FingerprintTable;
+        use rz_core::fingerprint::FingerprintTable;
         let mut store = RuleStore::default();
         store.replace_config(vec![profile("home", None)], vec![], vec![], vec![], vec![]);
         let block: HashSet<String> = ["ads.example".to_string()].into_iter().collect();
