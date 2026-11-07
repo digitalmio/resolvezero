@@ -14,5 +14,6 @@ pub mod lists;
 pub mod metrics;
 pub mod parse;
 pub mod server;
+pub mod stats;
 pub mod store;
 pub mod upstream;

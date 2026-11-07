@@ -265,18 +265,29 @@ impl RuleStore {
 
     /// All allow tables first, then all block tables (cross-list precedence).
     pub fn resolve_remote(&self, profile_id: &str, domain: &str) -> Option<Action> {
+        self.resolve_remote_detailed(profile_id, domain)
+            .map(|(action, _)| action)
+    }
+
+    /// Same decision, plus the `profile_blocklists.id` that produced it for
+    /// query-log attribution (never the URL).
+    pub fn resolve_remote_detailed(
+        &self,
+        profile_id: &str,
+        domain: &str,
+    ) -> Option<(Action, Option<String>)> {
         let subscriptions = self.subscriptions.get(profile_id)?;
         for subscription in subscriptions {
             if let Some(table) = self.catalog.get(&subscription.url) {
                 if table.check_allow(domain) {
-                    return Some(Action::Allow);
+                    return Some((Action::Allow, subscription.list_id.clone()));
                 }
             }
         }
         for subscription in subscriptions {
             if let Some(table) = self.catalog.get(&subscription.url) {
                 if table.check_block(domain) {
-                    return Some(Action::Block);
+                    return Some((Action::Block, subscription.list_id.clone()));
                 }
             }
         }

@@ -101,15 +101,15 @@ pub async fn sync_once(
         };
 
         if total + table.entries > cfg.max_total_entries {
-                    warn!(
-                        url,
-                        entries = table.entries,
-                        total,
-                        cap = cfg.max_total_entries,
-                        "global rule budget exceeded; list skipped"
-                    );
-                    continue;
-                }
+            warn!(
+                url,
+                entries = table.entries,
+                total,
+                cap = cfg.max_total_entries,
+                "global rule budget exceeded; list skipped"
+            );
+            continue;
+        }
         total += table.entries;
         info!(url, entries = table.entries, "list loaded");
         fetched.push((url.clone(), table));
@@ -191,7 +191,6 @@ async fn fetch_text(
     }
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
-
 
 async fn load_artifact(s3: &S3Config, hash: &str) -> Result<FingerprintTable, String> {
     let bytes = s3.get(hash).await?;

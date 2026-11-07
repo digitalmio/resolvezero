@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
 use axum::extract::{Path, State};
@@ -23,6 +23,7 @@ use crate::dns;
 use crate::fingerprint::Action;
 use crate::lists;
 use crate::metrics::Metrics;
+use crate::stats::{self, QueryEvent, QueryLogger};
 use crate::store::RuleStore;
 use crate::upstream::Upstream;
 
@@ -32,8 +33,16 @@ pub struct AppState {
     pub cache: Arc<Mutex<DnsCache>>,
     pub upstream: Arc<Upstream>,
     pub metrics: Arc<Metrics>,
+    pub logger: Arc<QueryLogger>,
     pub ready: AtomicBool,
     sync_lock: tokio::sync::Mutex<()>,
+}
+
+#[derive(Clone, Debug)]
+struct QueryContext {
+    client_ip: Option<String>,
+    device: Option<String>,
+    transport: &'static str,
 }
 
 pub async fn run(cfg: Config) -> Result<(), String> {
@@ -65,12 +74,15 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     }
 
     let cache = Arc::new(Mutex::new(DnsCache::default()));
+    let metrics = Arc::new(Metrics::default());
+    let logger = Arc::new(stats::start(db.clone(), cfg.clone(), metrics.clone()));
     let state = Arc::new(AppState {
         cfg: cfg.clone(),
         store: store.clone(),
         cache: cache.clone(),
         upstream: Arc::new(Upstream::new(cfg.default_upstream())?),
-        metrics: Arc::new(Metrics::default()),
+        metrics,
+        logger,
         ready: AtomicBool::new(false),
         sync_lock: tokio::sync::Mutex::new(()),
     });
@@ -231,7 +243,12 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
     }
 }
 
-async fn resolve_wire(state: &AppState, wire: &[u8], profile: &str) -> Option<Vec<u8>> {
+async fn resolve_wire(
+    state: &AppState,
+    wire: &[u8],
+    profile: &str,
+    context: &QueryContext,
+) -> Option<Vec<u8>> {
     let question = match dns::parse_query(wire) {
         Some(question) => question,
         None => {
@@ -261,7 +278,7 @@ async fn resolve_wire(state: &AppState, wire: &[u8], profile: &str) -> Option<Ve
         let remote = if custom == Some(Action::Allow) {
             None
         } else {
-            store.resolve_remote(profile, &question.name)
+            store.resolve_remote_detailed(profile, &question.name)
         };
         (
             zone,
@@ -274,17 +291,58 @@ async fn resolve_wire(state: &AppState, wire: &[u8], profile: &str) -> Option<Ve
     };
 
     if let Some((entry, record_type)) = zone {
+        record(
+            state,
+            &question,
+            profile,
+            context,
+            "override",
+            Some("zone"),
+            None,
+            None,
+            None,
+        );
         return Some(dns::zone_response(&question, &entry, &record_type));
     }
     if nodata {
+        record(
+            state,
+            &question,
+            profile,
+            context,
+            "override",
+            Some("zone"),
+            None,
+            None,
+            None,
+        );
         return Some(dns::empty_response(&question));
     }
 
-    if custom.or(remote) == Some(Action::Block) {
+    let (decision, reason, list_id) = match (custom, remote) {
+        (Some(Action::Block), _) => (Some(Action::Block), Some("manual"), None),
+        (Some(Action::Allow), _) => (Some(Action::Allow), Some("manual"), None),
+        (None, Some((action, list_id))) => (Some(action), Some("blocklist"), list_id),
+        _ => (None, None, None),
+    };
+
+    if decision == Some(Action::Block) {
         Metrics::inc(&state.metrics.blocked);
+        record(
+            state, &question, profile, context, "block", reason, list_id, None, None,
+        );
         return Some(dns::sinkhole_response(&question, &block));
     }
 
+    let mut prelogged = false;
+    if decision == Some(Action::Allow) {
+        record(
+            state, &question, profile, context, "allow", reason, list_id, None, None,
+        );
+        prelogged = true;
+    }
+
+    let label = upstream_label(selector.as_deref());
     let url = state.upstream.url_for(selector.as_deref());
     let key = dns::cache_key(&question, &url);
     if let Some(bytes) = state
@@ -294,12 +352,27 @@ async fn resolve_wire(state: &AppState, wire: &[u8], profile: &str) -> Option<Ve
         .get(&key, question.id)
     {
         Metrics::inc(&state.metrics.cache_hits);
+        if !prelogged {
+            record(
+                state,
+                &question,
+                profile,
+                context,
+                "forward",
+                None,
+                None,
+                Some(label.clone()),
+                None,
+            );
+        }
         return Some(bytes);
     }
     Metrics::inc(&state.metrics.cache_misses);
 
+    let started = Instant::now();
     match state.upstream.resolve(wire, selector.as_deref()).await {
         Ok(response) => {
+            let rtt = started.elapsed().as_millis() as i64;
             let ttl = dns::cache_ttl(&response);
             state
                 .cache
@@ -307,13 +380,78 @@ async fn resolve_wire(state: &AppState, wire: &[u8], profile: &str) -> Option<Ve
                 .expect("cache lock")
                 .put(key, response.clone(), ttl);
             Metrics::inc(&state.metrics.forwarded);
+            if !prelogged {
+                record(
+                    state,
+                    &question,
+                    profile,
+                    context,
+                    "forward",
+                    None,
+                    None,
+                    Some(label),
+                    Some(rtt),
+                );
+            }
             Some(response)
         }
         Err(err) => {
             warn!(%err, "upstream failed");
             Metrics::inc(&state.metrics.servfail);
+            if !prelogged {
+                record(
+                    state,
+                    &question,
+                    profile,
+                    context,
+                    "forward",
+                    None,
+                    None,
+                    Some(label),
+                    None,
+                );
+            }
             Some(dns::servfail_response(&question))
         }
+    }
+}
+
+fn record(
+    state: &AppState,
+    question: &dns::Question,
+    profile: &str,
+    context: &QueryContext,
+    action: &'static str,
+    reason: Option<&'static str>,
+    list_id: Option<String>,
+    upstream: Option<String>,
+    rtt_ms: Option<i64>,
+) {
+    state.logger.log(QueryEvent {
+        at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64,
+        profile: profile.to_string(),
+        domain: question.name.clone(),
+        action,
+        reason,
+        list_id,
+        transport: context.transport,
+        upstream,
+        client_ip: context.client_ip.clone(),
+        device: context.device.clone(),
+        rtt_ms,
+    });
+}
+
+fn upstream_label(selector: Option<&str>) -> String {
+    match selector {
+        Some("cloudflare") => "cloudflare".into(),
+        Some("google") => "google".into(),
+        Some("quad9") => "quad9".into(),
+        Some(url) if url.starts_with("http") => "custom".into(),
+        _ => "edge-default".into(),
     }
 }
 
@@ -343,7 +481,14 @@ async fn udp_loop(socket: Arc<UdpSocket>, state: Arc<AppState>) {
                         .authorize_ip(&peer.ip().to_string())
                         .cloned();
                     let response = match profile {
-                        Some(profile) => resolve_wire(&state, &wire, &profile).await,
+                        Some(profile) => {
+                            let context = QueryContext {
+                                client_ip: Some(peer.ip().to_string()),
+                                device: None,
+                                transport: "udp",
+                            };
+                            resolve_wire(&state, &wire, &profile, &context).await
+                        }
                         None => {
                             if state.cfg.unknown_source == UnknownSource::Refused {
                                 dns::parse_query(&wire).map(|q| dns::refused_response(&q))
@@ -396,6 +541,11 @@ async fn handle_tcp(
         .await
         .unwrap_or_else(|| peer.ip().to_string());
     let profile = state.store.read().await.authorize_ip(&source).cloned();
+    let context = QueryContext {
+        client_ip: Some(source.clone()),
+        device: None,
+        transport: "tcp",
+    };
 
     loop {
         let mut length = [0u8; 2];
@@ -410,7 +560,7 @@ async fn handle_tcp(
         stream.read_exact(&mut wire).await?;
 
         let response = match &profile {
-            Some(profile) => resolve_wire(&state, &wire, profile).await,
+            Some(profile) => resolve_wire(&state, &wire, profile, &context).await,
             None => {
                 if state.cfg.unknown_source == UnknownSource::Refused {
                     dns::parse_query(&wire).map(|q| dns::refused_response(&q))
@@ -483,7 +633,7 @@ async fn doh_handler(
     State(state): State<Arc<AppState>>,
     Path(rest): Path<String>,
     method: Method,
-    _headers: HeaderMap,
+    headers: HeaderMap,
     uri: Uri,
     body: Bytes,
 ) -> Response {
@@ -517,8 +667,6 @@ async fn doh_handler(
         }
         (None, _) => (None, None),
     };
-    let _ = device;
-
     if !state.store.read().await.has_profile(profile_id, token) {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -545,7 +693,24 @@ async fn doh_handler(
         return StatusCode::BAD_REQUEST.into_response();
     }
 
-    match resolve_wire(&state, &wire, profile_id).await {
+    let client_ip = headers
+        .get("fly-client-ip")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .or_else(|| {
+            headers
+                .get("x-forwarded-for")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(',').next())
+                .map(|value| value.trim().to_string())
+        });
+    let context = QueryContext {
+        client_ip,
+        device: device.map(str::to_string),
+        transport: "doh",
+    };
+
+    match resolve_wire(&state, &wire, profile_id, &context).await {
         Some(response) => (
             [(header::CONTENT_TYPE, "application/dns-message")],
             response,

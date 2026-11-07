@@ -13,6 +13,8 @@ pub struct Metrics {
     pub cache_misses: AtomicU64,
     pub drops: AtomicU64,
     pub servfail: AtomicU64,
+    pub log_dropped: AtomicU64,
+    pub rollup_errors: AtomicU64,
     started: Instant,
 }
 
@@ -26,6 +28,8 @@ impl Default for Metrics {
             cache_misses: AtomicU64::new(0),
             drops: AtomicU64::new(0),
             servfail: AtomicU64::new(0),
+            log_dropped: AtomicU64::new(0),
+            rollup_errors: AtomicU64::new(0),
             started: Instant::now(),
         }
     }
@@ -70,6 +74,16 @@ impl Metrics {
         out.push_str(&format!(
             "rz_dropped_total {}\n",
             self.drops.load(Ordering::Relaxed)
+        ));
+        out.push_str("# TYPE rz_log_dropped_total counter\n");
+        out.push_str(&format!(
+            "rz_log_dropped_total {}\n",
+            self.log_dropped.load(Ordering::Relaxed)
+        ));
+        out.push_str("# TYPE rz_rollup_errors_total counter\n");
+        out.push_str(&format!(
+            "rz_rollup_errors_total {}\n",
+            self.rollup_errors.load(Ordering::Relaxed)
         ));
         out.push_str("# TYPE rz_servfail_total counter\n");
         out.push_str(&format!(

@@ -199,6 +199,34 @@ impl S3Config {
 
     pub async fn get(&self, hash: &str) -> Result<Vec<u8>, String> {
         let key = self.key(hash);
+        let response = self.request("GET", &key, b"", None).await?;
+        if !response.status().is_success() {
+            return Err(format!("artifact GET {} -> {}", key, response.status()));
+        }
+        Ok(response
+            .bytes()
+            .await
+            .map_err(|err| err.to_string())?
+            .to_vec())
+    }
+
+    /// PUT an object (used by the raw-log archive). Returns an error on any
+    /// non-2xx response so the caller can queue a retry.
+    pub async fn put(&self, key: &str, body: &[u8], content_type: &str) -> Result<(), String> {
+        let response = self.request("PUT", key, body, Some(content_type)).await?;
+        if !response.status().is_success() {
+            return Err(format!("S3 PUT {key} -> {}", response.status()));
+        }
+        Ok(())
+    }
+
+    async fn request(
+        &self,
+        method: &str,
+        key: &str,
+        body: &[u8],
+        content_type: Option<&str>,
+    ) -> Result<reqwest::Response, String> {
         let endpoint = self.endpoint.trim_end_matches('/');
         let host = endpoint
             .split_once("://")
@@ -215,13 +243,14 @@ impl S3Config {
             ))
             .map_err(|err| err.to_string())?;
         let date = &amz_date[..8];
-        let payload_hash = sha256_hex(b"");
+        let payload_hash = sha256_hex(body);
 
         let canonical_headers =
             format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
         let signed_headers = "host;x-amz-content-sha256;x-amz-date";
-        let canonical_request =
-            format!("GET\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
+        let canonical_request = format!(
+            "{method}\n{canonical_uri}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+        );
         let scope = format!("{date}/{}/s3/aws4_request", self.region);
         let string_to_sign = format!(
             "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
@@ -238,22 +267,19 @@ impl S3Config {
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|err| err.to_string())?;
-        let response = client
-            .get(&url)
+        let mut request = client
+            .request(method.parse().map_err(|_| "invalid method")?, &url)
             .header("x-amz-content-sha256", &payload_hash)
             .header("x-amz-date", &amz_date)
-            .header("authorization", authorization)
+            .header("authorization", authorization);
+        if let Some(content_type) = content_type {
+            request = request.header("content-type", content_type);
+        }
+        request
+            .body(body.to_vec())
             .send()
             .await
-            .map_err(|err| err.to_string())?;
-        if !response.status().is_success() {
-            return Err(format!("artifact GET {} -> {}", key, response.status()));
-        }
-        Ok(response
-            .bytes()
-            .await
-            .map_err(|err| err.to_string())?
-            .to_vec())
+            .map_err(|err| err.to_string())
     }
 }
 
@@ -325,7 +351,12 @@ mod tests {
     fn sidecar_is_valid_json_shape() {
         let artifact = artifact();
         let bytes = artifact.encode();
-        let meta = ArtifactMeta::for_artifact(sha256_hex(&bytes), "https://example/list".into(), &artifact, bytes.len());
+        let meta = ArtifactMeta::for_artifact(
+            sha256_hex(&bytes),
+            "https://example/list".into(),
+            &artifact,
+            bytes.len(),
+        );
         let json = meta.to_json();
         assert!(json.contains("\"rules\":3"));
         assert!(json.contains("xxhash64/seed0"));

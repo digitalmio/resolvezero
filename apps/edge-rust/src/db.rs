@@ -35,6 +35,10 @@ impl Db {
         Ok(Self { pool })
     }
 
+    pub fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
     pub async fn versions(&self) -> Result<Versions, sqlx::Error> {
         let row = sqlx::query(
             "select config_version, blocklist_version from edge_config_state where id = true limit 1",

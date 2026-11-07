@@ -79,7 +79,11 @@ async fn fetch_text(url: &str, max_bytes: usize) -> Result<String, String> {
         .user_agent("rz-compile/0.1")
         .build()
         .map_err(|err| err.to_string())?;
-    let response = client.get(url).send().await.map_err(|err| err.to_string())?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| err.to_string())?;
     if !response.status().is_success() {
         return Err(format!("HTTP {}", response.status()));
     }
@@ -128,7 +132,8 @@ async fn run() -> Result<(), String> {
 
     if !args.json_only {
         std::fs::create_dir_all(&args.out).map_err(|err| err.to_string())?;
-        std::fs::write(args.out.join(format!("{id}.bin")), &bytes).map_err(|err| err.to_string())?;
+        std::fs::write(args.out.join(format!("{id}.bin")), &bytes)
+            .map_err(|err| err.to_string())?;
         std::fs::write(args.out.join(format!("{id}.json")), meta.to_json())
             .map_err(|err| err.to_string())?;
     }
