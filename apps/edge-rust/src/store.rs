@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
+
 use crate::fingerprint::{Action, FingerprintTable};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -30,7 +33,7 @@ impl Default for BlockAnswer {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct ProfileMeta {
     pub token: Option<String>,
     /// Per-profile query-log opt-out (defaults to true).
@@ -110,7 +113,7 @@ pub struct BlocklistRow {
     pub artifact_hash: Option<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct RuleStore {
     /// profile_id -> (domain -> action). Custom rules only.
     pub rules: HashMap<String, HashMap<String, Action>>,
@@ -123,6 +126,10 @@ pub struct RuleStore {
     zones: HashMap<String, ZoneEntry>,
     /// "profile|suffix|type" -> entry (from "*.suffix")
     wildcard_zones: HashMap<String, ZoneEntry>,
+    /// profile -> exact zone names (any type), for O(labels) NODATA checks.
+    zone_names: HashMap<String, HashSet<String>>,
+    /// profile -> wildcard zone suffixes (any type).
+    wildcard_names: HashMap<String, HashSet<String>>,
     /// url -> shared table (one copy per machine).
     pub catalog: HashMap<String, FingerprintTable>,
     pub subscriptions: HashMap<String, Vec<Subscription>>,
@@ -192,6 +199,8 @@ impl RuleStore {
 
         self.zones.clear();
         self.wildcard_zones.clear();
+        self.zone_names.clear();
+        self.wildcard_names.clear();
         for row in zones {
             let domain = row.domain.trim_end_matches('.').to_ascii_lowercase();
             if domain.is_empty() || row.values.is_empty() {
@@ -205,8 +214,16 @@ impl RuleStore {
                 ttl: row.ttl.max(1) as u32,
             };
             if wildcard {
+                self.wildcard_names
+                    .entry(row.profile_id.clone())
+                    .or_default()
+                    .insert(name.clone());
                 self.wildcard_zones.insert(key, entry);
             } else {
+                self.zone_names
+                    .entry(row.profile_id.clone())
+                    .or_default()
+                    .insert(name.clone());
                 self.zones.insert(key, entry);
             }
         }
@@ -234,7 +251,12 @@ impl RuleStore {
     }
 
     pub fn has_profile(&self, profile_id: &str, token: Option<&str>) -> bool {
-        if profile_id.is_empty() || profile_id.len() > 64 {
+        if profile_id.is_empty()
+            || profile_id.len() > 64
+            || !profile_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
             return false;
         }
         let Some(meta) = self.profiles.get(profile_id) else {
@@ -381,14 +403,12 @@ pub fn normalize_rule_domain(domain: &str) -> Option<String> {
     Some(normalized)
 }
 
+/// Hash both values first so the comparison is independent of length (tokens
+/// are fixed-length hex today, but this removes the length oracle entirely).
 fn constant_time_eq(left: &str, right: &str) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    left.bytes()
-        .zip(right.bytes())
-        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-        == 0
+    let left = Sha256::digest(left.as_bytes());
+    let right = Sha256::digest(right.as_bytes());
+    left.ct_eq(&right).into()
 }
 
 #[cfg(test)]

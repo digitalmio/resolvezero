@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::Instant;
 
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -10,18 +10,25 @@ use crate::cache::DnsCache;
 use crate::config::Config;
 use crate::db::Db;
 use crate::fingerprint::FingerprintTable;
+use crate::netguard::{redact_url, SafeFetcher};
 use crate::parse::{parse_list, ListFormat};
 use crate::store::{RuleStore, Subscription};
 
 /// Fetch + parse every enabled list, rebuild the shared catalog, then re-wire
 /// per-profile subscriptions. Returns whether the effective state changed (the
 /// caller flushes the DNS cache only then).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SyncReport {
+    pub changed: bool,
+    pub failed: usize,
+}
+
 pub async fn sync_once(
     db: &Db,
     store: &Arc<RwLock<RuleStore>>,
     cache: &Arc<Mutex<DnsCache>>,
     cfg: &Config,
-) -> Result<bool, String> {
+) -> Result<SyncReport, String> {
     let rows = db.blocklists().await.map_err(|err| err.to_string())?;
 
     struct UniqueList {
@@ -45,21 +52,29 @@ pub async fn sync_once(
     }
     let s3 = S3Config::from_env();
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .user_agent("resolvezero-edge-rust/0.1")
-        .build()
-        .map_err(|err| err.to_string())?;
+    let fetcher = SafeFetcher::new(cfg.max_list_bytes, true);
 
     let mut changed = false;
+    let mut failed = 0usize;
     let mut total = 0usize;
+    let deadline = Instant::now() + cfg.list_cycle_deadline;
     let mut artifact_lists = 0usize;
     let mut raw_lists = 0usize;
     let mut fetched: Vec<(String, FingerprintTable)> = Vec::new();
 
     // Sequential on purpose: a 500k-rule parse is the memory high-water mark,
     // and parallel parses multiplied the transient enough to OOM 256 MB VMs.
-    for (url, list) in &unique {
+    for (index, (url, list)) in unique.iter().enumerate() {
+        if index >= cfg.max_unique_lists {
+            warn!(url = %redact_url(url), cap = cfg.max_unique_lists, "unique-list cap reached; list skipped");
+            failed += 1;
+            continue;
+        }
+        if Instant::now() >= deadline {
+            warn!(url = %redact_url(url), "blocklist cycle deadline reached; list skipped");
+            failed += 1;
+            continue;
+        }
         let mut table = None;
         if let (Some(s3), Some(hash)) = (&s3, list.artifact_hash.as_deref()) {
             match load_artifact(s3, hash).await {
@@ -67,13 +82,15 @@ pub async fn sync_once(
                     artifact_lists += 1;
                     table = Some(value);
                 }
-                Err(err) => warn!(url, %err, "artifact load failed; falling back to text"),
+                Err(err) => {
+                    warn!(url = %redact_url(url), %err, "artifact load failed; falling back to text")
+                }
             }
         }
 
         let table = match table {
             Some(table) => table,
-            None => match fetch_text(&client, url, cfg.max_list_bytes).await {
+            None => match fetch_text(&fetcher, url, cfg.max_list_bytes).await {
                 Ok(text) => {
                     raw_lists += 1;
                     // Parsing is CPU-bound (~0.2 s per 500k rules). Keep it off
@@ -88,13 +105,15 @@ pub async fn sync_once(
                     {
                         Ok(table) => table,
                         Err(err) => {
-                            warn!(url, %err, "list parse task failed");
+                            warn!(url = %redact_url(url), %err, "list parse task failed");
+                            failed += 1;
                             continue;
                         }
                     }
                 }
                 Err(err) => {
-                    warn!(url, %err, "list fetch failed; keeping previous table");
+                    warn!(url = %redact_url(url), %err, "list fetch failed; keeping previous table");
+                    failed += 1;
                     continue;
                 }
             },
@@ -111,7 +130,7 @@ pub async fn sync_once(
             continue;
         }
         total += table.entries;
-        info!(url, entries = table.entries, "list loaded");
+        info!(url = %redact_url(url), entries = table.entries, "list loaded");
         fetched.push((url.clone(), table));
     }
 
@@ -164,31 +183,11 @@ pub async fn sync_once(
         cache.lock().expect("cache lock").clear();
         info!("blocklist state changed; dns cache flushed");
     }
-    Ok(changed)
+    Ok(SyncReport { changed, failed })
 }
 
-async fn fetch_text(
-    client: &reqwest::Client,
-    url: &str,
-    max_bytes: usize,
-) -> Result<String, String> {
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("HTTP {}", response.status()));
-    }
-    if let Some(length) = response.content_length() {
-        if length as usize > max_bytes {
-            return Err(format!("content-length {length} exceeds {max_bytes}"));
-        }
-    }
-    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
-    if bytes.len() > max_bytes {
-        return Err(format!("body {} exceeds {max_bytes}", bytes.len()));
-    }
+async fn fetch_text(fetcher: &SafeFetcher, url: &str, _max_bytes: usize) -> Result<String, String> {
+    let bytes = fetcher.get(url).await?;
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 

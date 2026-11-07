@@ -18,6 +18,9 @@
 
 use std::time::{Duration, SystemTime};
 
+use std::fmt::Write as _;
+
+use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
@@ -81,8 +84,18 @@ impl Artifact {
         }
         let allow_count = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize;
         let block_count = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
-        let total = allow_count + block_count;
-        if bytes.len() != header_bytes + total * 8 {
+        let header_total =
+            u32::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]) as usize;
+        let total = allow_count
+            .checked_add(block_count)
+            .ok_or("artifact count overflow")?;
+        if header_total != total {
+            return Err("artifact total does not match counts".into());
+        }
+        let expected = header_bytes
+            .checked_add(total.checked_mul(8).ok_or("artifact size overflow")?)
+            .ok_or("artifact size overflow")?;
+        if bytes.len() != expected {
             return Err("artifact length does not match header".into());
         }
         let mut allow = Vec::with_capacity(allow_count);
@@ -163,15 +176,26 @@ impl ArtifactMeta {
 }
 
 fn json_escape(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
+    let mut out = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 // ---- S3 GET (SigV4) ----
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct S3Config {
     pub endpoint: String,
     pub region: String,
@@ -179,17 +203,31 @@ pub struct S3Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub prefix: String,
+    client: reqwest::Client,
 }
 
 impl S3Config {
     pub fn from_env() -> Option<Self> {
+        let endpoint = std::env::var("S3_ENDPOINT").ok()?;
+        let allow_http = std::env::var("ALLOW_HTTP_S3").as_deref() == Ok("1");
+        let local =
+            endpoint.starts_with("http://localhost") || endpoint.starts_with("http://127.0.0.1");
+        if !endpoint.starts_with("https://") && !(allow_http || local) {
+            // Fail closed: SigV4 credentials must never travel in cleartext.
+            return None;
+        }
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .ok()?;
         Some(Self {
-            endpoint: std::env::var("S3_ENDPOINT").ok()?,
+            endpoint,
             region: std::env::var("S3_REGION").unwrap_or_else(|_| "auto".into()),
             bucket: std::env::var("S3_BUCKET").ok()?,
             access_key_id: std::env::var("S3_ACCESS_KEY_ID").ok()?,
             secret_access_key: std::env::var("S3_SECRET_ACCESS_KEY").ok()?,
             prefix: std::env::var("ARTIFACT_PREFIX").unwrap_or_else(|_| "artifacts".into()),
+            client,
         })
     }
 
@@ -198,16 +236,27 @@ impl S3Config {
     }
 
     pub async fn get(&self, hash: &str) -> Result<Vec<u8>, String> {
+        const MAX_ARTIFACT_BYTES: usize = 64 * 1024 * 1024;
         let key = self.key(hash);
         let response = self.request("GET", &key, b"", None).await?;
         if !response.status().is_success() {
             return Err(format!("artifact GET {} -> {}", key, response.status()));
         }
-        Ok(response
-            .bytes()
-            .await
-            .map_err(|err| err.to_string())?
-            .to_vec())
+        if let Some(length) = response.content_length() {
+            if length as usize > MAX_ARTIFACT_BYTES {
+                return Err("artifact exceeds 64 MiB".into());
+            }
+        }
+        let mut stream = response.bytes_stream();
+        let mut out = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|err| err.to_string())?;
+            if out.len() + chunk.len() > MAX_ARTIFACT_BYTES {
+                return Err("artifact exceeds 64 MiB".into());
+            }
+            out.extend_from_slice(&chunk);
+        }
+        Ok(out)
     }
 
     /// PUT an object (used by the raw-log archive). Returns an error on any
@@ -233,7 +282,14 @@ impl S3Config {
             .map(|(_, rest)| rest)
             .unwrap_or(endpoint)
             .trim_end_matches('/');
-        let canonical_uri = format!("/{}/{}", self.bucket, key);
+        let canonical_uri = format!(
+            "/{}/{}",
+            encode_uri_segment(&self.bucket),
+            key.split('/')
+                .map(encode_uri_segment)
+                .collect::<Vec<_>>()
+                .join("/")
+        );
         let url = format!("{endpoint}{canonical_uri}");
 
         let now = OffsetDateTime::now_utc();
@@ -263,11 +319,8 @@ impl S3Config {
             self.access_key_id, scope, signed_headers, signature
         );
 
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|err| err.to_string())?;
-        let mut request = client
+        let mut request = self
+            .client
             .request(method.parse().map_err(|_| "invalid method")?, &url)
             .header("x-amz-content-sha256", &payload_hash)
             .header("x-amz-date", &amz_date)
@@ -281,6 +334,21 @@ impl S3Config {
             .await
             .map_err(|err| err.to_string())
     }
+}
+
+fn encode_uri_segment(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => {
+                let _ = write!(out, "%{byte:02X}");
+            }
+        }
+    }
+    out
 }
 
 fn signing_key(secret: &str, date: &str, region: &str) -> Vec<u8> {

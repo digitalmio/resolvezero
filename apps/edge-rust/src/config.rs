@@ -9,7 +9,7 @@ pub enum UnknownSource {
 }
 
 /// Runtime configuration. Mirrors apps/edge/src/index.ts env usage.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Config {
     pub database_url: String,
     pub doh_port: u16,
@@ -26,6 +26,20 @@ pub struct Config {
     pub poll_interval: Duration,
     pub allow_tokenless: bool,
     pub drop_privileges: bool,
+    pub doh_rate_limit_per_min: u32,
+    pub udp_rate_limit_per_min: u32,
+    pub doh_max_inflight: usize,
+    pub udp_max_inflight: usize,
+    pub tcp_max_connections: usize,
+    pub tcp_idle_timeout: Duration,
+    pub tcp_lifetime: Duration,
+    pub doh_timeout: Duration,
+    pub max_doh_body: usize,
+    pub max_doh_get: usize,
+    pub max_unique_lists: usize,
+    pub list_cycle_deadline: Duration,
+    pub udp_bind: String,
+    pub hosted: bool,
     pub drop_uid: u32,
     pub drop_gid: u32,
 }
@@ -54,8 +68,32 @@ impl Config {
             ),
             poll_interval: Duration::from_millis(number::<u64>("CONFIG_POLL_MS", 5_000).max(500)),
             allow_tokenless: env::var("ALLOW_TOKENLESS_PROFILES").as_deref() == Ok("1"),
-            drop_privileges: env::var("DROP_PRIVILEGES").as_deref() != Ok("0")
-                && env::var("FLY_REGION").is_ok(),
+            drop_privileges: env::var("DROP_PRIVILEGES").as_deref() != Ok("0"),
+            doh_rate_limit_per_min: number("DOH_RATE_LIMIT_PER_MIN", 600),
+            udp_rate_limit_per_min: number("UDP_RATE_LIMIT_PER_MIN", 600),
+            doh_max_inflight: number("DOH_MAX_INFLIGHT", 256),
+            udp_max_inflight: number("UDP_MAX_INFLIGHT", 1024),
+            tcp_max_connections: number("TCP_MAX_CONNECTIONS", 512),
+            tcp_idle_timeout: Duration::from_secs(
+                number::<u64>("TCP_IDLE_TIMEOUT_SECONDS", 30).max(1),
+            ),
+            tcp_lifetime: Duration::from_secs(number::<u64>("TCP_LIFETIME_SECONDS", 300).max(1)),
+            doh_timeout: Duration::from_secs(number::<u64>("DOH_TIMEOUT_SECONDS", 5).max(1)),
+            max_doh_body: number("MAX_DOH_BODY_BYTES", 65_535),
+            max_doh_get: number("MAX_DOH_GET_BYTES", 4_096),
+            max_unique_lists: number("BLOCKLIST_MAX_UNIQUE_LISTS", 256),
+            list_cycle_deadline: Duration::from_secs(
+                number::<u64>("BLOCKLIST_CYCLE_DEADLINE_SECONDS", 180).max(10),
+            ),
+            udp_bind: env::var("UDP_BIND").unwrap_or_else(|_| {
+                if env::var("FLY_REGION").is_ok() {
+                    "fly-global-services".into()
+                } else {
+                    "0.0.0.0".into()
+                }
+            }),
+            hosted: env::var("FLY_REGION").is_ok()
+                && env::var("ALLOW_TOKENLESS_PROFILES").as_deref() != Ok("1"),
             drop_uid: number("DROP_UID", 1000),
             drop_gid: number("DROP_GID", 1000),
         })
@@ -105,6 +143,20 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             allow_tokenless: false,
             drop_privileges: false,
+            doh_rate_limit_per_min: 600,
+            udp_rate_limit_per_min: 600,
+            doh_max_inflight: 256,
+            udp_max_inflight: 1024,
+            tcp_max_connections: 512,
+            tcp_idle_timeout: Duration::from_secs(30),
+            tcp_lifetime: Duration::from_secs(300),
+            doh_timeout: Duration::from_secs(5),
+            max_doh_body: 65_535,
+            max_doh_get: 4_096,
+            max_unique_lists: 256,
+            list_cycle_deadline: Duration::from_secs(180),
+            udp_bind: "0.0.0.0".into(),
+            hosted: false,
             drop_uid: 1000,
             drop_gid: 1000,
         };

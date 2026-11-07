@@ -164,18 +164,29 @@ impl Db {
 /// PlanetScale's URL says `sslrootcert=system`, which means "use the OS trust
 /// store" in node-postgres. sqlx treats it as a file path and fails with ENOENT,
 /// so drop that parameter and let rustls use its bundled roots.
+///
+/// We also enforce `sslmode=verify-full` rather than relying on the URL: sqlx's
+/// default is `Prefer`, which can silently fall back to plaintext. Self-hosters
+/// running a local Postgres without TLS set `DATABASE_SSL=disable`.
 pub fn sanitize_url(url: &str) -> String {
-    let Some((base, query)) = url.split_once('?') else {
-        return url.to_string();
+    let ssl_disabled = std::env::var("DATABASE_SSL").as_deref() == Ok("disable");
+    let (base, query) = match url.split_once('?') {
+        Some((base, query)) => (base, query),
+        None => (url, ""),
     };
-    let kept: Vec<&str> = query
+    let mut params: Vec<String> = query
         .split('&')
-        .filter(|part| !part.is_empty() && !part.starts_with("sslrootcert="))
+        .filter(|part| !part.is_empty())
+        .filter(|part| !part.starts_with("sslrootcert=") && !part.starts_with("sslmode="))
+        .map(str::to_string)
         .collect();
-    if kept.is_empty() {
+    if !ssl_disabled {
+        params.push("sslmode=verify-full".into());
+    }
+    if params.is_empty() {
         base.to_string()
     } else {
-        format!("{base}?{}", kept.join("&"))
+        format!("{base}?{}", params.join("&"))
     }
 }
 
@@ -189,13 +200,17 @@ mod tests {
             sanitize_url("postgresql://u:p@h:6432/db?sslmode=verify-full&sslrootcert=system"),
             "postgresql://u:p@h:6432/db?sslmode=verify-full"
         );
+        assert_eq!(
+            sanitize_url("postgresql://u:p@h:6432/db?sslmode=prefer"),
+            "postgresql://u:p@h:6432/db?sslmode=verify-full"
+        );
     }
 
     #[test]
     fn keeps_other_parameters() {
         assert_eq!(
             sanitize_url("postgresql://u@h/db?sslmode=require&application_name=rz"),
-            "postgresql://u@h/db?sslmode=require&application_name=rz"
+            "postgresql://u@h/db?application_name=rz&sslmode=verify-full"
         );
     }
 }

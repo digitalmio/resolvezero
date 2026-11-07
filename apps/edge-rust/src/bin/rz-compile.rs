@@ -7,10 +7,10 @@
 //! is `<sha256>.json`.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use resolvezero_edge::artifact::{sha256_hex, Artifact, ArtifactMeta};
 use resolvezero_edge::fingerprint::FingerprintTable;
+use resolvezero_edge::netguard::SafeFetcher;
 use resolvezero_edge::parse::{parse_list, ListFormat};
 
 struct Args {
@@ -74,28 +74,8 @@ fn parse_args() -> Result<Args, String> {
 }
 
 async fn fetch_text(url: &str, max_bytes: usize) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .user_agent("rz-compile/0.1")
-        .build()
-        .map_err(|err| err.to_string())?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("HTTP {}", response.status()));
-    }
-    if let Some(length) = response.content_length() {
-        if length as usize > max_bytes {
-            return Err(format!("content-length {length} exceeds {max_bytes}"));
-        }
-    }
-    let bytes = response.bytes().await.map_err(|err| err.to_string())?;
-    if bytes.len() > max_bytes {
-        return Err(format!("body {} exceeds {max_bytes}", bytes.len()));
-    }
+    let fetcher = SafeFetcher::new(max_bytes, true);
+    let bytes = fetcher.get(url).await?;
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 

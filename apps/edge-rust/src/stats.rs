@@ -51,22 +51,37 @@ pub struct QueryEvent {
     pub rtt_ms: Option<i64>,
 }
 
+#[allow(clippy::large_enum_variant)] // boxing every query event would allocate on the hot path
+enum LogMessage {
+    Event(QueryEvent),
+    Shutdown(tokio::sync::oneshot::Sender<()>),
+}
+
 pub struct QueryLogger {
-    tx: mpsc::Sender<QueryEvent>,
+    tx: mpsc::Sender<LogMessage>,
     metrics: Arc<Metrics>,
 }
 
 impl QueryLogger {
     pub fn log(&self, event: QueryEvent) {
-        if self.tx.try_send(event).is_err() {
+        if self.tx.try_send(LogMessage::Event(event)).is_err() {
             Metrics::inc(&self.metrics.log_dropped);
+        }
+    }
+
+    /// Flush pending stats/archive rows before process exit. SIGTERM callers
+    /// await this; a 10 s cap keeps a wedged S3/database from blocking shutdown.
+    pub async fn shutdown(&self) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if self.tx.send(LogMessage::Shutdown(tx)).await.is_ok() {
+            let _ = tokio::time::timeout(Duration::from_secs(10), rx).await;
         }
     }
 }
 
 /// Spawn the flush task. The channel is bounded; DNS never blocks on it.
 pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
-    let (tx, mut rx) = mpsc::channel::<QueryEvent>(20_000);
+    let (tx, mut rx) = mpsc::channel::<LogMessage>(20_000);
     let logger_metrics = metrics.clone();
     tokio::spawn(async move {
         let mut archive = Archive::new(&cfg, metrics.clone());
@@ -78,11 +93,17 @@ pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
         loop {
             tokio::select! {
                 maybe = rx.recv() => match maybe {
-                    Some(event) => {
+                    Some(LogMessage::Event(event)) => {
                         batch.push(event);
                         if batch.len() >= BATCH_SIZE {
                             flush(&db, &mut archive, &mut batch, &mut pending, &metrics).await;
                         }
+                    }
+                    Some(LogMessage::Shutdown(done)) => {
+                        flush(&db, &mut archive, &mut batch, &mut pending, &metrics).await;
+                        archive.flush_all(now()).await;
+                        let _ = done.send(());
+                        break;
                     }
                     None => break,
                 },

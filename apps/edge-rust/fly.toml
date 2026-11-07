@@ -17,6 +17,8 @@ kill_timeout = 15
   METRICS_PORT = "9091"
   LOG_LEVEL = "info"
   ARTIFACT_PREFIX = "artifacts"
+  # DoH-only canary: no UDP service, so bind a normal socket inside the VM.
+  UDP_BIND = "0.0.0.0"
 
 [http_service]
   internal_port = 8080

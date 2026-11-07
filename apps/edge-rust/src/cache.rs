@@ -7,6 +7,7 @@ const MAX_BYTES: usize = 50 * 1024 * 1024;
 #[derive(Debug)]
 struct Entry {
     bytes: Vec<u8>,
+    stored_at: Instant,
     expires: Instant,
 }
 
@@ -19,16 +20,15 @@ pub struct DnsCache {
 }
 
 impl DnsCache {
-    pub fn get(&mut self, key: &str, transaction_id: u16) -> Option<Vec<u8>> {
+    /// Returns the cached wire response plus how long it has been stored;
+    /// callers normalize (strip OPT, rewrite question case, count TTLs down,
+    /// patch transaction id) before returning it to a client.
+    pub fn get(&mut self, key: &str) -> Option<(Vec<u8>, Duration)> {
         let now = Instant::now();
         match self.entries.get(key) {
             Some(entry) if entry.expires > now => {
                 self.hits += 1;
-                let mut bytes = entry.bytes.clone();
-                if bytes.len() >= 2 {
-                    bytes[0..2].copy_from_slice(&transaction_id.to_be_bytes());
-                }
-                Some(bytes)
+                Some((entry.bytes.clone(), now.duration_since(entry.stored_at)))
             }
             Some(_) => {
                 if let Some(removed) = self.entries.remove(key) {
@@ -52,11 +52,13 @@ impl DnsCache {
             self.bytes = self.bytes.saturating_sub(previous.bytes.len());
         }
         self.bytes += bytes.len();
+        let stored_at = Instant::now();
         self.entries.insert(
             key,
             Entry {
                 bytes,
-                expires: Instant::now() + ttl,
+                stored_at,
+                expires: stored_at + ttl,
             },
         );
         self.evict();
@@ -92,11 +94,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn patched_transaction_id_on_hit() {
+    fn hit_returns_bytes_and_age() {
         let mut cache = DnsCache::default();
         cache.put("k".into(), vec![0, 0, 9, 9], Duration::from_secs(30));
-        let hit = cache.get("k", 0x4242).unwrap();
-        assert_eq!(&hit[0..2], &[0x42, 0x42]);
+        let (bytes, age) = cache.get("k").unwrap();
+        assert_eq!(&bytes[0..2], &[0, 0]);
+        assert!(age < Duration::from_secs(1));
         assert_eq!(cache.hits, 1);
     }
 
@@ -105,7 +108,7 @@ mod tests {
         let mut cache = DnsCache::default();
         cache.put("k".into(), vec![0, 0, 9, 9], Duration::from_millis(1));
         std::thread::sleep(Duration::from_millis(5));
-        assert!(cache.get("k", 1).is_none());
+        assert!(cache.get("k").is_none());
         assert_eq!(cache.misses, 1);
     }
 

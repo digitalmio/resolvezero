@@ -1,10 +1,10 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{header, HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -13,7 +13,7 @@ use base64::Engine as _;
 use hickory_proto::rr::RecordType;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tracing::{error, info, warn};
 
 use crate::cache::DnsCache;
@@ -21,6 +21,7 @@ use crate::config::{Config, UnknownSource};
 use crate::db::Db;
 use crate::dns;
 use crate::fingerprint::Action;
+use crate::limits::FixedWindow;
 use crate::lists;
 use crate::metrics::Metrics;
 use crate::stats::{self, QueryEvent, QueryLogger};
@@ -35,6 +36,15 @@ pub struct AppState {
     pub metrics: Arc<Metrics>,
     pub logger: Arc<QueryLogger>,
     pub ready: AtomicBool,
+    pub blocklist_ok: AtomicBool,
+    pub blocklist_failed: AtomicUsize,
+    pub blocklist_error: Mutex<Option<String>>,
+    pub last_sync_at: AtomicI64,
+    doh_rate: FixedWindow,
+    udp_rate: FixedWindow,
+    doh_gate: Semaphore,
+    udp_gate: Arc<Semaphore>,
+    tcp_gate: Arc<Semaphore>,
     sync_lock: tokio::sync::Mutex<()>,
 }
 
@@ -85,18 +95,53 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         metrics,
         logger,
         ready: AtomicBool::new(false),
+        blocklist_ok: AtomicBool::new(false),
+        blocklist_failed: AtomicUsize::new(0),
+        blocklist_error: Mutex::new(None),
+        last_sync_at: AtomicI64::new(0),
+        doh_rate: FixedWindow::new(cfg.doh_rate_limit_per_min, Duration::from_secs(60)),
+        udp_rate: FixedWindow::new(cfg.udp_rate_limit_per_min, Duration::from_secs(60)),
+        doh_gate: Semaphore::new(cfg.doh_max_inflight.max(1)),
+        udp_gate: Arc::new(Semaphore::new(cfg.udp_max_inflight.max(1))),
+        tcp_gate: Arc::new(Semaphore::new(cfg.tcp_max_connections.max(1))),
         sync_lock: tokio::sync::Mutex::new(()),
     });
 
     match lists::sync_once(&db, &store, &cache, &cfg).await {
-        Ok(_) => info!("initial blocklist sync complete"),
-        Err(err) => warn!(%err, "initial blocklist sync failed; serving explicit rules only"),
+        Ok(report) => {
+            state
+                .blocklist_ok
+                .store(report.failed == 0, Ordering::Relaxed);
+            state
+                .blocklist_failed
+                .store(report.failed, Ordering::Relaxed);
+            state.last_sync_at.store(now_seconds(), Ordering::Relaxed);
+            info!(
+                changed = report.changed,
+                failed = report.failed,
+                "initial blocklist sync complete"
+            );
+        }
+        Err(err) => {
+            state.blocklist_ok.store(false, Ordering::Relaxed);
+            *state.blocklist_error.lock().expect("blocklist error") = Some(err.clone());
+            warn!(%err, "initial blocklist sync failed; serving explicit rules only");
+        }
+    }
+    if cfg.hosted {
+        let tokenless = state.store.read().await.tokenless_profiles();
+        if !tokenless.is_empty() {
+            error!(
+                ?tokenless,
+                "hosted edge loaded tokenless profiles; requests will be rejected"
+            );
+        }
     }
 
     // Bind privileged ports before dropping privileges, like the Node edge.
-    let udp = UdpSocket::bind(("0.0.0.0", cfg.dns_port))
+    let udp = UdpSocket::bind((cfg.udp_bind.as_str(), cfg.dns_port))
         .await
-        .map_err(|err| format!("udp {} bind failed: {err}", cfg.dns_port))?;
+        .map_err(|err| format!("udp {}:{} bind failed: {err}", cfg.udp_bind, cfg.dns_port))?;
     let tcp = TcpListener::bind(("0.0.0.0", cfg.dns_port))
         .await
         .map_err(|err| format!("tcp {} bind failed: {err}", cfg.dns_port))?;
@@ -107,12 +152,13 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .await
         .map_err(|err| format!("metrics {} bind failed: {err}", cfg.metrics_port))?;
 
-    if cfg.drop_privileges && unsafe { libc::geteuid() } == 0 {
-        unsafe {
-            libc::setgid(cfg.drop_gid);
-            libc::setuid(cfg.drop_uid);
+    if unsafe { libc::geteuid() } == 0 {
+        if cfg.drop_privileges {
+            drop_privileges(cfg.drop_gid, cfg.drop_uid)?;
+            info!(uid = cfg.drop_uid, gid = cfg.drop_gid, "dropped privileges");
+        } else {
+            warn!("running as root with DROP_PRIVILEGES=0");
         }
-        info!(uid = cfg.drop_uid, gid = cfg.drop_gid, "dropped privileges");
     }
 
     state.ready.store(true, Ordering::Relaxed);
@@ -130,6 +176,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/v1/*rest", get(doh_handler).post(doh_handler))
+        .layer(DefaultBodyLimit::max(cfg.max_doh_body))
         .with_state(state.clone());
     tokio::spawn(async move {
         if let Err(err) = axum::serve(doh_listener, doh_app).await {
@@ -154,6 +201,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     ));
 
     wait_for_shutdown().await;
+    state.logger.shutdown().await;
     info!("shutting down");
     Ok(())
 }
@@ -205,6 +253,8 @@ async fn wait_for_shutdown() {
 }
 
 async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_blocklist: i32) {
+    let mut last_sync = Instant::now();
+    let mut next_retry = Instant::now();
     loop {
         tokio::time::sleep(state.cfg.poll_interval).await;
         let versions = match db.versions().await {
@@ -225,6 +275,15 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
                         snapshot.ips,
                         snapshot.zones,
                     );
+                    if state.cfg.hosted {
+                        let tokenless = guard.tokenless_profiles();
+                        if !tokenless.is_empty() {
+                            error!(
+                                ?tokenless,
+                                "hosted edge loaded tokenless profiles; requests will be rejected"
+                            );
+                        }
+                    }
                     drop(guard);
                     last_config = versions.config;
                     info!(version = versions.config, "config snapshot loaded");
@@ -233,12 +292,34 @@ async fn poll_loop(db: Db, state: Arc<AppState>, mut last_config: i32, mut last_
             }
         }
 
-        if versions.blocklist != last_blocklist {
-            last_blocklist = versions.blocklist;
+        let due =
+            versions.blocklist != last_blocklist || last_sync.elapsed() >= state.cfg.list_interval;
+        if due && Instant::now() >= next_retry {
             let _guard = state.sync_lock.lock().await;
             match lists::sync_once(&db, &state.store, &state.cache, &state.cfg).await {
-                Ok(changed) => info!(changed, "blocklist sync complete"),
-                Err(err) => warn!(%err, "blocklist sync failed"),
+                Ok(report) => {
+                    last_blocklist = versions.blocklist;
+                    last_sync = Instant::now();
+                    state
+                        .blocklist_ok
+                        .store(report.failed == 0, Ordering::Relaxed);
+                    state
+                        .blocklist_failed
+                        .store(report.failed, Ordering::Relaxed);
+                    state.last_sync_at.store(now_seconds(), Ordering::Relaxed);
+                    *state.blocklist_error.lock().expect("blocklist error") = None;
+                    info!(
+                        changed = report.changed,
+                        failed = report.failed,
+                        "blocklist sync complete"
+                    );
+                }
+                Err(err) => {
+                    state.blocklist_ok.store(false, Ordering::Relaxed);
+                    *state.blocklist_error.lock().expect("blocklist error") = Some(err.clone());
+                    next_retry = Instant::now() + Duration::from_secs(30);
+                    warn!(%err, "blocklist sync failed; retrying");
+                }
             }
         }
     }
@@ -346,12 +427,7 @@ async fn resolve_wire(
     let label = upstream_label(selector.as_deref());
     let url = state.upstream.url_for(selector.as_deref());
     let key = dns::cache_key(&question, &url);
-    if let Some(bytes) = state
-        .cache
-        .lock()
-        .expect("cache lock")
-        .get(&key, question.id)
-    {
+    if let Some((bytes, age)) = state.cache.lock().expect("cache lock").get(&key) {
         Metrics::inc(&state.metrics.cache_hits);
         if !prelogged {
             record(
@@ -366,7 +442,8 @@ async fn resolve_wire(
                 None,
             );
         }
-        return Some(bytes);
+        // Strip OPT, rewrite the question case, count TTLs down, patch id.
+        return Some(dns::normalize_for_client(&bytes, &question, age).unwrap_or(bytes));
     }
     Metrics::inc(&state.metrics.cache_misses);
 
@@ -374,12 +451,17 @@ async fn resolve_wire(
     match state.upstream.resolve(wire, selector.as_deref()).await {
         Ok(response) => {
             let rtt = started.elapsed().as_millis() as i64;
-            let ttl = dns::cache_ttl(&response);
-            state
-                .cache
-                .lock()
-                .expect("cache lock")
-                .put(key, response.clone(), ttl);
+            // Normalize before returning and caching: no OPT/ECS replay.
+            let normalized =
+                dns::normalize_for_client(&response, &question, Duration::ZERO).unwrap_or(response);
+            let ttl = dns::cache_ttl(&normalized);
+            if !ttl.is_zero() {
+                state
+                    .cache
+                    .lock()
+                    .expect("cache lock")
+                    .put(key, normalized.clone(), ttl);
+            }
             Metrics::inc(&state.metrics.forwarded);
             if !prelogged {
                 record(
@@ -394,7 +476,7 @@ async fn resolve_wire(
                     Some(rtt),
                 );
             }
-            Some(response)
+            Some(normalized)
         }
         Err(err) => {
             warn!(%err, "upstream failed");
@@ -475,21 +557,53 @@ async fn udp_loop(socket: Arc<UdpSocket>, state: Arc<AppState>) {
     loop {
         match socket.recv_from(&mut buffer).await {
             Ok((len, peer)) => {
+                let source = peer.ip().to_string();
+                if !state.udp_rate.allow(&source) {
+                    if state.cfg.unknown_source == UnknownSource::Refused {
+                        if let Some(question) = dns::parse_query(&buffer[..len]) {
+                            let _ = socket
+                                .send_to(&dns::refused_response(&question), peer)
+                                .await;
+                        }
+                    }
+                    Metrics::inc(&state.metrics.drops);
+                    continue;
+                }
+                let permit = match state.udp_gate.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        Metrics::inc(&state.metrics.drops);
+                        continue;
+                    }
+                };
                 let wire = buffer[..len].to_vec();
                 let socket = socket.clone();
                 let state = state.clone();
                 tokio::spawn(async move {
-                    let profile = state
-                        .store
-                        .read()
-                        .await
-                        .authorize_ip(&peer.ip().to_string())
-                        .cloned();
+                    let _permit = permit;
+                    let profile = state.store.read().await.authorize_ip(&source).cloned();
+                    let profile = match profile {
+                        Some(profile) => {
+                            let tokenless = state.cfg.hosted
+                                && state
+                                    .store
+                                    .read()
+                                    .await
+                                    .profile_meta(&profile)
+                                    .is_some_and(|meta| meta.token.is_none());
+                            if tokenless {
+                                None
+                            } else {
+                                Some(profile)
+                            }
+                        }
+                        None => None,
+                    };
                     let response = match profile {
                         Some(profile) => {
                             let log_enabled = state.store.read().await.should_log(&profile);
                             let context = QueryContext {
-                                client_ip: Some(peer.ip().to_string()),
+                                client_ip: Some(source),
                                 device: None,
                                 transport: "udp",
                                 log_enabled,
@@ -506,7 +620,29 @@ async fn udp_loop(socket: Arc<UdpSocket>, state: Arc<AppState>) {
                     };
                     match response {
                         Some(bytes) => {
-                            let _ = socket.send_to(&bytes, peer).await;
+                            // UDP clients advertise their buffer via EDNS; never
+                            // send a datagram they cannot receive. Signal TC so
+                            // they retry over TCP instead.
+                            let max_payload = dns::parse_query(&wire)
+                                .map(|q| {
+                                    q.query
+                                        .edns
+                                        .as_ref()
+                                        .map(|edns| edns.max_payload())
+                                        .unwrap_or(512)
+                                        .clamp(512, 4096)
+                                })
+                                .unwrap_or(512);
+                            let out = if bytes.len() > max_payload as usize {
+                                dns::parse_query(&wire)
+                                    .map(|q| dns::truncated_response(&q))
+                                    .unwrap_or(bytes)
+                            } else {
+                                bytes
+                            };
+                            if let Err(err) = socket.send_to(&out, peer).await {
+                                warn!(%err, %peer, "udp send failed");
+                            }
                         }
                         None => Metrics::inc(&state.metrics.drops),
                     }
@@ -524,8 +660,16 @@ async fn tcp_loop(listener: TcpListener, state: Arc<AppState>) {
     loop {
         match listener.accept().await {
             Ok((stream, peer)) => {
+                let permit = match state.tcp_gate.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        Metrics::inc(&state.metrics.drops);
+                        continue;
+                    }
+                };
                 let state = state.clone();
                 tokio::spawn(async move {
+                    let _permit = permit;
                     if let Err(err) = handle_tcp(stream, peer, state).await {
                         warn!(%err, %peer, "tcp connection ended");
                     }
@@ -544,10 +688,30 @@ async fn handle_tcp(
     peer: SocketAddr,
     state: Arc<AppState>,
 ) -> std::io::Result<()> {
-    let source = read_proxy_source(&mut stream)
-        .await
-        .unwrap_or_else(|| peer.ip().to_string());
+    let source =
+        match tokio::time::timeout(Duration::from_secs(5), read_proxy_source(&mut stream)).await {
+            Ok(Some(source)) => source,
+            _ => peer.ip().to_string(),
+        };
+
     let profile = state.store.read().await.authorize_ip(&source).cloned();
+    let profile = match profile {
+        Some(profile) => {
+            let tokenless = state.cfg.hosted
+                && state
+                    .store
+                    .read()
+                    .await
+                    .profile_meta(&profile)
+                    .is_some_and(|meta| meta.token.is_none());
+            if tokenless {
+                None
+            } else {
+                Some(profile)
+            }
+        }
+        None => None,
+    };
     let log_enabled = match &profile {
         Some(profile) => state.store.read().await.should_log(profile),
         None => false,
@@ -558,18 +722,27 @@ async fn handle_tcp(
         transport: "tcp",
         log_enabled,
     };
+    let deadline = Instant::now() + state.cfg.tcp_lifetime;
 
     loop {
-        let mut length = [0u8; 2];
-        if stream.read_exact(&mut length).await.is_err() {
+        if Instant::now() >= deadline {
             return Ok(());
+        }
+        let mut length = [0u8; 2];
+        match tokio::time::timeout(state.cfg.tcp_idle_timeout, stream.read_exact(&mut length)).await
+        {
+            Ok(Ok(_)) => {}
+            _ => return Ok(()),
         }
         let length = u16::from_be_bytes(length) as usize;
         if length == 0 {
             return Ok(());
         }
         let mut wire = vec![0u8; length];
-        stream.read_exact(&mut wire).await?;
+        match tokio::time::timeout(state.cfg.tcp_idle_timeout, stream.read_exact(&mut wire)).await {
+            Ok(Ok(_)) => {}
+            _ => return Ok(()),
+        }
 
         let response = match &profile {
             Some(profile) => resolve_wire(&state, &wire, profile, &context).await,
@@ -583,6 +756,16 @@ async fn handle_tcp(
         };
         match response {
             Some(bytes) => {
+                if bytes.len() > 65_535 {
+                    Metrics::inc(&state.metrics.drops);
+                    if let Some(question) = dns::parse_query(&wire) {
+                        let fallback = dns::servfail_response(&question);
+                        let len = (fallback.len() as u16).to_be_bytes();
+                        stream.write_all(&len).await?;
+                        stream.write_all(&fallback).await?;
+                    }
+                    continue;
+                }
                 let len = (bytes.len() as u16).to_be_bytes();
                 stream.write_all(&len).await?;
                 stream.write_all(&bytes).await?;
@@ -649,6 +832,26 @@ async fn doh_handler(
     uri: Uri,
     body: Bytes,
 ) -> Response {
+    let client_ip = headers
+        .get("fly-client-ip")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .or_else(|| {
+            headers
+                .get("x-forwarded-for")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(',').next())
+                .map(|value| value.trim().to_string())
+        });
+    let client_key = client_ip.clone().unwrap_or_else(|| "unknown".into());
+    if !state.doh_rate.allow(&client_key) {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+    let _permit = match state.doh_gate.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => return StatusCode::TOO_MANY_REQUESTS.into_response(),
+    };
+
     let parts: Vec<&str> = rest.split('/').filter(|part| !part.is_empty()).collect();
     if parts.is_empty() || parts.len() > 3 {
         return StatusCode::NOT_FOUND.into_response();
@@ -682,6 +885,17 @@ async fn doh_handler(
     if !state.store.read().await.has_profile(profile_id, token) {
         return StatusCode::NOT_FOUND.into_response();
     }
+    if state.cfg.hosted {
+        let tokenless = state
+            .store
+            .read()
+            .await
+            .profile_meta(profile_id)
+            .is_some_and(|meta| meta.token.is_none());
+        if tokenless {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+    }
 
     let wire = if method == Method::GET {
         let Some(query) = uri.query() else {
@@ -692,10 +906,21 @@ async fn doh_handler(
             return StatusCode::BAD_REQUEST.into_response();
         };
         match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(value) {
-            Ok(wire) => wire,
-            Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+            Ok(wire) if wire.len() <= state.cfg.max_doh_get => wire,
+            _ => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
         }
     } else if method == Method::POST {
+        if let Some(content_type) = headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+        {
+            if !content_type.starts_with("application/dns-message") {
+                return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
+            }
+        }
+        if body.len() > state.cfg.max_doh_body {
+            return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        }
         body.to_vec()
     } else {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
@@ -705,17 +930,6 @@ async fn doh_handler(
         return StatusCode::BAD_REQUEST.into_response();
     }
 
-    let client_ip = headers
-        .get("fly-client-ip")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string)
-        .or_else(|| {
-            headers
-                .get("x-forwarded-for")
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.split(',').next())
-                .map(|value| value.trim().to_string())
-        });
     let log_enabled = state.store.read().await.should_log(profile_id);
     let context = QueryContext {
         client_ip,
@@ -724,13 +938,22 @@ async fn doh_handler(
         log_enabled,
     };
 
-    match resolve_wire(&state, &wire, profile_id, &context).await {
-        Some(response) => (
-            [(header::CONTENT_TYPE, "application/dns-message")],
+    match tokio::time::timeout(
+        state.cfg.doh_timeout,
+        resolve_wire(&state, &wire, profile_id, &context),
+    )
+    .await
+    {
+        Ok(Some(response)) => (
+            [
+                (header::CONTENT_TYPE, "application/dns-message"),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
             response,
         )
             .into_response(),
-        None => StatusCode::BAD_REQUEST.into_response(),
+        Ok(None) => StatusCode::BAD_REQUEST.into_response(),
+        Err(_) => StatusCode::GATEWAY_TIMEOUT.into_response(),
     }
 }
 
@@ -747,12 +970,31 @@ async fn healthz() -> StatusCode {
 
 async fn readyz(State(state): State<Arc<AppState>>) -> Response {
     let store = state.store.read().await;
+    let ready = state.ready.load(Ordering::Relaxed);
+    let blocklist_ok = state.blocklist_ok.load(Ordering::Relaxed);
+    let failed = state.blocklist_failed.load(Ordering::Relaxed);
+    let error = state
+        .blocklist_error
+        .lock()
+        .expect("blocklist error")
+        .clone();
+    let last_sync = state.last_sync_at.load(Ordering::Relaxed);
+    let last_sync_age = if last_sync == 0 {
+        None
+    } else {
+        Some((now_seconds() - last_sync).max(0) * 1000)
+    };
+    let ok = ready && blocklist_ok;
     let body = serde_json::json!({
-        "ok": state.ready.load(Ordering::Relaxed),
+        "ok": ok,
         "region": state.cfg.region,
         "rulesLoaded": true,
-        "blocklistsLoaded": true,
+        "blocklistsLoaded": blocklist_ok,
         "dns53Bound": true,
+        "blocklistOk": blocklist_ok,
+        "blocklistError": error.is_some(),
+        "failedBlocklists": failed,
+        "blocklistLastSyncAgeMs": last_sync_age,
         "remoteLists": store.remote_rules(),
         "remoteListTables": store.catalog.len(),
         "artifactLists": store.artifact_lists,
@@ -761,7 +1003,12 @@ async fn readyz(State(state): State<Arc<AppState>>) -> Response {
         "rssMb": crate::metrics::rss_bytes() / 1024 / 1024,
         "memoryLimitMb": memory_limit_mb(),
     });
-    (StatusCode::OK, axum::Json(body)).into_response()
+    let status = if ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (status, axum::Json(body)).into_response()
 }
 
 fn memory_limit_mb() -> u64 {
@@ -776,7 +1023,53 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     let cache = state.cache.lock().expect("cache lock");
     (
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        state.metrics.render(&store, &cache),
+        state.metrics.render(
+            &store,
+            &cache,
+            state.blocklist_failed.load(Ordering::Relaxed),
+        ),
     )
         .into_response()
+}
+
+fn now_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+/// Drop root after binding privileged ports. Every step is checked: a silent
+/// failure would leave the data plane running as root.
+fn drop_privileges(gid: u32, uid: u32) -> Result<(), String> {
+    unsafe {
+        if libc::setgroups(0, std::ptr::null()) != 0 {
+            return Err(format!(
+                "setgroups failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        if libc::setgid(gid) != 0 {
+            return Err(format!(
+                "setgid({gid}) failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        if libc::setuid(uid) != 0 {
+            return Err(format!(
+                "setuid({uid}) failed: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
+                return Err(format!(
+                    "PR_SET_NO_NEW_PRIVS failed: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+        }
+    }
+    Ok(())
 }

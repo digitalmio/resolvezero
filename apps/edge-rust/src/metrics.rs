@@ -42,7 +42,7 @@ impl Metrics {
 
     /// Prometheus text. Shaped like the Node edge's metrics so existing
     /// dashboards can be pointed at a Rust machine.
-    pub fn render(&self, store: &RuleStore, cache: &DnsCache) -> String {
+    pub fn render(&self, store: &RuleStore, cache: &DnsCache, blocklist_failed: usize) -> String {
         let mut out = String::with_capacity(1024);
         out.push_str("# HELP rz_queries_total DNS queries handled\n");
         out.push_str("# TYPE rz_queries_total counter\n");
@@ -98,6 +98,8 @@ impl Metrics {
         out.push_str(&format!("rz_artifact_lists {}\n", store.artifact_lists));
         out.push_str("# TYPE rz_raw_lists gauge\n");
         out.push_str(&format!("rz_raw_lists {}\n", store.raw_lists));
+        out.push_str("# TYPE rz_blocklist_failed gauge\n");
+        out.push_str(&format!("rz_blocklist_failed {}\n", blocklist_failed));
         out.push_str("# TYPE rz_dns_cache_entries gauge\n");
         out.push_str(&format!("rz_dns_cache_entries {}\n", cache.len()));
         out.push_str("# TYPE rz_uptime_seconds gauge\n");

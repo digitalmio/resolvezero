@@ -28,6 +28,12 @@ Cloudflare/Google and h2 only for Quad9).
 Caveats: the load generator shares the host, and the numbers are relative, not
 a Fly benchmark. `TOKIO_WORKER_THREADS=1` pins the runtime for per-core runs.
 
+## Security
+
+The SSRF guard, upstream validation, ingress limits, cache normalization,
+privilege drop, and readiness semantics are documented (with the still-open
+gaps) in [`docs/rust-edge-security.md`](../../docs/rust-edge-security.md).
+
 ## Artifacts
 
 Rule lists are compiled into content-addressed artifacts (see
