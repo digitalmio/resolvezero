@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: ./.github/actions/setup-flyctl
       - name: install dnsutils (dig)
         run: sudo apt-get update && sudo apt-get install -y dnsutils
       - name: probe + self-heal

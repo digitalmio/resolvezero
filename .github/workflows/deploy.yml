@@ -76,7 +76,7 @@ jobs:
     needs: migrate
     steps:
       - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: ./.github/actions/setup-flyctl
       - name: capture current edge image (rollback target)
         run: |
           FLYBIN=flyctl
@@ -166,7 +166,7 @@ jobs:
     if: vars.DEPLOY_CONSOLE == 'true'
     steps:
       - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: ./.github/actions/setup-flyctl
       - name: deploy (fra, one machine)
         run: flyctl deploy --config fly.console.toml --remote-only --ha=false
         env:

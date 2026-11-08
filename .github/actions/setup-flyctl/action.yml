@@ -1,0 +1,26 @@
+name: setup flyctl
+description: Install flyctl with retries (Fly's install endpoint occasionally returns 504)
+
+runs:
+  using: composite
+  steps:
+    - name: install flyctl
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v flyctl >/dev/null 2>&1; then
+          echo "flyctl already installed: $(command -v flyctl)"
+          exit 0
+        fi
+        for attempt in 1 2 3 4 5; do
+          if curl -fsSL https://fly.io/install.sh | sh; then
+            echo "$HOME/.fly/bin" >> "$GITHUB_PATH"
+            echo "flyctl installed"
+            exit 0
+          fi
+          delay=$((attempt * 10))
+          echo "flyctl install attempt ${attempt} failed; retrying in ${delay}s" >&2
+          sleep "$delay"
+        done
+        echo "::error::flyctl install failed after 5 attempts" >&2
+        exit 1

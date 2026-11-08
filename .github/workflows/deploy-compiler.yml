@@ -22,7 +22,7 @@ jobs:
       S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: ./.github/actions/setup-flyctl
       - name: create app if missing
         run: flyctl apps create resolvezero-compiler --org digital-mio || true
       - name: secrets
