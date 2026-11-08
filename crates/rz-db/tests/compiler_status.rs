@@ -66,10 +66,52 @@ async fn compiler_status_roundtrip() {
         .await
         .expect("record failure");
 
+    let profile_id = "itest001";
+    sqlx::query("delete from profile_blocklists where profile_id = $1")
+        .bind(profile_id)
+        .execute(db.pool())
+        .await
+        .expect("clean old blocklists");
+    sqlx::query("delete from profiles where id = $1")
+        .bind(profile_id)
+        .execute(db.pool())
+        .await
+        .expect("clean old profile");
+    sqlx::query("insert into profiles (id, name) values ($1, 'integration')")
+        .bind(profile_id)
+        .execute(db.pool())
+        .await
+        .expect("insert profile");
+    sqlx::query(
+        "insert into profile_blocklists (profile_id, url, format, enabled, compiled_at)
+         values ($1, 'https://example.invalid/list.txt', 'hosts', true, now())",
+    )
+    .bind(profile_id)
+    .execute(db.pool())
+    .await
+    .expect("insert blocklist");
+
     let (oldest, missing) = db.artifact_freshness().await.expect("freshness");
     assert!(oldest.is_some());
+    assert_eq!(missing, 1);
+    sqlx::query("update profile_blocklists set artifact_hash = 'deadbeef' where profile_id = $1")
+        .bind(profile_id)
+        .execute(db.pool())
+        .await
+        .expect("set artifact hash");
+    let (_, missing) = db.artifact_freshness().await.expect("freshness");
     assert_eq!(missing, 0);
 
+    sqlx::query("delete from profile_blocklists where profile_id = $1")
+        .bind(profile_id)
+        .execute(db.pool())
+        .await
+        .expect("clean blocklist");
+    sqlx::query("delete from profiles where id = $1")
+        .bind(profile_id)
+        .execute(db.pool())
+        .await
+        .expect("clean profile");
     sqlx::query("delete from compiler_status where instance = $1")
         .bind(&instance)
         .execute(db.pool())
