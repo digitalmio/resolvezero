@@ -498,3 +498,27 @@ export const ruleArtifacts = pgTable("rule_artifacts", {
   compiler: varchar("compiler", { length: 40 }).notNull().default("rz-compile/0.1"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Per-instance heartbeat and last-cycle report from the artifact compiler.
+ * One row per Fly machine; the monitor uses the freshest row.
+ */
+export const compilerStatus = pgTable("compiler_status", {
+  instance: text("instance").primaryKey(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  lastPollAt: timestamp("last_poll_at", { withTimezone: true }).notNull().defaultNow(),
+  lastCycleAt: timestamp("last_cycle_at", { withTimezone: true }),
+  lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  lastRefreshAt: timestamp("last_refresh_at", { withTimezone: true }),
+  lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  listsTotal: integer("lists_total").notNull().default(0),
+  listsStale: integer("lists_stale").notNull().default(0),
+  listsCompiled: integer("lists_compiled").notNull().default(0),
+  listsFailed: integer("lists_failed").notNull().default(0),
+  listsChanged: integer("lists_changed").notNull().default(0),
+  missingArtifacts: integer("missing_artifacts").notNull().default(0),
+  oldestCompiledAt: timestamp("oldest_compiled_at", { withTimezone: true }),
+  blocklistVersion: integer("blocklist_version"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

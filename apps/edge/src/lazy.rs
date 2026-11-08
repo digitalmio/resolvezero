@@ -22,6 +22,7 @@ use rz_db::Db;
 pub struct LoadReport {
     pub loaded: usize,
     pub failed: usize,
+    pub pending: usize,
     pub changed: bool,
 }
 
@@ -86,12 +87,23 @@ pub async fn ensure_profile_loaded(
             continue;
         }
 
+        if cfg.artifact_only && subscription.artifact_hash.is_none() {
+            report.pending += 1;
+            info!(
+                profile_id,
+                url = %redact_url(&subscription.url),
+                "artifact pending; skipping raw list"
+            );
+            continue;
+        }
+
         match lists::load_table(
             &fetcher,
             s3.as_ref(),
             &subscription.url,
             &subscription.format,
             subscription.artifact_hash.as_deref(),
+            !cfg.artifact_only,
         )
         .await
         {
@@ -153,7 +165,7 @@ pub async fn ensure_profile_loaded(
     store
         .write()
         .await
-        .mark_profile_loaded(profile_id, report.failed);
+        .mark_profile_loaded(profile_id, report.failed.saturating_add(report.pending));
     Ok(report)
 }
 
@@ -249,5 +261,34 @@ mod tests {
         assert_eq!(report.loaded, 0);
         assert_eq!(report.failed, 0);
         assert!(store.read().await.is_profile_loaded("home", cfg.list_retry));
+    }
+
+    #[tokio::test]
+    async fn artifact_only_skips_raw_pending_list() {
+        let mut cfg = Config::for_test();
+        cfg.artifact_only = true;
+        let db = Db::lazy_for_test();
+        let store = Arc::new(RwLock::new(RuleStore::default()));
+        store
+            .write()
+            .await
+            .replace_config(vec![profile("home")], vec![], vec![], vec![], vec![]);
+        store.write().await.wire_subscriptions(
+            "home",
+            vec![Subscription {
+                url: "https://lists/new.txt".into(),
+                list_id: None,
+                format: "hosts".into(),
+                artifact_hash: None,
+            }],
+        );
+        let gate = Mutex::new(());
+
+        let report = ensure_profile_loaded(&db, &store, &cfg, "home", &gate)
+            .await
+            .expect("pending artifact is not an error");
+        assert_eq!(report.loaded, 0);
+        assert_eq!(report.failed, 0);
+        assert_eq!(report.pending, 1);
     }
 }

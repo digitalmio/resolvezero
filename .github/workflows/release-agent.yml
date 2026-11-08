@@ -1,0 +1,50 @@
+# Build the Rust agent as a static Linux binary.
+#
+# Release: push a tag like agent-v0.1.0.
+# Test build: run this workflow manually (binaries are uploaded as artifacts).
+name: release-agent
+
+on:
+  push:
+    tags:
+      - "agent-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x86_64:
+    name: linux x86_64 (musl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - name: install musl toolchain
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: build
+        run: cargo build --release --locked -p resolvezero-agent --bin resolvezero-agent --target x86_64-unknown-linux-musl
+      - name: package
+        run: |
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-musl/release/resolvezero-agent \
+             dist/resolvezero-agent-linux-x86_64
+          (cd dist && shasum -a 256 resolvezero-agent-linux-x86_64 > resolvezero-agent-linux-x86_64.sha256)
+          ls -lh dist
+      - name: upload build artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolvezero-agent-linux-x86_64
+          path: dist/*
+      - name: publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/agent-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/resolvezero-agent-linux-x86_64
+            dist/resolvezero-agent-linux-x86_64.sha256
+          generate_release_notes: true

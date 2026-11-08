@@ -9,6 +9,7 @@ mod compiler;
 mod queries;
 mod rows;
 
+pub use compiler::CycleStatus;
 pub use rows::{
     BlockedServiceRow, BlocklistRow, CompileTarget, ProfileRow, RuleRow, SourceIpRow, ZoneRow,
 };

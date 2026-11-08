@@ -1544,6 +1544,7 @@ version = "0.1.0"
 dependencies = [
  "rz-core",
  "sqlx",
+ "tokio",
 ]
 
 [[package]]

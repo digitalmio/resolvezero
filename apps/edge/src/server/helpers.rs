@@ -1,10 +1,13 @@
 use super::{AppState, QueryContext};
+use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hickory_proto::rr::RecordType;
 
 use crate::dns;
+use crate::lazy;
 use crate::stats::QueryEvent;
+use tracing::{info, warn};
 
 #[allow(clippy::too_many_arguments)] // one call site per decision; a struct hides the shape
 pub(super) fn record(
@@ -72,5 +75,59 @@ pub(super) fn record_type_name(record_type: RecordType) -> &'static str {
         RecordType::CNAME => "CNAME",
         RecordType::TXT => "TXT",
         _ => "OTHER",
+    }
+}
+
+pub(super) async fn ensure_lists(state: &AppState, profile: &str) {
+    match lazy::ensure_profile_loaded(
+        &state.db,
+        &state.store,
+        &state.cfg,
+        profile,
+        &state.list_gate,
+    )
+    .await
+    {
+        Ok(report) if report.changed => {
+            state.cache.clear();
+            state.blocklist_failed.store(0, Ordering::Relaxed);
+            state.blocklist_ok.store(true, Ordering::Relaxed);
+            *state.blocklist_error.lock().expect("blocklist error") = None;
+            info!(
+                profile,
+                loaded = report.loaded,
+                failed = report.failed,
+                "lazy lists changed; dns cache flushed"
+            );
+        }
+        Ok(report) if report.failed > 0 => {
+            state
+                .blocklist_failed
+                .store(report.failed, Ordering::Relaxed);
+            state.blocklist_ok.store(false, Ordering::Relaxed);
+            *state.blocklist_error.lock().expect("blocklist error") =
+                Some(format!("lazy list load failed for {profile}"));
+            warn!(
+                profile,
+                loaded = report.loaded,
+                failed = report.failed,
+                "lazy list load incomplete; retrying"
+            );
+        }
+        Ok(report) if report.loaded > 0 => {
+            state.blocklist_failed.store(0, Ordering::Relaxed);
+            state.blocklist_ok.store(true, Ordering::Relaxed);
+            *state.blocklist_error.lock().expect("blocklist error") = None;
+            info!(profile, loaded = report.loaded, "lazy lists ready");
+        }
+        Ok(report) if report.pending > 0 => {
+            info!(
+                profile,
+                pending = report.pending,
+                "artifacts pending; list filtering waits"
+            );
+        }
+        Ok(_) => {}
+        Err(err) => warn!(profile, %err, "lazy list load failed"),
     }
 }

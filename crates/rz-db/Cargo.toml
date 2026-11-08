@@ -8,3 +8,6 @@ license = "MIT"
 [dependencies]
 rz-core = { path = "../rz-core" }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

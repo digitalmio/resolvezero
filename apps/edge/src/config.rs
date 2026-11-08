@@ -25,6 +25,8 @@ pub struct Config {
     pub list_interval: Duration,
     /// Load list bodies on first use instead of at startup (default).
     pub lazy_lists: bool,
+    /// Hosted default: never parse raw list text; wait for a compiled artifact.
+    pub artifact_only: bool,
     /// Retry a profile's failed lazy loads after this delay.
     pub list_retry: Duration,
     pub poll_interval: Duration,
@@ -60,6 +62,13 @@ impl Config {
     pub fn from_env() -> Result<Self, String> {
         let database_url =
             env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is not set".to_string())?;
+        let hosted = env::var("FLY_REGION").is_ok()
+            && env::var("ALLOW_TOKENLESS_PROFILES").as_deref() != Ok("1");
+        let eager = env::var("EAGER_BLOCKLISTS").as_deref() == Ok("1");
+        let artifact_only = !eager
+            && env::var("ARTIFACT_ONLY_LISTS")
+                .map(|value| value != "0")
+                .unwrap_or(hosted);
         Ok(Self {
             database_url,
             doh_port: number("PORT", 8080),
@@ -78,7 +87,8 @@ impl Config {
             list_interval: Duration::from_secs(
                 number::<u64>("LIST_SYNC_INTERVAL_SECONDS", 6 * 3600).max(60),
             ),
-            lazy_lists: env::var("EAGER_BLOCKLISTS").as_deref() != Ok("1"),
+            lazy_lists: !eager,
+            artifact_only,
             list_retry: Duration::from_secs(
                 number::<u64>("BLOCKLIST_LAZY_RETRY_SECONDS", 60).max(5),
             ),
@@ -110,8 +120,7 @@ impl Config {
                     "0.0.0.0".into()
                 }
             }),
-            hosted: env::var("FLY_REGION").is_ok()
-                && env::var("ALLOW_TOKENLESS_PROFILES").as_deref() != Ok("1"),
+            hosted,
             probe_domain: Some(
                 env::var("PROBE_DOMAIN")
                     .unwrap_or_else(|_| "probe.resolvezero.com".into())
@@ -163,6 +172,7 @@ impl Config {
             max_lists_per_profile: 64,
             list_interval: Duration::from_secs(60),
             lazy_lists: true,
+            artifact_only: false,
             list_retry: Duration::from_secs(60),
             poll_interval: Duration::from_millis(500),
             allow_tokenless: false,
@@ -225,6 +235,7 @@ mod tests {
             max_lists_per_profile: 64,
             list_interval: Duration::from_secs(60),
             lazy_lists: true,
+            artifact_only: false,
             list_retry: Duration::from_secs(60),
             poll_interval: Duration::from_millis(500),
             allow_tokenless: false,

@@ -1,0 +1,63 @@
+# Postgres-backed integration tests for the shared DB layer.
+name: integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/db/**"
+      - "crates/rz-db/**"
+      - "scripts/migrate.ts"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/integration.yml"
+  pull_request:
+    paths:
+      - "packages/db/**"
+      - "crates/rz-db/**"
+      - "scripts/migrate.ts"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resolvezero
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d resolvezero"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/resolvezero?sslmode=disable
+      DATABASE_URL_ADMIN: postgres://postgres:postgres@localhost:5432/resolvezero?sslmode=disable
+      DATABASE_SSL: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: migrate
+        run: pnpm exec tsx scripts/migrate.ts
+      - name: db integration tests
+        run: cargo test -p rz-db --test compiler_status -- --nocapture

@@ -7,7 +7,7 @@
 //! watermark once per cycle if anything changed.
 //!
 //! New user URLs have `artifact_hash = NULL`, so they are picked up on the next
-//! poll (30 s) rather than waiting for the 6-hour refresh.
+//! poll (10 s) rather than waiting for the 6-hour refresh.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -15,12 +15,13 @@ use rz_core::artifact::{sha256_hex, Artifact, ArtifactMeta, S3Config};
 use rz_core::fingerprint::FingerprintTable;
 use rz_core::netguard::{redact_url, SafeFetcher};
 use rz_core::parse::{parse_list, ListFormat};
-use rz_db::Db;
+use rz_db::{CycleStatus, Db};
 use tracing::{error, info, warn};
 
 struct Config {
     interval: Duration,
     poll: Duration,
+    heartbeat: Duration,
     max_bytes: usize,
     force_once: bool,
 }
@@ -35,7 +36,8 @@ impl Config {
         };
         Self {
             interval: Duration::from_secs(num("COMPILE_INTERVAL_SECONDS", 6 * 3600).max(60)),
-            poll: Duration::from_secs(num("COMPILE_POLL_SECONDS", 30).max(5)),
+            poll: Duration::from_secs(num("COMPILE_POLL_SECONDS", 10).max(5)),
+            heartbeat: Duration::from_secs(num("COMPILER_HEARTBEAT_SECONDS", 15).max(5)),
             max_bytes: num("BLOCKLIST_MAX_LIST_BYTES", 30 * 1024 * 1024) as usize,
             force_once: std::env::var("FORCE_COMPILE").as_deref() == Ok("1"),
         }
@@ -71,19 +73,34 @@ async fn main() {
     };
     let config = Config::from_env();
     let fetcher = SafeFetcher::new(config.max_bytes, true);
+    let instance = instance_id();
     let mut force = config.force_once;
     let mut pending_bump = false;
 
+    let heartbeat_db = db.clone();
+    let heartbeat_instance = instance.clone();
+    let heartbeat_every = config.heartbeat;
+    tokio::spawn(async move {
+        loop {
+            if let Err(err) = heartbeat_db.heartbeat(&heartbeat_instance).await {
+                error!(%err, "compiler heartbeat failed");
+            }
+            tokio::time::sleep(heartbeat_every).await;
+        }
+    });
+
     info!(
+        instance = %instance,
         interval_secs = config.interval.as_secs(),
         poll_secs = config.poll.as_secs(),
+        heartbeat_secs = config.heartbeat.as_secs(),
         "artifact compiler started"
     );
 
     loop {
         match cycle(&db, &s3, &fetcher, &config, force).await {
-            Ok(bumped) => {
-                pending_bump |= bumped;
+            Ok(mut status) => {
+                pending_bump |= status.changed > 0;
                 if pending_bump {
                     match db.bump_blocklist_version().await {
                         Ok(()) => {
@@ -91,16 +108,35 @@ async fn main() {
                             info!("blocklist_version bumped");
                         }
                         Err(err) => {
-                            error!(%err, "blocklist_version bump failed; will retry")
+                            error!(%err, "blocklist_version bump failed; will retry");
+                            status.error = Some(format!("blocklist_version bump failed: {err}"));
                         }
                     }
                 }
+                if let Err(err) = db.record_cycle(&instance, &status).await {
+                    error!(%err, "compiler cycle status write failed");
+                }
             }
-            Err(err) => error!(%err, "compile cycle failed"),
+            Err(err) => {
+                error!(%err, "compile cycle failed");
+                if let Err(write_err) = db.record_cycle_error(&instance, &err).await {
+                    error!(%write_err, "compiler error status write failed");
+                }
+            }
         }
         force = false;
         tokio::time::sleep(config.poll).await;
     }
+}
+
+fn instance_id() -> String {
+    std::env::var("FLY_MACHINE_ID")
+        .or_else(|_| std::env::var("FLY_ALLOC_ID"))
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "local".into())
+        .chars()
+        .take(64)
+        .collect()
 }
 
 async fn cycle(
@@ -109,14 +145,17 @@ async fn cycle(
     fetcher: &SafeFetcher,
     config: &Config,
     force: bool,
-) -> Result<bool, String> {
+) -> Result<CycleStatus, String> {
     let targets = db.compile_targets().await.map_err(|err| err.to_string())?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
     let interval = config.interval.as_secs() as i64;
-    let mut bumped = false;
+    let mut status = CycleStatus {
+        total: targets.len() as i32,
+        ..Default::default()
+    };
 
     for target in targets {
         let stale = force
@@ -128,12 +167,17 @@ async fn cycle(
         if !stale {
             continue;
         }
+        status.stale += 1;
 
         match compile_one(db, s3, fetcher, &target.url, &target.format).await {
             Ok((hash, rules, changed)) => {
                 db.set_blocklist_artifact(&target.url, &hash, rules)
                     .await
                     .map_err(|err| err.to_string())?;
+                status.compiled += 1;
+                if changed {
+                    status.changed += 1;
+                }
                 info!(
                     url = %redact_url(&target.url),
                     rules,
@@ -141,20 +185,37 @@ async fn cycle(
                     hash = &hash[..12],
                     "artifact ready"
                 );
-                if changed {
-                    bumped = true;
-                }
             }
             Err(err) => {
+                status.failed += 1;
+                if status.error.is_none() {
+                    status.error = Some(format!(
+                        "{}: {}",
+                        redact_url(&target.url),
+                        err.chars().take(160).collect::<String>()
+                    ));
+                }
                 warn!(url = %redact_url(&target.url), %err, "compile failed");
-                let status = format!("error: {}", err.chars().take(42).collect::<String>());
+                let error = format!("error: {}", err.chars().take(42).collect::<String>());
                 let _ = db
-                    .write_blocklist_status(&target.url, &status, 0, None)
+                    .write_blocklist_status(&target.url, &error, 0, None)
                     .await;
             }
         }
     }
-    Ok(bumped)
+
+    let (oldest, missing) = db
+        .artifact_freshness()
+        .await
+        .map_err(|err| err.to_string())?;
+    status.oldest_compiled_at = oldest;
+    status.missing_artifacts = missing;
+    status.blocklist_version = db
+        .versions()
+        .await
+        .map_err(|err| err.to_string())?
+        .blocklist;
+    Ok(status)
 }
 
 async fn compile_one(

@@ -20,6 +20,7 @@ jobs:
       - name: probe + self-heal
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL_APP }}
         run: |
           FLYBIN=flyctl
           command -v flyctl >/dev/null 2>&1 || FLYBIN=fly
@@ -81,6 +82,56 @@ jobs:
           if [ "$limit" -gt 0 ] && [ $((rss * 100 / limit)) -ge 85 ]; then
             echo "::error::edge rss ${rss}MB is >=85% of ${limit}MB — resize the machine or investigate the last sync"
             exit 1
+          fi
+          # Compiler heartbeat and artifact freshness. The compiler is the only
+          # runtime artifact producer; a dead worker must not go unnoticed.
+          sudo apt-get install -y postgresql-client >/dev/null
+          DB_URL=$(printf '%s' "$DATABASE_URL" | sed -E 's/[?&]sslrootcert=[^&]*//; s/sslmode=[^&]*/sslmode=require/; s/\?&/?/; s/&&/&/')
+          row=$(psql "$DB_URL" -Atc "
+            with latest as (
+              select instance from compiler_status order by last_poll_at desc limit 1
+            )
+            select
+              coalesce(extract(epoch from now() - c.last_poll_at), 999999)::bigint,
+              coalesce(extract(epoch from now() - c.last_success_at), -1)::bigint,
+              coalesce(extract(epoch from now() - c.last_refresh_at), -1)::bigint,
+              coalesce(c.lists_failed, 0)::int,
+              coalesce(extract(epoch from now() - c.oldest_compiled_at), -1)::bigint,
+              coalesce(c.missing_artifacts, 0)::int,
+              coalesce(c.lists_total, 0)::int,
+              coalesce(extract(epoch from now() - c.started_at), 999999)::bigint
+            from compiler_status c join latest using (instance)")
+          if [ -z "$row" ]; then
+            echo "::error::no compiler heartbeat row"
+            exit 1
+          fi
+          IFS='|' read -r hb success refresh failed oldest missing total started <<< "$row"
+          echo "compiler: heartbeat=${hb}s started=${started}s success=${success}s refresh=${refresh}s failed=${failed} oldest=${oldest}s missing=${missing} total=${total}"
+          if [ "$hb" -gt 180 ]; then
+            echo "::error::compiler heartbeat ${hb}s > 180s"
+            exit 1
+          fi
+          if [ "$started" -gt 600 ]; then
+            if [ "$success" -lt 0 ] || [ "$success" -gt 3600 ]; then
+              echo "::error::compiler has no successful cycle in the last hour"
+              exit 1
+            fi
+            if [ "$failed" -gt 0 ]; then
+              echo "::error::compiler reports ${failed} failed list(s)"
+              exit 1
+            fi
+            if [ "$missing" -gt 0 ]; then
+              echo "::error::compiler reports ${missing} missing artifact(s)"
+              exit 1
+            fi
+            if [ "$total" -gt 0 ] && [ "$refresh" -ge 0 ] && [ "$refresh" -gt 25200 ]; then
+              echo "::error::compiler refresh age ${refresh}s > 7h"
+              exit 1
+            fi
+            if [ "$total" -gt 0 ] && { [ "$oldest" -lt 0 ] || [ "$oldest" -gt 25200 ]; }; then
+              echo "::error::oldest compiled artifact ${oldest}s > 7h"
+              exit 1
+            fi
           fi
           # DNS ingress probe. UDP is lossy by nature: a single packet to a
           # single anycast IP produced false alarms. Try every edge IP twice and

@@ -50,6 +50,7 @@ pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> Response {
         "configPollAgeMs": config_poll_age,
         "configPollError": state.config_poll_error.load(Ordering::Relaxed),
         "lazyLists": state.cfg.lazy_lists,
+        "artifactOnly": state.cfg.artifact_only,
         "remoteLists": store.remote_rules(),
         "remoteListTables": store.catalog.len(),
         "artifactLists": store.artifact_lists(),

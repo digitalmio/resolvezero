@@ -18,11 +18,13 @@ access with the edge through `crates/rz-core` and `crates/rz-db`.
 
 `rz-compiler` is a resident loop, not a cron:
 
-- Every **30 s** (`COMPILE_POLL_SECONDS`): query enabled lists and compile any
+- Every **10 s** (`COMPILE_POLL_SECONDS`): query enabled lists and compile any
   with `artifact_hash IS NULL` or `compiled_at` older than 6 h.
 - Every **6 h** per list: re-fetch and re-parse. Upload only when the SHA-256
   changes; bump `blocklist_version` once per cycle if anything changed.
 - On process start: `FORCE_COMPILE=1` forces one full pass.
+- Writes a heartbeat every 15 s and a per-cycle status row to `compiler_status`;
+  `sentinel.yml` alerts if the heartbeat/artifacts go stale.
 
 ## Run locally
 

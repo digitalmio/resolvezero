@@ -20,6 +20,7 @@ kill_timeout = 30
   LOG_LEVEL = "info"
   ARTIFACT_PREFIX = "artifacts"
   COMPILE_INTERVAL_SECONDS = "21600"
-  COMPILE_POLL_SECONDS = "30"
+  COMPILE_POLL_SECONDS = "10"
+  COMPILER_HEARTBEAT_SECONDS = "15"
   # Force one full compile on every process start; later cycles respect freshness.
   FORCE_COMPILE = "1"

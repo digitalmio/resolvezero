@@ -46,7 +46,7 @@ gaps) in [`docs/rust-edge-security.md`](../../docs/rust-edge-security.md).
 ## Artifacts
 
 Compilation runs on the dedicated **`resolvezero-compiler` Fly machine**
-(`apps/compiler/src/main.rs`, binary `rz-compiler`): every 30 s it picks up new user lists (no artifact),
+(`apps/compiler/src/main.rs`, binary `rz-compiler`): every 10 s it picks up new user lists (no artifact),
 refreshes artifacts older than 6 h, uploads content-addressed blobs to E2, and
 bumps `blocklist_version`. GitHub Actions only builds/deploys that worker and
 keeps a manual fallback; the runtime no longer depends on Actions.

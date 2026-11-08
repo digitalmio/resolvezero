@@ -1,12 +1,12 @@
-use super::helpers::{match_probe_nonce, record, record_type_name, upstream_label};
+use super::helpers::{ensure_lists, match_probe_nonce, record, record_type_name, upstream_label};
 use super::{AppState, QueryContext};
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::{dns, lazy, metrics::Metrics};
+use crate::{dns, metrics::Metrics};
 use hickory_proto::rr::RecordType;
 use rz_core::fingerprint::Action;
-use tracing::{info, warn};
+use tracing::warn;
 
 pub(super) async fn resolve_wire(
     state: &AppState,
@@ -36,50 +36,7 @@ pub(super) async fn resolve_wire(
     }
 
     if state.cfg.lazy_lists {
-        match lazy::ensure_profile_loaded(
-            &state.db,
-            &state.store,
-            &state.cfg,
-            profile,
-            &state.list_gate,
-        )
-        .await
-        {
-            Ok(report) if report.changed => {
-                state.cache.clear();
-                state.blocklist_failed.store(0, Ordering::Relaxed);
-                state.blocklist_ok.store(true, Ordering::Relaxed);
-                *state.blocklist_error.lock().expect("blocklist error") = None;
-                info!(
-                    profile,
-                    loaded = report.loaded,
-                    failed = report.failed,
-                    "lazy lists changed; dns cache flushed"
-                );
-            }
-            Ok(report) if report.failed > 0 => {
-                state
-                    .blocklist_failed
-                    .store(report.failed, Ordering::Relaxed);
-                state.blocklist_ok.store(false, Ordering::Relaxed);
-                *state.blocklist_error.lock().expect("blocklist error") =
-                    Some(format!("lazy list load failed for {profile}"));
-                warn!(
-                    profile,
-                    loaded = report.loaded,
-                    failed = report.failed,
-                    "lazy list load incomplete; retrying"
-                );
-            }
-            Ok(report) if report.loaded > 0 => {
-                state.blocklist_failed.store(0, Ordering::Relaxed);
-                state.blocklist_ok.store(true, Ordering::Relaxed);
-                *state.blocklist_error.lock().expect("blocklist error") = None;
-                info!(profile, loaded = report.loaded, "lazy lists ready");
-            }
-            Ok(_) => {}
-            Err(err) => warn!(profile, %err, "lazy list load failed"),
-        }
+        ensure_lists(state, profile).await;
     }
 
     let type_name = record_type_name(question.qtype);

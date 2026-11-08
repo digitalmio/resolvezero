@@ -60,8 +60,9 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 
 **Compiler worker (`apps/compiler/src/main.rs`, binary `rz-compiler`)**
 - Runs on a dedicated Fly machine (`fly.compiler.toml`, `Dockerfile.compiler`), not on the request path.
-- Polls every 30 seconds for new user lists and refreshes artifacts older than six hours.
+- Polls every 10 seconds for new user lists and refreshes artifacts older than six hours.
 - Uploads content-addressed blobs to S3 and bumps `blocklist_version` once per changed cycle.
+- Writes a heartbeat and per-cycle status to `compiler_status`; the hourly sentinel alerts if the worker or artifacts go stale.
 - GitHub Actions keeps only a manual break-glass fallback; runtime freshness does not depend on it.
 
 **Control plane**
@@ -158,7 +159,7 @@ With no S3 bucket configured, set `EAGER_BLOCKLISTS=1` so raw list text is fetch
 
 ### 4. Compile blocklist artifacts (optional but recommended)
 
-Run the compiler as a long-lived worker (it polls every 30 seconds; stop it with Ctrl-C), or supervise it with your process manager:
+Run the compiler as a long-lived worker (it polls every 10 seconds; stop it with Ctrl-C), or supervise it with your process manager:
 
 ```sh
 set -a
@@ -232,6 +233,8 @@ By default the edge starts with no blocklist tables:
 - Later queries for the same profile are served from memory; other profiles stay unloaded.
 - When `blocklist_version` changes, the markers are cleared and each profile reloads on its next query. The DNS cache is flushed at the same time.
 - Failed loads are retried after `BLOCKLIST_LAZY_RETRY_SECONDS`; a failed list leaves the profile on its explicit rules until the retry.
+
+Hosted edges default to **artifact-only** list loading: if a list has no compiled artifact yet, the edge marks it pending and keeps serving rather than parsing raw text. Self-hosters without a compiler can allow raw fallback with `ARTIFACT_ONLY_LISTS=0` or preload with `EAGER_BLOCKLISTS=1`.
 
 This is what lets every PoP run the same small machine shape. If you prefer predictable cold starts over first-query latency, set `EAGER_BLOCKLISTS=1`.
 

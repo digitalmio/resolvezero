@@ -12,7 +12,6 @@ use rz_core::artifact::{sha256_hex, Artifact, S3Config};
 use rz_core::fingerprint::FingerprintTable;
 use rz_core::netguard::{redact_url, SafeFetcher};
 use rz_core::parse::{parse_list, ListFormat};
-use rz_db::BlocklistRow;
 use rz_db::Db;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -21,64 +20,11 @@ pub struct SyncReport {
     pub failed: usize,
 }
 
-pub(crate) struct SubscriptionPlan {
-    pub by_profile: HashMap<String, Vec<Subscription>>,
-    pub configured: HashSet<String>,
-    pub failed: usize,
-}
+mod metadata;
+#[cfg(test)]
+mod tests;
 
-/// Group enabled list rows into per-profile subscriptions, applying the unique
-/// and per-profile caps. Pure so the cap/dedupe rules are unit-testable without
-/// Postgres.
-pub(crate) fn build_subscriptions(
-    rows: Vec<BlocklistRow>,
-    max_unique: usize,
-    max_per_profile: usize,
-) -> SubscriptionPlan {
-    let mut plan = SubscriptionPlan {
-        by_profile: HashMap::new(),
-        configured: HashSet::new(),
-        failed: 0,
-    };
-    let mut unique: HashSet<String> = HashSet::new();
-
-    for row in rows {
-        plan.configured.insert(row.profile_id.clone());
-        let subscriptions = plan.by_profile.entry(row.profile_id.clone()).or_default();
-        if !unique.contains(&row.url) {
-            if unique.len() >= max_unique {
-                warn!(
-                    url = %redact_url(&row.url),
-                    cap = max_unique,
-                    "unique-list cap reached; list skipped"
-                );
-                plan.failed += 1;
-                continue;
-            }
-            unique.insert(row.url.clone());
-        }
-        subscriptions.push(Subscription {
-            url: row.url,
-            list_id: Some(row.id),
-            format: row.format,
-            artifact_hash: row.artifact_hash,
-        });
-    }
-
-    for (profile_id, subscriptions) in plan.by_profile.iter_mut() {
-        let mut seen = HashSet::new();
-        subscriptions.retain(|sub| seen.insert(sub.url.clone()));
-        if subscriptions.len() > max_per_profile {
-            warn!(
-                profile_id,
-                cap = max_per_profile,
-                "per-profile list cap reached"
-            );
-            subscriptions.truncate(max_per_profile);
-        }
-    }
-    plan
-}
+pub(crate) use metadata::build_subscriptions;
 
 /// Point the store at the current blocklist subscriptions without fetching any
 /// list bodies. With lazy loading this is the only blocklist work done at
@@ -170,6 +116,7 @@ pub async fn sync_once(
             url,
             &list.format,
             list.artifact_hash.as_deref(),
+            !cfg.artifact_only,
         )
         .await
         {
@@ -263,11 +210,18 @@ pub(crate) async fn load_table(
     url: &str,
     format: &str,
     artifact_hash: Option<&str>,
+    allow_raw: bool,
 ) -> Result<(FingerprintTable, ListSource), String> {
+    if !allow_raw && (s3.is_none() || artifact_hash.is_none()) {
+        return Err("artifact not ready".into());
+    }
     if let (Some(s3), Some(hash)) = (s3, artifact_hash) {
         match load_artifact(s3, hash).await {
             Ok(table) => return Ok((table, ListSource::Artifact)),
             Err(err) => {
+                if !allow_raw {
+                    return Err(format!("artifact load failed: {err}"));
+                }
                 warn!(url = %redact_url(url), %err, "artifact load failed; falling back to text")
             }
         }
@@ -298,70 +252,4 @@ async fn load_artifact(s3: &S3Config, hash: &str) -> Result<FingerprintTable, St
         return Err(format!("artifact hash mismatch ({actual})"));
     }
     Ok(Artifact::decode(&bytes)?.into_table())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn row(profile: &str, url: &str, hash: Option<&str>) -> BlocklistRow {
-        BlocklistRow {
-            id: format!("{profile}-{url}"),
-            profile_id: profile.to_string(),
-            url: url.to_string(),
-            format: "hosts".to_string(),
-            artifact_hash: hash.map(str::to_string),
-        }
-    }
-
-    #[test]
-    fn dedupes_urls_and_preserves_artifact_metadata() {
-        let plan = build_subscriptions(
-            vec![
-                row("home", "https://lists/a.txt", Some("aaa")),
-                row("home", "https://lists/a.txt", Some("aaa")),
-                row("home", "https://lists/b.txt", None),
-            ],
-            16,
-            16,
-        );
-        let subs = plan.by_profile.get("home").expect("home plan");
-        assert_eq!(subs.len(), 2);
-        assert_eq!(subs[0].url, "https://lists/a.txt");
-        assert_eq!(subs[0].format, "hosts");
-        assert_eq!(subs[0].artifact_hash.as_deref(), Some("aaa"));
-        assert_eq!(subs[1].artifact_hash, None);
-        assert_eq!(plan.failed, 0);
-    }
-
-    #[test]
-    fn unique_cap_skips_rows_but_keeps_profiles_configured() {
-        let plan = build_subscriptions(
-            vec![
-                row("home", "https://lists/a.txt", None),
-                row("phone", "https://lists/b.txt", None),
-            ],
-            1,
-            16,
-        );
-        assert!(plan.configured.contains("home"));
-        assert!(plan.configured.contains("phone"));
-        assert_eq!(plan.by_profile["home"].len(), 1);
-        assert!(plan.by_profile["phone"].is_empty());
-        assert_eq!(plan.failed, 1);
-    }
-
-    #[test]
-    fn per_profile_cap_truncates_after_dedupe() {
-        let plan = build_subscriptions(
-            vec![
-                row("home", "https://lists/a.txt", None),
-                row("home", "https://lists/b.txt", None),
-                row("home", "https://lists/c.txt", None),
-            ],
-            16,
-            2,
-        );
-        assert_eq!(plan.by_profile["home"].len(), 2);
-    }
 }

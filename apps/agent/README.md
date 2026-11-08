@@ -48,6 +48,30 @@ rustup target add x86_64-unknown-linux-musl
 cargo build --release -p resolvezero-agent --bin resolvezero-agent --target x86_64-unknown-linux-musl
 ```
 
+## Prebuilt binaries
+
+Pushing an `agent-v*` tag runs `.github/workflows/release-agent.yml` and
+publishes a static Linux x86_64 musl binary plus a SHA-256 file:
+
+```sh
+curl -L -o resolvezero-agent \
+  https://github.com/digitalmio/resolvezero/releases/latest/download/resolvezero-agent-linux-x86_64
+curl -L -o resolvezero-agent.sha256 \
+  https://github.com/digitalmio/resolvezero/releases/latest/download/resolvezero-agent-linux-x86_64.sha256
+sha256sum -c resolvezero-agent.sha256
+sudo install -m 0755 resolvezero-agent /usr/local/bin/resolvezero-agent
+```
+
+The systemd unit is in `deploy/resolvezero-agent.service`; put the profile
+credentials in `/etc/resolvezero-agent.env`:
+
+```sh
+PROFILE_ID=...
+DOH_TOKEN=...
+DOH_URL=https://resolvezero-edge.fly.dev
+DEVICE_MAP=192.168.1.50=nas
+```
+
 ## Run
 
 ```sh

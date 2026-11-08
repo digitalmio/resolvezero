@@ -38,6 +38,16 @@ jobs:
       - name: tests
         run: pnpm test
 
+  console-image:
+    name: console image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: build console image
+        run: docker build -f Dockerfile.console -t resolvezero-console:ci .
+
   migrate:
     name: migrate
     runs-on: ubuntu-latest
