@@ -57,7 +57,17 @@ jobs:
           cache: pnpm
       - name: install
         run: pnpm install --frozen-lockfile
+      - name: install postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: migrate
-        run: pnpm exec tsx scripts/migrate.ts
+        run: |
+          # Apply each migration in its own transaction. Some historical
+          # migrations use a TEMP table with ON COMMIT DROP; Drizzle's migrator
+          # runs the journal in one transaction on a fresh database and trips
+          # over that temp table.
+          for f in $(ls packages/db/drizzle/*.sql | sort); do
+            echo "applying $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "$f"
+          done
       - name: db integration tests
         run: cargo test -p rz-db --test compiler_status -- --nocapture

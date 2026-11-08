@@ -1,6 +1,5 @@
-
 use super::*;
-use hickory_proto::op::{Message, MessageType, Query};
+use hickory_proto::op::{Message, MessageType, OpCode, Query};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use std::str::FromStr;
 
@@ -19,19 +18,15 @@ fn config() -> AgentConfig {
 }
 
 fn query(name: &str) -> Vec<u8> {
-    let mut msg = Message::new();
-    msg.set_id(0x4242);
-    msg.set_message_type(MessageType::Query);
-    msg.set_recursion_desired(true);
+    let mut msg = Message::new(0x4242, MessageType::Query, OpCode::Query);
+    msg.metadata.recursion_desired = true;
     msg.add_query(Query::query(Name::from_str(name).unwrap(), RecordType::A));
     msg.to_vec().unwrap()
 }
 
 fn answer(name: &str) -> Vec<u8> {
-    let mut msg = Message::new();
-    msg.set_id(0x4242);
-    msg.set_message_type(MessageType::Response);
-    msg.set_recursion_available(true);
+    let mut msg = Message::new(0x4242, MessageType::Response, OpCode::Query);
+    msg.metadata.recursion_available = true;
     msg.add_query(Query::query(Name::from_str(name).unwrap(), RecordType::A));
     msg.add_answer(Record::from_rdata(
         Name::from_str(name).unwrap(),
@@ -81,15 +76,15 @@ async fn serves_udp_and_tcp_through_the_injected_resolver() {
 
     let udp = udp_query(agent.udp_port, query("example.com")).await;
     let msg = Message::from_vec(&udp).unwrap();
-    assert_eq!(msg.id(), 0x4242);
-    match msg.answers()[0].data() {
-        Some(RData::A(addr)) => assert_eq!(addr.to_string(), "1.2.3.4"),
+    assert_eq!(msg.metadata.id, 0x4242);
+    match &msg.answers[0].data {
+        RData::A(addr) => assert_eq!(addr.to_string(), "1.2.3.4"),
         other => panic!("unexpected answer {other:?}"),
     }
 
     let tcp = tcp_query(agent.tcp_port, query("example.com")).await;
     let msg = Message::from_vec(&tcp).unwrap();
-    assert_eq!(msg.id(), 0x4242);
+    assert_eq!(msg.metadata.id, 0x4242);
 
     assert_eq!(seen.lock().unwrap().len(), 2);
     agent.close().await;
@@ -103,7 +98,7 @@ async fn returns_servfail_when_the_resolver_throws() {
     let reply = udp_query(agent.udp_port, query("example.com")).await;
     let msg = Message::from_vec(&reply).unwrap();
     assert_eq!(
-        msg.response_code(),
+        msg.metadata.response_code,
         hickory_proto::op::ResponseCode::ServFail
     );
     agent.close().await;
@@ -114,7 +109,7 @@ async fn returns_servfail_on_transaction_id_mismatch() {
     let resolver: Resolver = Arc::new(|_query, _ip| {
         Box::pin(async {
             let mut msg = Message::from_vec(&answer("example.com")).unwrap();
-            msg.set_id(0x1111);
+            msg.metadata.id = 0x1111;
             Ok(msg.to_vec().unwrap())
         })
     });
@@ -122,7 +117,7 @@ async fn returns_servfail_on_transaction_id_mismatch() {
     let reply = udp_query(agent.udp_port, query("example.com")).await;
     let msg = Message::from_vec(&reply).unwrap();
     assert_eq!(
-        msg.response_code(),
+        msg.metadata.response_code,
         hickory_proto::op::ResponseCode::ServFail
     );
     agent.close().await;
@@ -134,8 +129,8 @@ async fn truncates_oversized_udp_answers() {
     let resolver: Resolver = Arc::new(|_query, _ip| {
         Box::pin(async {
             let mut msg = Message::from_vec(&query("example.com")).unwrap();
-            msg.set_message_type(MessageType::Response);
-            msg.set_recursion_available(true);
+            msg.metadata.message_type = MessageType::Response;
+            msg.metadata.recursion_available = true;
             for i in 0..300u16 {
                 msg.add_answer(Record::from_rdata(
                     Name::from_str("example.com").unwrap(),
@@ -149,7 +144,7 @@ async fn truncates_oversized_udp_answers() {
     let agent = start_agent(config(), resolver).await.unwrap();
     let reply = udp_query(agent.udp_port, query("example.com")).await;
     let msg = Message::from_vec(&reply).unwrap();
-    assert!(msg.truncated());
+    assert!(msg.metadata.truncation);
     agent.close().await;
 }
 

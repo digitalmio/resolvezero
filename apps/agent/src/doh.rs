@@ -146,12 +146,10 @@ mod tests {
     }
 
     fn query() -> Vec<u8> {
-        use hickory_proto::op::{Message, MessageType, Query};
+        use hickory_proto::op::{Message, MessageType, OpCode, Query};
         use hickory_proto::rr::{Name, RecordType};
         use std::str::FromStr;
-        let mut msg = Message::new();
-        msg.set_id(0x1234);
-        msg.set_message_type(MessageType::Query);
+        let mut msg = Message::new(0x1234, MessageType::Query, OpCode::Query);
         msg.add_query(Query::query(
             Name::from_str("example.com").unwrap(),
             RecordType::A,

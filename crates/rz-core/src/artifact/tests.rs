@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::fingerprint::FingerprintTable;
 use std::collections::HashSet;

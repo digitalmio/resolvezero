@@ -11,7 +11,7 @@ pub fn max_udp_payload(query: &[u8]) -> u16 {
         return DEFAULT_UDP_PAYLOAD;
     };
     let advertised = msg
-        .extensions()
+        .edns
         .as_ref()
         .map(|edns| edns.max_payload())
         .unwrap_or(DEFAULT_UDP_PAYLOAD);
@@ -21,17 +21,15 @@ pub fn max_udp_payload(query: &[u8]) -> u16 {
 /// Minimal SERVFAIL for a parseable query; `None` when the packet is unusable.
 pub fn servfail_response(query: &[u8]) -> Option<Vec<u8>> {
     let msg = Message::from_vec(query).ok()?;
-    if msg.queries().is_empty() {
+    if msg.queries.is_empty() {
         return None;
     }
-    let mut response = Message::new();
-    response.set_id(msg.id());
-    response.set_message_type(MessageType::Response);
-    response.set_response_code(ResponseCode::ServFail);
+    let mut response = Message::new(msg.metadata.id, MessageType::Response, msg.metadata.op_code);
+    response.metadata.response_code = ResponseCode::ServFail;
     // The reference agent forces RD/RA on its synthetic answers.
-    response.set_recursion_desired(true);
-    response.set_recursion_available(true);
-    for question in msg.queries() {
+    response.metadata.recursion_desired = true;
+    response.metadata.recursion_available = true;
+    for question in &msg.queries {
         response.add_query(question.clone());
     }
     response.to_vec().ok()
@@ -40,16 +38,14 @@ pub fn servfail_response(query: &[u8]) -> Option<Vec<u8>> {
 /// Truncated-cue response so the client retries over TCP through the agent.
 pub fn truncated_response(query: &[u8]) -> Option<Vec<u8>> {
     let msg = Message::from_vec(query).ok()?;
-    if msg.queries().is_empty() {
+    if msg.queries.is_empty() {
         return None;
     }
-    let mut response = Message::new();
-    response.set_id(msg.id());
-    response.set_message_type(MessageType::Response);
-    response.set_truncated(true);
-    response.set_recursion_desired(true);
-    response.set_recursion_available(true);
-    for question in msg.queries() {
+    let mut response = Message::new(msg.metadata.id, MessageType::Response, msg.metadata.op_code);
+    response.metadata.truncation = true;
+    response.metadata.recursion_desired = true;
+    response.metadata.recursion_available = true;
+    for question in &msg.queries {
         response.add_query(question.clone());
     }
     response.to_vec().ok()
@@ -63,15 +59,13 @@ pub fn same_transaction_id(query: &[u8], response: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hickory_proto::op::{Message, MessageType, Query};
+    use hickory_proto::op::{Message, MessageType, OpCode, Query};
     use hickory_proto::rr::{Name, RData, Record, RecordType};
     use std::str::FromStr;
 
     fn query(name: &str) -> Vec<u8> {
-        let mut msg = Message::new();
-        msg.set_id(0x4242);
-        msg.set_message_type(MessageType::Query);
-        msg.set_recursion_desired(true);
+        let mut msg = Message::new(0x4242, MessageType::Query, OpCode::Query);
+        msg.metadata.recursion_desired = true;
         msg.add_query(Query::query(Name::from_str(name).unwrap(), RecordType::A));
         msg.to_vec().unwrap()
     }
@@ -84,19 +78,13 @@ mod tests {
     #[test]
     fn clamps_advertised_edns_payload() {
         let mut msg = Message::from_vec(&query("example.com")).unwrap();
-        msg.extensions_mut()
-            .get_or_insert_default()
-            .set_max_payload(1400);
+        msg.edns.get_or_insert_default().set_max_payload(1400);
         assert_eq!(max_udp_payload(&msg.to_vec().unwrap()), 1400);
 
-        msg.extensions_mut()
-            .get_or_insert_default()
-            .set_max_payload(9000);
+        msg.edns.get_or_insert_default().set_max_payload(9000);
         assert_eq!(max_udp_payload(&msg.to_vec().unwrap()), MAX_UDP_PAYLOAD);
 
-        msg.extensions_mut()
-            .get_or_insert_default()
-            .set_max_payload(64);
+        msg.edns.get_or_insert_default().set_max_payload(64);
         assert_eq!(max_udp_payload(&msg.to_vec().unwrap()), DEFAULT_UDP_PAYLOAD);
     }
 
@@ -112,31 +100,31 @@ mod tests {
         let wire = query("example.com");
         let response = servfail_response(&wire).unwrap();
         let msg = Message::from_vec(&response).unwrap();
-        assert_eq!(msg.id(), 0x4242);
-        assert_eq!(msg.response_code(), ResponseCode::ServFail);
-        assert!(msg.recursion_available());
-        assert!(msg.recursion_desired());
-        assert_eq!(msg.queries().len(), 1);
-        assert_eq!(msg.queries()[0].name().to_string(), "example.com.");
+        assert_eq!(msg.metadata.id, 0x4242);
+        assert_eq!(msg.metadata.response_code, ResponseCode::ServFail);
+        assert!(msg.metadata.recursion_available);
+        assert!(msg.metadata.recursion_desired);
+        assert_eq!(msg.queries.len(), 1);
+        assert_eq!(msg.queries[0].name().to_string(), "example.com.");
     }
 
     #[test]
     fn truncated_sets_tc_and_ra() {
         let response = truncated_response(&query("example.com")).unwrap();
         let msg = Message::from_vec(&response).unwrap();
-        assert!(msg.truncated());
-        assert!(msg.recursion_available());
-        assert_eq!(msg.queries().len(), 1);
+        assert!(msg.metadata.truncation);
+        assert!(msg.metadata.recursion_available);
+        assert_eq!(msg.queries.len(), 1);
     }
 
     #[test]
     fn transaction_id_comparison() {
         let query = query("example.com");
         let mut response = Message::from_vec(&query).unwrap();
-        response.set_message_type(MessageType::Response);
+        response.metadata.message_type = MessageType::Response;
         assert!(same_transaction_id(&query, &response.to_vec().unwrap()));
 
-        response.set_id(0x1111);
+        response.metadata.id = 0x1111;
         assert!(!same_transaction_id(&query, &response.to_vec().unwrap()));
         assert!(!same_transaction_id(&[0x42], &response.to_vec().unwrap()));
     }
@@ -151,6 +139,6 @@ mod tests {
         ));
         let response = servfail_response(&msg.to_vec().unwrap()).unwrap();
         let msg = Message::from_vec(&response).unwrap();
-        assert!(msg.answers().is_empty());
+        assert!(msg.answers.is_empty());
     }
 }
