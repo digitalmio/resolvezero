@@ -22,15 +22,26 @@ export type SessionUser = {
 const isProduction = process.env.NODE_ENV === "production";
 /** Shared by Better Auth's expiry and the copy shown in the email. */
 const OTP_TTL_SECONDS = Number(process.env.EMAIL_OTP_TTL_SECONDS ?? 600);
+/**
+ * Hosted betas are invite-only: AUTH_ALLOW_SIGNUP=0 closes both GitHub and
+ * email-OTP account creation. Existing accounts still sign in normally.
+ */
+const signupClosed = process.env.AUTH_ALLOW_SIGNUP === "0";
+const baseURL =
+  process.env.BETTER_AUTH_URL ??
+  (isProduction ? requiredEnv("BETTER_AUTH_URL") : "http://localhost:3000");
 
 warnIfMailMisconfigured();
 
 export const auth = betterAuth({
   appName: "ResolveZero",
   secret: requiredEnv("BETTER_AUTH_SECRET"),
-  baseURL:
-    process.env.BETTER_AUTH_URL ??
-    (isProduction ? requiredEnv("BETTER_AUTH_URL") : "http://localhost:3000"),
+  baseURL,
+  // Rejected OAuth logins land on the console login page with a friendly
+  // explanation instead of Better Auth's bare error page.
+  onAPIError: {
+    errorURL: new URL("/login", baseURL).toString(),
+  },
   trustedOrigins: (process.env.TRUSTED_ORIGINS ?? "")
     .split(",")
     .map((origin) => origin.trim())
@@ -43,6 +54,9 @@ export const auth = betterAuth({
     github: {
       clientId: requiredEnv("GITHUB_CLIENT_ID"),
       clientSecret: requiredEnv("GITHUB_CLIENT_SECRET"),
+      // Blocks implicit account creation for every GitHub identity that does
+      // not already have an `account` row. Existing users are unaffected.
+      disableSignUp: signupClosed,
     },
   },
   session: {
@@ -77,7 +91,7 @@ export const auth = betterAuth({
       allowedAttempts: 5,
       storeOTP: "hashed",
       // Hosted can close signup (AUTH_ALLOW_SIGNUP=0) and stay invite-only.
-      disableSignUp: process.env.AUTH_ALLOW_SIGNUP === "0",
+      disableSignUp: signupClosed,
       async sendVerificationOTP({ email, otp, type }) {
         // Per-address + global caps: never spend money on an abusive request.
         // The endpoint still answers normally, so this leaks nothing about

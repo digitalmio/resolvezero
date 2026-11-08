@@ -7,12 +7,25 @@ import { SignInCard } from '../components/auth/sign-in-card'
 import { getSession } from '../server/auth'
 
 export const Route = createFileRoute('/login')({
+  // Better Auth redirects rejected OAuth callbacks here with ?error=<code>.
+  validateSearch: (search: Record<string, unknown>) => {
+    const error = typeof search.error === 'string' ? search.error.slice(0, 64) : undefined
+    return error ? { error } : {}
+  },
   beforeLoad: async () => {
     const session = await getSession()
     if (session) throw redirect({ to: '/' })
   },
   component: LoginPage,
 })
+
+function authErrorMessage(error: string | undefined): string | null {
+  if (!error) return null
+  if (error === 'signup_disabled' || error === 'invite_only') {
+    return 'This beta is invite-only. Ask for an invite to sign in.'
+  }
+  return 'Sign-in failed. Try again, or ask for an invite.'
+}
 
 function Proof({ index, icon, title, detail }: { index: string; icon: ReactNode; title: string; detail: string }) {
   return (
@@ -30,6 +43,8 @@ function Proof({ index, icon, title, detail }: { index: string; icon: ReactNode;
 }
 
 function LoginPage() {
+  const { error } = Route.useSearch()
+  const message = authErrorMessage(error)
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)] lg:grid lg:grid-cols-2">
       <section className="rz-mesh relative flex flex-col overflow-hidden px-5 py-5 text-[var(--sidebar-text)] lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
@@ -91,6 +106,14 @@ function LoginPage() {
       <section className="relative flex min-h-[calc(100vh-5rem)] flex-col bg-[var(--paper)] px-5 pb-6 pt-5 sm:px-8 lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
         <main className="flex flex-1 items-center justify-center py-10 lg:py-14">
           <div className="w-full max-w-[420px]">
+            {message ? (
+              <p
+                role="alert"
+                className="mb-3 border border-[#e7b4ae] bg-[var(--accent-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--danger)]"
+              >
+                {message}
+              </p>
+            ) : null}
             <SignInCard />
 
             <p className="mt-4 text-center text-[11px] leading-5 text-[var(--muted)]">

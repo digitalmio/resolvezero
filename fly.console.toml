@@ -13,6 +13,9 @@ kill_timeout = 20
 [env]
   NODE_ENV = "production"
   PORT = "8080"
+  # Invite-only beta: blocks GitHub and email-OTP account creation. Existing
+  # accounts (invited by seeding their account row) still sign in.
+  AUTH_ALLOW_SIGNUP = "0"
 
 [http_service]
   internal_port = 8080

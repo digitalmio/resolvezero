@@ -27,7 +27,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 | Observability | Query log, live stats, top domains/clients/devices, block rate, artifact and lazy-load state |
 | Operations | Health, cache purge, config-version propagation, DNS presence probe |
 | Access | Passwordless email OTP, optional GitHub OAuth, scoped API keys, session-guarded server functions |
-| Hosted | Console at `my.resolvezero.com`; `AUTH_ALLOW_SIGNUP=0` makes signup invite-only; console/API data is owner-scoped |
+| Hosted | Console at `my.resolvezero.com`; `AUTH_ALLOW_SIGNUP=0` closes GitHub and email signup; console/API data is owner-scoped |
 
 ## Architecture
 
@@ -214,7 +214,7 @@ The full set of options lives in [`.env.example`](.env.example). The important o
 | `BETTER_AUTH_URL` | Public console origin |
 | `BETTER_AUTH_SECRET` | Session signing key |
 | `SMTP_URL` / `EMAIL_FROM` | Email OTP delivery |
-| `AUTH_ALLOW_SIGNUP=0` | Make signup invite-only |
+| `AUTH_ALLOW_SIGNUP=0` | Close GitHub and email signup; invited accounts still sign in |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Optional GitHub OAuth credentials |
 | `TRUSTED_ORIGINS` | Extra allowed console/API origins |
 | `UPSTREAM_PRESET` / `UPSTREAM_DOH_URL` | Edge default upstream resolver |
