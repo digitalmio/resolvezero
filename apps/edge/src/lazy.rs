@@ -65,10 +65,19 @@ pub async fn ensure_profile_loaded(
     }
 
     let s3 = S3Config::from_env();
-    let fetcher = SafeFetcher::new(cfg.max_list_bytes, true);
+    let fetcher = SafeFetcher::new(cfg.max_list_bytes, false);
     let deadline = Instant::now() + cfg.list_cycle_deadline;
     let mut report = LoadReport::default();
     let mut seen = std::collections::HashSet::new();
+    let mut profile_entries = {
+        let guard = store.read().await;
+        let mut urls = std::collections::HashSet::new();
+        subscriptions
+            .iter()
+            .filter(|sub| urls.insert(sub.url.as_str()))
+            .filter_map(|sub| guard.catalog.get(&sub.url).map(|table| table.entries))
+            .sum::<usize>()
+    };
 
     for subscription in subscriptions {
         if !seen.insert(subscription.url.clone()) {
@@ -109,6 +118,18 @@ pub async fn ensure_profile_loaded(
         {
             Ok((table, source)) => {
                 let entries = table.entries;
+                if profile_entries + entries > cfg.max_entries_per_profile {
+                    warn!(
+                        profile_id,
+                        url = %redact_url(&subscription.url),
+                        entries,
+                        profile_entries,
+                        cap = cfg.max_entries_per_profile,
+                        "per-profile rule budget exceeded; lazy list skipped"
+                    );
+                    report.failed += 1;
+                    continue;
+                }
                 let total = store.read().await.remote_rules();
                 if total + entries > cfg.max_total_entries {
                     warn!(
@@ -122,6 +143,7 @@ pub async fn ensure_profile_loaded(
                     report.failed += 1;
                     continue;
                 }
+                profile_entries += entries;
                 let changed = store.write().await.upsert_list(
                     &subscription.url,
                     subscription.artifact_hash.as_deref(),
@@ -170,125 +192,4 @@ pub async fn ensure_profile_loaded(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::store::{ListSource, Subscription};
-    use rz_core::fingerprint::FingerprintTable;
-    use rz_db::ProfileRow;
-    use std::collections::HashSet;
-
-    fn profile(id: &str) -> ProfileRow {
-        ProfileRow {
-            id: id.to_string(),
-            dot_id: None,
-            doh_token: None,
-            log_queries: true,
-            safe_search: None,
-            upstream: None,
-            upstream_url: None,
-            block_mode: None,
-            block_ipv4: None,
-            block_ipv6: None,
-            block_ttl: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn unknown_profile_is_not_marked_loaded() {
-        let cfg = Config::for_test();
-        let db = Db::lazy_for_test();
-        let store = Arc::new(RwLock::new(RuleStore::default()));
-        let gate = Mutex::new(());
-
-        let report = ensure_profile_loaded(&db, &store, &cfg, "missing", &gate)
-            .await
-            .expect("unknown profile is a no-op");
-        assert_eq!(report.loaded, 0);
-        assert!(!store
-            .read()
-            .await
-            .is_profile_loaded("missing", cfg.list_retry));
-    }
-
-    #[tokio::test]
-    async fn profile_without_lists_is_marked_loaded() {
-        let cfg = Config::for_test();
-        let db = Db::lazy_for_test();
-        let store = Arc::new(RwLock::new(RuleStore::default()));
-        store
-            .write()
-            .await
-            .replace_config(vec![profile("home")], vec![], vec![], vec![], vec![]);
-        let gate = Mutex::new(());
-
-        let report = ensure_profile_loaded(&db, &store, &cfg, "home", &gate)
-            .await
-            .expect("no lists is a no-op");
-        assert_eq!(report.loaded, 0);
-        assert!(store.read().await.is_profile_loaded("home", cfg.list_retry));
-    }
-
-    #[tokio::test]
-    async fn resident_artifact_is_not_fetched_again() {
-        let cfg = Config::for_test();
-        let db = Db::lazy_for_test();
-        let store = Arc::new(RwLock::new(RuleStore::default()));
-        let subscription = Subscription {
-            url: "https://lists/a.txt".into(),
-            list_id: None,
-            format: "hosts".into(),
-            artifact_hash: Some("aaa".into()),
-        };
-        {
-            let mut guard = store.write().await;
-            guard.replace_config(vec![profile("home")], vec![], vec![], vec![], vec![]);
-            guard.wire_subscriptions("home", vec![subscription.clone()]);
-            guard.upsert_list(
-                &subscription.url,
-                subscription.artifact_hash.as_deref(),
-                ListSource::Artifact,
-                FingerprintTable::build(
-                    &HashSet::from(["ads.example".to_string()]),
-                    &HashSet::new(),
-                ),
-            );
-        }
-        let gate = Mutex::new(());
-
-        let report = ensure_profile_loaded(&db, &store, &cfg, "home", &gate)
-            .await
-            .expect("resident table is skipped");
-        assert_eq!(report.loaded, 0);
-        assert_eq!(report.failed, 0);
-        assert!(store.read().await.is_profile_loaded("home", cfg.list_retry));
-    }
-
-    #[tokio::test]
-    async fn artifact_only_skips_raw_pending_list() {
-        let mut cfg = Config::for_test();
-        cfg.artifact_only = true;
-        let db = Db::lazy_for_test();
-        let store = Arc::new(RwLock::new(RuleStore::default()));
-        store
-            .write()
-            .await
-            .replace_config(vec![profile("home")], vec![], vec![], vec![], vec![]);
-        store.write().await.wire_subscriptions(
-            "home",
-            vec![Subscription {
-                url: "https://lists/new.txt".into(),
-                list_id: None,
-                format: "hosts".into(),
-                artifact_hash: None,
-            }],
-        );
-        let gate = Mutex::new(());
-
-        let report = ensure_profile_loaded(&db, &store, &cfg, "home", &gate)
-            .await
-            .expect("pending artifact is not an error");
-        assert_eq!(report.loaded, 0);
-        assert_eq!(report.failed, 0);
-        assert_eq!(report.pending, 1);
-    }
-}
+mod tests;

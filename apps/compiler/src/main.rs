@@ -23,6 +23,7 @@ struct Config {
     poll: Duration,
     heartbeat: Duration,
     max_bytes: usize,
+    max_entries: usize,
     force_once: bool,
 }
 
@@ -39,6 +40,7 @@ impl Config {
             poll: Duration::from_secs(num("COMPILE_POLL_SECONDS", 10).max(5)),
             heartbeat: Duration::from_secs(num("COMPILER_HEARTBEAT_SECONDS", 15).max(5)),
             max_bytes: num("BLOCKLIST_MAX_LIST_BYTES", 30 * 1024 * 1024) as usize,
+            max_entries: num("BLOCKLIST_MAX_ENTRIES_PER_PROFILE", 1_500_000) as usize,
             force_once: std::env::var("FORCE_COMPILE").as_deref() == Ok("1"),
         }
     }
@@ -72,7 +74,7 @@ async fn main() {
         }
     };
     let config = Config::from_env();
-    let fetcher = SafeFetcher::new(config.max_bytes, true);
+    let fetcher = SafeFetcher::new(config.max_bytes, false);
     let instance = instance_id();
     let mut force = config.force_once;
     let mut pending_bump = false;
@@ -169,7 +171,16 @@ async fn cycle(
         }
         status.stale += 1;
 
-        match compile_one(db, s3, fetcher, &target.url, &target.format).await {
+        match compile_one(
+            db,
+            s3,
+            fetcher,
+            &target.url,
+            &target.format,
+            config.max_entries,
+        )
+        .await
+        {
             Ok((hash, rules, changed)) => {
                 db.set_blocklist_artifact(&target.url, &hash, rules)
                     .await
@@ -224,10 +235,17 @@ async fn compile_one(
     fetcher: &SafeFetcher,
     url: &str,
     format: &str,
+    max_entries: usize,
 ) -> Result<(String, i32, bool), String> {
     let text = String::from_utf8_lossy(&fetcher.get(url).await?).to_string();
     let parsed = parse_list(&text, ListFormat::parse(format));
     let table = FingerprintTable::build(&parsed.blocks, &parsed.allows);
+    if table.entries > max_entries {
+        return Err(format!(
+            "list has {} rules, which exceeds the {} per-profile budget",
+            table.entries, max_entries
+        ));
+    }
     let artifact = Artifact::from_table(table);
     let bytes = artifact.encode();
     let hash = sha256_hex(&bytes);

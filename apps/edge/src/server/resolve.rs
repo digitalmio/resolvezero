@@ -1,12 +1,35 @@
 use super::helpers::{ensure_lists, match_probe_nonce, record, record_type_name, upstream_label};
 use super::{AppState, QueryContext};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::{dns, metrics::Metrics};
 use hickory_proto::rr::RecordType;
 use rz_core::fingerprint::Action;
 use tracing::warn;
+
+/// Removes the single-flight entry when the request future is dropped, so a
+/// DoH timeout or client disconnect cannot leak the map.
+struct InflightGuard<'a> {
+    map: &'a Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    key: String,
+}
+
+impl Drop for InflightGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.map.lock() {
+            // Keep the entry while other waiters hold the same gate; the last
+            // one (map + local `gate`) removes it.
+            if map
+                .get(&self.key)
+                .is_none_or(|gate| Arc::strong_count(gate) <= 2)
+            {
+                map.remove(&self.key);
+            }
+        }
+    }
+}
 
 pub(super) async fn resolve_wire(
     state: &AppState,
@@ -144,8 +167,8 @@ pub(super) async fn resolve_wire(
 
     let label = upstream_label(selector.as_deref());
     let url = state.upstream.url_for(selector.as_deref());
-    let key = dns::cache_key(&question, &url);
-    if let Some((bytes, age)) = state.cache.get(&key) {
+    let key = dns::cache_key(&question, &url, profile);
+    if let Some((bytes, age, ttl)) = state.cache.get(&key) {
         Metrics::inc(&state.metrics.cache_hits);
         if !prelogged {
             record(
@@ -162,7 +185,7 @@ pub(super) async fn resolve_wire(
         }
         // Strip OPT, rewrite the question case, count TTLs down, patch id.
         return Some(
-            dns::normalize_for_client(&bytes, &question, age)
+            dns::normalize_for_client(&bytes, &question, age, ttl)
                 .unwrap_or_else(|| bytes.as_ref().to_vec()),
         );
     }
@@ -176,8 +199,12 @@ pub(super) async fn resolve_wire(
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
     };
-    let guard = gate.lock().await;
-    if let Some((bytes, age)) = state.cache.get(&key) {
+    let gate_guard = gate.lock().await;
+    let _inflight = InflightGuard {
+        map: &state.inflight,
+        key: key.clone(),
+    };
+    if let Some((bytes, age, ttl)) = state.cache.get(&key) {
         if !prelogged {
             record(
                 state,
@@ -191,13 +218,9 @@ pub(super) async fn resolve_wire(
                 None,
             );
         }
-        drop(guard);
-        let mut map = state.inflight.lock().expect("inflight");
-        if Arc::strong_count(&gate) <= 2 {
-            map.remove(&key);
-        }
+        drop(gate_guard);
         return Some(
-            dns::normalize_for_client(&bytes, &question, age)
+            dns::normalize_for_client(&bytes, &question, age, ttl)
                 .unwrap_or_else(|| bytes.as_ref().to_vec()),
         );
     }
@@ -207,9 +230,15 @@ pub(super) async fn resolve_wire(
         Ok(response) => {
             let rtt = started.elapsed().as_millis() as i64;
             // Normalize before returning and caching: no OPT/ECS replay.
+            let ttl = dns::cache_ttl(&response);
+            let wire_ttl = if ttl.is_zero() {
+                Duration::from_secs(30)
+            } else {
+                ttl
+            };
             let normalized =
-                dns::normalize_for_client(&response, &question, Duration::ZERO).unwrap_or(response);
-            let ttl = dns::cache_ttl(&normalized);
+                dns::normalize_for_client(&response, &question, Duration::ZERO, wire_ttl)
+                    .unwrap_or(response);
             if !ttl.is_zero() {
                 state.cache.put(key.clone(), normalized.clone(), ttl);
             }
@@ -248,12 +277,27 @@ pub(super) async fn resolve_wire(
             Some(dns::servfail_response(&question))
         }
     };
-    drop(guard);
-    {
-        let mut map = state.inflight.lock().expect("inflight");
-        if Arc::strong_count(&gate) <= 2 {
-            map.remove(&key);
-        }
-    }
+    drop(gate_guard);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inflight_guard_removes_the_entry_on_drop() {
+        let map = Mutex::new(HashMap::new());
+        map.lock()
+            .unwrap()
+            .insert("k".into(), Arc::new(tokio::sync::Mutex::new(())));
+        {
+            let _guard = InflightGuard {
+                map: &map,
+                key: "k".into(),
+            };
+            assert!(map.lock().unwrap().contains_key("k"));
+        }
+        assert!(map.lock().unwrap().is_empty());
+    }
 }

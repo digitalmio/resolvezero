@@ -14,10 +14,17 @@ pub(super) async fn poll_loop(
     state: Arc<AppState>,
     mut last_config: i32,
     mut last_blocklist: i32,
+    initial_ok: bool,
 ) {
-    let mut last_sync = Instant::now();
+    let mut last_sync = if initial_ok {
+        Instant::now()
+    } else {
+        Instant::now() - state.cfg.list_interval
+    };
     let mut next_retry = Instant::now();
     let mut last_purge = Instant::now() - Duration::from_secs(60);
+    // Reload hourly even without a version bump so expired IP links drop out.
+    let mut last_refresh = Instant::now();
     loop {
         tokio::time::sleep(state.cfg.poll_interval).await;
         if last_purge.elapsed() >= Duration::from_secs(5) {
@@ -25,8 +32,8 @@ pub(super) async fn poll_loop(
             let since = state.purge_since.load(Ordering::Relaxed);
             if let Ok(purges) = db.pending_purges(since).await {
                 if !purges.is_empty() {
-                    for (domain, record_type) in purges {
-                        state.cache.purge(&domain, record_type.as_deref());
+                    for (profile, domain, record_type) in purges {
+                        state.cache.purge(&profile, &domain, record_type.as_deref());
                     }
                 }
                 state.purge_since.store(now_seconds(), Ordering::Relaxed);
@@ -47,7 +54,7 @@ pub(super) async fn poll_loop(
             }
         };
 
-        if versions.config != last_config {
+        if versions.config != last_config || last_refresh.elapsed() >= Duration::from_secs(3600) {
             match db.snapshot().await {
                 Ok(snapshot) => {
                     let mut guard = state.store.write().await;
@@ -58,7 +65,7 @@ pub(super) async fn poll_loop(
                         snapshot.zones,
                         snapshot.services,
                     );
-                    if state.cfg.hosted {
+                    if state.cfg.hosted && !state.cfg.allow_tokenless {
                         let tokenless = guard.tokenless_profiles();
                         if !tokenless.is_empty() {
                             error!(
@@ -69,9 +76,14 @@ pub(super) async fn poll_loop(
                     }
                     drop(guard);
                     last_config = versions.config;
+                    last_refresh = Instant::now();
+                    state.config_poll_error.store(false, Ordering::Relaxed);
                     info!(version = versions.config, "config snapshot loaded");
                 }
-                Err(err) => warn!(%err, "config snapshot failed"),
+                Err(err) => {
+                    state.config_poll_error.store(true, Ordering::Relaxed);
+                    warn!(%err, "config snapshot failed")
+                }
             }
         }
 
@@ -102,6 +114,7 @@ pub(super) async fn poll_loop(
                 Ok(report) => {
                     last_blocklist = versions.blocklist;
                     last_sync = Instant::now();
+                    state.subscriptions_loaded.store(true, Ordering::Relaxed);
                     state
                         .blocklist_ok
                         .store(report.failed == 0, Ordering::Relaxed);

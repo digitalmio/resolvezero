@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -168,9 +168,21 @@ impl Archive {
         let Ok(payload) = encoder.finish() else {
             return;
         };
-        if let Err(err) = s3.put(&key, &payload, "application/gzip").await {
-            warn!(%err, key, "raw-log upload failed");
-            Metrics::inc(&self.metrics.log_dropped);
+        let mut last_error = None;
+        for attempt in 0..3 {
+            match s3.put(&key, &payload, "application/gzip").await {
+                Ok(()) => return,
+                Err(err) => {
+                    last_error = Some(err);
+                    if attempt < 2 {
+                        tokio::time::sleep(Duration::from_millis(200 * (attempt + 1))).await;
+                    }
+                }
+            }
         }
+        if let Some(err) = last_error {
+            warn!(%err, key, "raw-log upload failed after retries");
+        }
+        Metrics::inc(&self.metrics.log_dropped);
     }
 }

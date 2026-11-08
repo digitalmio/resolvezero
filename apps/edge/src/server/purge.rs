@@ -12,6 +12,9 @@ use rz_core::artifact::S3Config;
 use super::http::{authorized, caller_ip, query_param, token_from};
 use super::AppState;
 
+const MAX_LOG_OBJECT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_LOG_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+
 pub(super) fn valid_purge_domain(value: &str) -> Option<String> {
     let domain = value
         .trim()
@@ -120,24 +123,26 @@ pub(super) async fn handle_logs(
     let prefix = std::env::var("S3_LOG_PREFIX").unwrap_or_else(|_| "logs".into());
     let date = query_param(&uri, "date")
         .filter(|value| value.len() == 10 && value.chars().all(|c| c.is_ascii_digit() || c == '-'));
-    let mut object_prefix = format!("{prefix}/{profile}/");
-    if let Some(date) = &date {
-        object_prefix.push_str(date);
-        object_prefix.push('/');
-    }
+    let dates = match &date {
+        Some(date) => vec![date.clone()],
+        None => recent_dates(),
+    };
 
     let mut keys = Vec::new();
-    let mut token: Option<String> = None;
-    for _ in 0..50 {
-        match s3.list(&object_prefix, token.as_deref()).await {
-            Ok((page, next)) => {
-                keys.extend(page);
-                token = next;
-                if token.is_none() {
-                    break;
+    for date in &dates {
+        let object_prefix = format!("{prefix}/{profile}/{date}/");
+        let mut token: Option<String> = None;
+        for _ in 0..25 {
+            match s3.list(&object_prefix, token.as_deref()).await {
+                Ok((page, next)) => {
+                    keys.extend(page);
+                    token = next;
+                    if token.is_none() {
+                        break;
+                    }
                 }
+                Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
             }
-            Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
         }
     }
     keys.sort();
@@ -171,16 +176,24 @@ pub(super) async fn handle_logs(
         if bytes.len() > 8 * 1024 * 1024 {
             continue;
         }
-        let mut decoder = GzDecoder::new(bytes.as_slice());
-        let mut text = String::new();
-        if decoder.read_to_string(&mut text).is_err() {
+        let decoder = GzDecoder::new(bytes.as_slice());
+        let mut raw = Vec::new();
+        let mut limited = decoder.take(MAX_LOG_OBJECT_BYTES as u64 + 1);
+        if limited.read_to_end(&mut raw).is_err() {
             continue;
         }
+        if raw.len() > MAX_LOG_OBJECT_BYTES {
+            raw.truncate(MAX_LOG_OBJECT_BYTES);
+        }
+        let text = String::from_utf8_lossy(&raw);
         let mut lines: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
         if newest_first {
             lines.reverse();
         }
         for line in lines {
+            if out.len() + line.len() + 1 > MAX_LOG_RESPONSE_BYTES {
+                break;
+            }
             out.push_str(line);
             out.push('\n');
             emitted += 1;
@@ -202,6 +215,20 @@ pub(super) async fn handle_logs(
         out,
     )
         .into_response()
+}
+
+fn recent_dates() -> Vec<String> {
+    use time::macros::format_description;
+    let format = format_description!("[year]-[month]-[day]");
+    let now = time::OffsetDateTime::now_utc();
+    (0..2)
+        .map(|days| {
+            (now - time::Duration::days(days))
+                .date()
+                .format(format)
+                .unwrap_or_default()
+        })
+        .collect()
 }
 
 pub(super) fn valid_device(value: &str) -> bool {

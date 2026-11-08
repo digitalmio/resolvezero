@@ -1,3 +1,4 @@
+use super::helpers::source_profile;
 use super::resolve::resolve_wire;
 use super::{AppState, QueryContext};
 use std::collections::HashMap;
@@ -80,11 +81,14 @@ async fn handle_tcp(
     peer: SocketAddr,
     state: Arc<AppState>,
 ) -> std::io::Result<()> {
-    let source =
+    let source = if proxy_trusted(peer.ip()) {
         match tokio::time::timeout(Duration::from_secs(5), read_proxy_source(&mut stream)).await {
             Ok(Some(source)) => source,
             _ => peer.ip().to_string(),
-        };
+        }
+    } else {
+        peer.ip().to_string()
+    };
 
     let _source_guard = acquire_conn(
         &state.conn_sources,
@@ -94,24 +98,7 @@ async fn handle_tcp(
     if _source_guard.is_none() {
         return Ok(());
     }
-    let profile = state.store.read().await.authorize_ip(&source).cloned();
-    let profile = match profile {
-        Some(profile) => {
-            let tokenless = state.cfg.hosted
-                && state
-                    .store
-                    .read()
-                    .await
-                    .profile_meta(&profile)
-                    .is_some_and(|meta| meta.token.is_none());
-            if tokenless {
-                None
-            } else {
-                Some(profile)
-            }
-        }
-        None => None,
-    };
+    let profile = source_profile(&state, &source).await;
     let log_enabled = match &profile {
         Some(profile) => state.store.read().await.should_log(profile),
         None => false,
@@ -145,7 +132,18 @@ async fn handle_tcp(
         }
 
         let response = match &profile {
-            Some(profile) => resolve_wire(&state, &wire, profile, &context).await,
+            Some(profile) if state.doh_rate.allow(&format!("tcp:{profile}")) => {
+                tokio::time::timeout(
+                    state.cfg.doh_timeout + Duration::from_secs(2),
+                    resolve_wire(&state, &wire, profile, &context),
+                )
+                .await
+                .unwrap_or(None)
+            }
+            Some(_) => {
+                Metrics::inc(&state.metrics.drops);
+                dns::parse_query(&wire).map(|q| dns::refused_response(&q))
+            }
             None => {
                 if state.cfg.unknown_source == UnknownSource::Refused {
                     dns::parse_query(&wire).map(|q| dns::refused_response(&q))
@@ -174,6 +172,20 @@ async fn handle_tcp(
                 Metrics::inc(&state.metrics.drops);
                 return Ok(());
             }
+        }
+    }
+}
+
+/// PROXY headers are only honored from Fly's ingress (loopback/private peers).
+/// A directly exposed listener must not let clients forge their source IP.
+pub(super) fn proxy_trusted(peer: std::net::IpAddr) -> bool {
+    if std::env::var("ALLOW_UNTRUSTED_PROXY_HEADERS").as_deref() == Ok("1") {
+        return true;
+    }
+    match peer {
+        std::net::IpAddr::V4(ip) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        std::net::IpAddr::V6(ip) => {
+            ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
         }
     }
 }

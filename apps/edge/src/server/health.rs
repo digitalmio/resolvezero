@@ -36,13 +36,15 @@ pub(super) async fn readyz(State(state): State<Arc<AppState>>) -> Response {
     // Lazy mode intentionally starts with an empty catalog; readiness means the
     // config snapshot and subscription metadata loaded, not that every list is
     // resident. Eager mode keeps the old catalog gate.
-    let ok = ready && (state.cfg.lazy_lists || blocklist_ok || !store.catalog.is_empty());
+    let subscriptions_loaded = state.subscriptions_loaded.load(Ordering::Relaxed);
+    let ok = ready && subscriptions_loaded;
     let body = serde_json::json!({
         "ok": ok,
         "region": state.cfg.region,
-        "rulesLoaded": true,
+        "rulesLoaded": subscriptions_loaded,
         "blocklistsLoaded": blocklist_ok,
-        "dns53Bound": true,
+        "subscriptionsLoaded": subscriptions_loaded,
+        "dns53Bound": state.dns53_bound.load(Ordering::Relaxed),
         "blocklistOk": blocklist_ok,
         "blocklistError": error.is_some(),
         "failedBlocklists": failed,

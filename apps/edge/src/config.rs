@@ -20,6 +20,8 @@ pub struct Config {
     pub upstream_preset: Option<String>,
     pub unknown_source: UnknownSource,
     pub max_total_entries: usize,
+    /// Per-profile list budget; one tenant cannot consume the shared catalog.
+    pub max_entries_per_profile: usize,
     pub max_list_bytes: usize,
     pub max_lists_per_profile: usize,
     pub list_interval: Duration,
@@ -62,13 +64,20 @@ impl Config {
     pub fn from_env() -> Result<Self, String> {
         let database_url =
             env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is not set".to_string())?;
-        let hosted = env::var("FLY_REGION").is_ok()
-            && env::var("ALLOW_TOKENLESS_PROFILES").as_deref() != Ok("1");
+        // Hosted mode is explicit: HOSTED=1/0 wins, then ENVIRONMENT=production,
+        // then Fly. ALLOW_TOKENLESS_PROFILES is an auth escape hatch and must
+        // not silently flip artifact/hosted behaviour.
+        let explicit_hosted = env::var("HOSTED")
+            .ok()
+            .map(|value| matches!(value.as_str(), "1" | "true" | "yes"));
+        let production = env::var("ENVIRONMENT").as_deref() == Ok("production");
+        let hosted = explicit_hosted.unwrap_or(production || env::var("FLY_REGION").is_ok());
         let eager = env::var("EAGER_BLOCKLISTS").as_deref() == Ok("1");
-        let artifact_only = !eager
-            && env::var("ARTIFACT_ONLY_LISTS")
-                .map(|value| value != "0")
-                .unwrap_or(hosted);
+        // Eager mode changes when lists load, not where they come from: keep
+        // artifact-only independent so eager cannot fall back to raw parsing.
+        let artifact_only = env::var("ARTIFACT_ONLY_LISTS")
+            .map(|value| value != "0")
+            .unwrap_or(hosted);
         Ok(Self {
             database_url,
             doh_port: number("PORT", 8080),
@@ -82,6 +91,7 @@ impl Config {
                 _ => UnknownSource::Refused,
             },
             max_total_entries: number("BLOCKLIST_MAX_TOTAL_ENTRIES", 5_000_000),
+            max_entries_per_profile: number("BLOCKLIST_MAX_ENTRIES_PER_PROFILE", 1_500_000),
             max_list_bytes: number("BLOCKLIST_MAX_LIST_BYTES", 30 * 1024 * 1024),
             max_lists_per_profile: number("BLOCKLIST_MAX_LISTS_PER_PROFILE", 64),
             list_interval: Duration::from_secs(
@@ -95,8 +105,8 @@ impl Config {
             poll_interval: Duration::from_millis(number::<u64>("CONFIG_POLL_MS", 5_000).max(500)),
             allow_tokenless: env::var("ALLOW_TOKENLESS_PROFILES").as_deref() == Ok("1"),
             drop_privileges: env::var("DROP_PRIVILEGES").as_deref() != Ok("0"),
-            doh_rate_limit_per_min: number("DOH_RATE_LIMIT_PER_MIN", 600),
-            udp_rate_limit_per_min: number("UDP_RATE_LIMIT_PER_MIN", 600),
+            doh_rate_limit_per_min: number("DOH_RATE_LIMIT_PER_MIN", 6000),
+            udp_rate_limit_per_min: number("UDP_RATE_LIMIT_PER_MIN", 6000),
             doh_max_inflight: number("DOH_MAX_INFLIGHT", 256),
             udp_max_inflight: number("UDP_MAX_INFLIGHT", 1024),
             tcp_max_connections: number("TCP_MAX_CONNECTIONS", 512),
@@ -168,6 +178,7 @@ impl Config {
             upstream_preset: None,
             unknown_source: UnknownSource::Refused,
             max_total_entries: 5_000_000,
+            max_entries_per_profile: 1_500_000,
             max_list_bytes: 30 * 1024 * 1024,
             max_lists_per_profile: 64,
             list_interval: Duration::from_secs(60),
@@ -177,8 +188,8 @@ impl Config {
             poll_interval: Duration::from_millis(500),
             allow_tokenless: false,
             drop_privileges: false,
-            doh_rate_limit_per_min: 600,
-            udp_rate_limit_per_min: 600,
+            doh_rate_limit_per_min: 6000,
+            udp_rate_limit_per_min: 6000,
             doh_max_inflight: 256,
             udp_max_inflight: 1024,
             tcp_max_connections: 512,
@@ -231,6 +242,7 @@ mod tests {
             upstream_preset: None,
             unknown_source: UnknownSource::Refused,
             max_total_entries: 5_000_000,
+            max_entries_per_profile: 1_500_000,
             max_list_bytes: 30 * 1024 * 1024,
             max_lists_per_profile: 64,
             list_interval: Duration::from_secs(60),
@@ -240,8 +252,8 @@ mod tests {
             poll_interval: Duration::from_millis(500),
             allow_tokenless: false,
             drop_privileges: false,
-            doh_rate_limit_per_min: 600,
-            udp_rate_limit_per_min: 600,
+            doh_rate_limit_per_min: 6000,
+            udp_rate_limit_per_min: 6000,
             doh_max_inflight: 256,
             udp_max_inflight: 1024,
             tcp_max_connections: 512,

@@ -6,9 +6,10 @@ use hickory_proto::rr::RData;
 use super::Question;
 
 /// Cache key: question + DNSSEC intent + full EDNS options + upstream.
-pub fn cache_key(question: &Question, upstream: &str) -> String {
+pub fn cache_key(question: &Question, upstream: &str, profile: &str) -> String {
     format!(
-        "{}|{:?}|{:?}|{}|{}|{}",
+        "{}|{}|{:?}|{:?}|{}|{}|{}",
+        profile,
         question.name,
         question.qtype,
         question.qclass,
@@ -85,6 +86,7 @@ pub fn normalize_for_client(
     wire: &[u8],
     question: &Question,
     elapsed: Duration,
+    max_ttl: Duration,
 ) -> Option<Vec<u8>> {
     let mut response = Message::from_vec(wire).ok()?;
     response.edns = None;
@@ -95,13 +97,17 @@ pub fn normalize_for_client(
         *cached = original.clone();
     }
     let elapsed_secs = elapsed.as_secs().min(u32::MAX as u64) as u32;
+    let max_secs = max_ttl.as_secs().clamp(1, u32::MAX as u64) as u32;
     for record in response
         .answers
         .iter_mut()
         .chain(response.authorities.iter_mut())
         .chain(response.additionals.iter_mut())
     {
-        record.ttl = record.ttl.saturating_sub(elapsed_secs).max(1);
+        record.ttl = record.ttl.min(max_secs).saturating_sub(elapsed_secs).max(1);
+        if let RData::SOA(soa) = &mut record.data {
+            soa.minimum = soa.minimum.min(max_secs);
+        }
     }
     response.to_vec().ok()
 }

@@ -1,5 +1,6 @@
+use super::helpers::hosted_tokenless;
 use super::resolve::resolve_wire;
-use super::transports::acquire_conn;
+use super::transports::{acquire_conn, proxy_trusted};
 use super::{AppState, QueryContext};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::warn;
 
+use crate::dns;
 use crate::metrics::Metrics;
 
 pub(super) const PROXY_V2_MAGIC: [u8; 12] = [
@@ -119,9 +121,12 @@ pub(super) async fn dot_loop(listener: TcpListener, state: Arc<AppState>) {
 
 async fn handle_dot(
     mut stream: TcpStream,
-    _peer: SocketAddr,
+    peer: SocketAddr,
     state: Arc<AppState>,
 ) -> std::io::Result<()> {
+    if !proxy_trusted(peer.ip()) {
+        return Ok(());
+    }
     let parsed = tokio::time::timeout(Duration::from_secs(5), read_proxy_v2_header(&mut stream))
         .await
         .ok()
@@ -135,7 +140,7 @@ async fn handle_dot(
     let Some(label) = dot_label(&authority, &state.cfg.dot_suffix) else {
         return Ok(());
     };
-    let source_key = source.clone().unwrap_or_else(|| _peer.ip().to_string());
+    let source_key = source.clone().unwrap_or_else(|| peer.ip().to_string());
     let _source_guard = acquire_conn(
         &state.conn_sources,
         format!("dot:{source_key}"),
@@ -147,6 +152,9 @@ async fn handle_dot(
     let Some(profile_id) = state.store.read().await.authorize_dot_id(&label).cloned() else {
         return Ok(());
     };
+    if hosted_tokenless(&state, &profile_id).await {
+        return Ok(());
+    }
     let log_enabled = state.store.read().await.should_log(&profile_id);
     let context = QueryContext {
         client_ip: source,
@@ -175,7 +183,18 @@ async fn handle_dot(
             Ok(Ok(_)) => {}
             _ => return Ok(()),
         }
-        match resolve_wire(&state, &wire, &profile_id, &context).await {
+        let response = if state.doh_rate.allow(&format!("dot:{profile_id}")) {
+            tokio::time::timeout(
+                state.cfg.doh_timeout + Duration::from_secs(2),
+                resolve_wire(&state, &wire, &profile_id, &context),
+            )
+            .await
+            .unwrap_or(None)
+        } else {
+            Metrics::inc(&state.metrics.drops);
+            dns::parse_query(&wire).map(|q| dns::refused_response(&q))
+        };
+        match response {
             Some(bytes) if bytes.len() <= 65_535 => {
                 let len = (bytes.len() as u16).to_be_bytes();
                 stream.write_all(&len).await?;

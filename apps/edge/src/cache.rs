@@ -83,11 +83,11 @@ impl DnsCache {
     /// Returns the cached wire response plus how long it has been stored;
     /// callers normalize (strip OPT, rewrite question case, count TTLs down,
     /// patch transaction id) before returning it to a client.
-    pub fn get(&self, key: &str) -> Option<(Arc<[u8]>, Duration)> {
+    pub fn get(&self, key: &str) -> Option<(Arc<[u8]>, Duration, Duration)> {
         match self.entries.get(key) {
             Some(entry) if !entry.expired() => {
                 self.hits.fetch_add(1, Ordering::Relaxed);
-                Some((entry.bytes.clone(), entry.stored_at.elapsed()))
+                Some((entry.bytes.clone(), entry.stored_at.elapsed(), entry.ttl))
             }
             Some(_) => {
                 // Moka's housekeeping is lazy; never serve a stale answer even
@@ -124,15 +124,19 @@ impl DnsCache {
     }
 
     /// Evict one name (optionally one record type) after a console purge.
-    pub fn purge(&self, domain: &str, record_type: Option<&str>) {
-        let prefix = format!("{}|", domain.trim_end_matches('.').to_ascii_lowercase());
+    pub fn purge(&self, profile: &str, domain: &str, record_type: Option<&str>) {
+        let prefix = format!(
+            "{}|{}|",
+            profile,
+            domain.trim_end_matches('.').to_ascii_lowercase()
+        );
         let keys: Vec<String> = self
             .entries
             .iter()
             .filter_map(|(key, _)| {
                 let key = key.as_ref();
                 let hit = key.starts_with(&prefix)
-                    && record_type.is_none_or(|wanted| key.split('|').nth(1) == Some(wanted));
+                    && record_type.is_none_or(|wanted| key.split('|').nth(2) == Some(wanted));
                 hit.then(|| key.clone())
             })
             .collect();
@@ -174,9 +178,10 @@ mod tests {
     fn hit_returns_bytes_and_age() {
         let cache = DnsCache::default();
         cache.put("k".into(), vec![0, 0, 9, 9], Duration::from_secs(30));
-        let (bytes, age) = cache.get("k").unwrap();
+        let (bytes, age, ttl) = cache.get("k").unwrap();
         assert_eq!(&bytes[0..2], &[0, 0]);
         assert!(age < Duration::from_secs(1));
+        assert_eq!(ttl, Duration::from_secs(30));
         assert_eq!(cache.hits(), 1);
     }
 
@@ -204,23 +209,23 @@ mod tests {
     fn purge_matches_name_and_type() {
         let cache = DnsCache::default();
         cache.put(
-            "example.com|A|IN|false|none|u".into(),
+            "home|example.com|A|IN|false|none|u".into(),
             vec![0; 8],
             Duration::from_secs(30),
         );
         cache.put(
-            "example.com|AAAA|IN|false|none|u".into(),
+            "home|example.com|AAAA|IN|false|none|u".into(),
             vec![0; 8],
             Duration::from_secs(30),
         );
         cache.put(
-            "other.com|A|IN|false|none|u".into(),
+            "home|other.com|A|IN|false|none|u".into(),
             vec![0; 8],
             Duration::from_secs(30),
         );
-        cache.purge("example.com", Some("A"));
-        assert!(cache.get("example.com|A|IN|false|none|u").is_none());
-        assert!(cache.get("example.com|AAAA|IN|false|none|u").is_some());
-        assert!(cache.get("other.com|A|IN|false|none|u").is_some());
+        cache.purge("home", "example.com", Some("A"));
+        assert!(cache.get("home|example.com|A|IN|false|none|u").is_none());
+        assert!(cache.get("home|example.com|AAAA|IN|false|none|u").is_some());
+        assert!(cache.get("home|other.com|A|IN|false|none|u").is_some());
     }
 }

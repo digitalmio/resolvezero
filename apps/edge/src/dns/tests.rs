@@ -128,8 +128,29 @@ fn normalization_strips_opt_and_patches_question_case() {
     ));
     response.edns = Some(hickory_proto::op::Edns::new());
     let wire = response.to_vec().unwrap();
-    let normalized = normalize_for_client(&wire, &q, Duration::from_secs(30)).unwrap();
+    let normalized =
+        normalize_for_client(&wire, &q, Duration::from_secs(30), Duration::from_secs(300)).unwrap();
     let parsed = Message::from_vec(&normalized).unwrap();
     assert!(parsed.edns.is_none());
     assert_eq!(parsed.answers[0].ttl, 270);
+}
+
+#[test]
+fn clamps_forwarded_ttls_to_the_cache_bound() {
+    let q = parse_query(&query("example.com.", RecordType::A)).unwrap();
+    let mut response = Message::new(q.id, MessageType::Response, OpCode::Query);
+    response.add_query(Query::query(
+        Name::from_str("example.com.").unwrap(),
+        RecordType::A,
+    ));
+    response.add_answer(Record::from_rdata(
+        Name::from_str("example.com.").unwrap(),
+        86_400,
+        RData::A(A(Ipv4Addr::new(192, 0, 2, 1))),
+    ));
+    let wire = response.to_vec().unwrap();
+    let normalized =
+        normalize_for_client(&wire, &q, Duration::ZERO, Duration::from_secs(300)).unwrap();
+    let parsed = Message::from_vec(&normalized).unwrap();
+    assert_eq!(parsed.answers[0].ttl, 300);
 }

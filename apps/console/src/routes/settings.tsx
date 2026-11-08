@@ -130,10 +130,12 @@ function SettingsPage() {
           <div className="divide-y divide-[var(--line)]">
             {data.sourceIps.length === 0 ? <p className="p-6 text-center text-[12px] text-[var(--muted)]">No linked IPs.</p> : null}
             {data.sourceIps.map((ip) => (
-              <div key={ip} className="flex items-center gap-3 px-5 py-3.5">
+              <div key={ip.ip} className="flex items-center gap-3 px-5 py-3.5">
                 <CheckCircle2 size={14} className="text-[var(--green)]" />
-                <span className="font-mono text-[12px]">{ip}</span>
-                <span className="ml-auto text-[10px] text-[var(--muted)]">linked</span>
+                <span className="font-mono text-[12px]">{ip.ip}</span>
+                <span className="ml-auto text-[10px] text-[var(--muted)]">
+                  last seen {formatZoned(ip.lastSeenAt, 'd MMM yyyy', zone)}
+                </span>
               </div>
             ))}
           </div>

@@ -31,12 +31,15 @@ kill_timeout = 30
 [env]
   PORT = "8080"
   LOG_LEVEL = "info"
-  # Archive objects are exposed by the logs API; one object per profile per
-  # minute keeps console lag near 1–2 min. Object storage ops are free on our
-  # provider; the logs API only lists the last two UTC days for "latest".
-  S3_FLUSH_MINUTES = "1"
-  # Raw-log persistence is the in-process S3 sink (S3_* secrets in Fly).
-  # Flip to QUERY_LOG_STDOUT=1 + Fly Log Shipper instead if ever preferred.
+  # Explicit hosted mode: tokenless profiles are refused and artifacts are the
+  # only list source. Do not rely on FLY_REGION detection alone.
+  HOSTED = "1"
+  # Household router IPs aggregate every device; 10 qps was too low.
+  DOH_RATE_LIMIT_PER_MIN = "6000"
+  UDP_RATE_LIMIT_PER_MIN = "6000"
+  # Raw-log persistence is the in-process S3 sink (S3_* secrets in Fly): one
+  # object per profile per minute, so console lag stays near 1–2 min. The logs
+  # API lists the last two UTC days when no date is given.
   # Secrets (set once, shared by all regions):
   #   DATABASE_URL           — app role (EU PlanetScale)
   #   S3_*                   — iDrive E2 eu-central-1 archive bucket

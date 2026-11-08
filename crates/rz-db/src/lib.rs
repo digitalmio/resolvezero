@@ -123,7 +123,8 @@ impl Db {
         .collect::<Result<Vec<_>, sqlx::Error>>()?;
 
         let ips = sqlx::query(
-            "select host(ip_address) as ip_address, profile_id from profile_source_ips",
+            "select host(ip_address) as ip_address, profile_id from profile_source_ips
+             where last_seen_at > now() - interval '30 days'",
         )
         .fetch_all(&self.pool)
         .await?

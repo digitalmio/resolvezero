@@ -74,7 +74,7 @@ fn parse_args() -> Result<Args, String> {
 }
 
 async fn fetch_text(url: &str, max_bytes: usize) -> Result<String, String> {
-    let fetcher = SafeFetcher::new(max_bytes, true);
+    let fetcher = SafeFetcher::new(max_bytes, false);
     let bytes = fetcher.get(url).await?;
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }

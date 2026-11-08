@@ -331,6 +331,9 @@ export const profileSourceIps = pgTable("profile_source_ips", {
   profileId: varchar("profile_id", { length: 8 })
     .notNull()
     .references(() => profiles.id),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 })
 
 /** Shape of entries inside the top_* jsonb lists. */

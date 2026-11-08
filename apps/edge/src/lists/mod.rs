@@ -89,7 +89,7 @@ pub async fn sync_once(
             .push((row.url, row.id));
     }
     let s3 = S3Config::from_env();
-    let fetcher = SafeFetcher::new(cfg.max_list_bytes, true);
+    let fetcher = SafeFetcher::new(cfg.max_list_bytes, false);
 
     let mut changed = false;
     let mut failed = 0usize;

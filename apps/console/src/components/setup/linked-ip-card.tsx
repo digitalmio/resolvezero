@@ -3,6 +3,7 @@ import { Link2, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { unlinkSourceIp } from '../../server/dashboard'
+import type { SourceIpLink } from '../../server/dashboard/types'
 import { Button } from '../ui/button'
 
 type Phase = 'checking' | 'ready' | 'linking' | 'unavailable'
@@ -16,7 +17,7 @@ export function LinkedIpCard({
   profileId: string
   token: string
   edgeOrigin: string
-  linkedIps: string[]
+  linkedIps: SourceIpLink[]
 }) {
   const queryClient = useQueryClient()
   const [ip, setIp] = useState<string | null>(null)
@@ -96,7 +97,7 @@ export function LinkedIpCard({
           ) : null}
         </div>
         <p className="mt-1.5 font-mono text-[14px]">{ip ?? (phase === 'unavailable' ? 'Unknown' : 'Checking…')}</p>
-        {ip && linkedIps.length > 0 && !linkedIps.includes(ip) ? (
+        {ip && linkedIps.length > 0 && !linkedIps.some((link) => link.ip === ip) ? (
           <p className="mt-1 text-[10px] text-[var(--warning)]">
             This address is not in the linked list yet — link it below.
           </p>
@@ -124,13 +125,13 @@ export function LinkedIpCard({
           <p className="text-[11px] text-[var(--muted)]">No addresses linked for this profile yet.</p>
         ) : (
           <ul className="space-y-1.5">
-            {linkedIps.map((address) => (
-              <li key={address} className="flex items-center justify-between gap-2 font-mono text-[11px]">
-                <span>{address}</span>
+            {linkedIps.map((link) => (
+              <li key={link.ip} className="flex items-center justify-between gap-2 font-mono text-[11px]">
+                <span>{link.ip}</span>
                 <button
                   type="button"
-                  aria-label={`Unlink ${address}`}
-                  onClick={() => remove.mutate(address)}
+                  aria-label={`Unlink ${link.ip}`}
+                  onClick={() => remove.mutate(link.ip)}
                   disabled={remove.isPending}
                   className="p-1 text-[var(--muted)] transition-colors hover:text-[var(--danger)] disabled:opacity-50"
                 >

@@ -15,8 +15,9 @@ production-exposed.
 
 `crates/rz-core/src/netguard.rs` is a port of the former Node edge's `netGuard.ts`:
 
-- https-only by default (lists **and** custom upstreams); `ALLOW_HTTP_TARGETS=1`
-  is the explicit self-host escape hatch (requires `ALLOW_PRIVATE_TARGETS=1`).
+- https-only by default for list/artifact fetches; `ALLOW_HTTP_TARGETS=1`
+  is the explicit self-host escape hatch for lists (requires
+  `ALLOW_PRIVATE_TARGETS=1`). Custom DoH upstreams stay https-only.
 - rejects embedded credentials and metadata hosts.
 - resolves the host and rejects loopback/private/link-local/CGNAT/multicast/
   reserved/documentation ranges (including IPv4-mapped and NAT64 forms).
@@ -153,11 +154,16 @@ Added after the security fixes:
   `limit`/`order`/`date`), `POST /v1/:profile/cache/purge`, `GET whoami`,
   `POST update-ip`, with console CORS on the browser-driven routes.
 - **Cache purge polling**: `dns_cache_purges` is read every 5 s and matching
-  local entries are evicted.
+  local entries for the requesting profile are evicted (cache keys are
+  profile-namespaced, so one tenant cannot purge another's entries).
+- **IP links expire**: `profile_source_ips.last_seen_at` is refreshed at most
+  once a day from live queries; links unseen for 30 days are ignored and a new
+  owner can re-link the address. The settings page shows the last-seen date.
 - **Blocklist status write-back**: `last_status` / `entry_count` /
   `detected_format` / `last_synced_at` are updated on every sync.
-- **Device write-behind**: first-seen device tags are inserted into
-  `profile_devices` (deduped in memory), then `last_seen_at` is refreshed.
+- **Device write-behind**: device tags are capped at 200 per profile, inserted
+  into `profile_devices` on first sight, then `last_seen_at` is refreshed
+  hourly.
 - **Upstream transport**: h1 pool for Cloudflare/Google, h2 only for Quad9
   (the security pass also benchmarked this; reqwest h2 was 7× slower here).
 
@@ -167,20 +173,28 @@ Added after the security fixes:
 |---|---|
 | Blocked-services catalog (`profile_blocked_services`) | **Fixed** — static catalog ported and expanded at snapshot time |
 | `DELETE /v1/:profile/logs` and unused edge stats/admin endpoints | **Not ported** (console reads stats from Postgres; it only GETs logs) |
-| Single-flight for identical misses | **Fixed** — per-key in-flight gate |
+| Single-flight for identical misses | **Fixed** — per-key in-flight gate with RAII cleanup on timeout/disconnect |
 | Per-source TCP/DoT caps | **Fixed** — 32 TCP / 16 DoT |
 | DoH metrics/readyz authentication | **Not added** (Fly keeps `/metrics` private; `/readyz` stays public) |
 | Non-root container / capability-only bind | **Not changed** — root then checked drop |
 | S3 PUT retry | **Fixed** — 3 attempts with backoff |
-| PROXY header trust | **Unchanged** — safe only if port 53 is reachable exclusively through Fly's `proxy_proto`; UDP now binds `fly-global-services` |
+| Rate-limiter map bound | **Fixed** — hard key cap, IPv6 keyed by /64, 6000/min defaults |
+| DoT tokenless check | **Fixed** — shared `hosted_tokenless` gate across DoH/TCP/UDP/DoT |
+| PROXY header trust | **Fixed** — only loopback/private peers (Fly ingress); `ALLOW_UNTRUSTED_PROXY_HEADERS=1` for direct exposure |
+| Logs decompression bound | **Fixed** — 8 MiB per object and per response cap |
+| Logs date default | **Fixed** — today + yesterday when `date` is omitted |
+| Zone lookup index | **Fixed** — `zone_names` / `wildcard_names` used by `has_zone_name` |
+| Per-profile blocklist budget | **Fixed** — 1.5M entries/profile plus global headroom; compiler enforces the same cap |
 | Query-log timestamps | **Fixed** — millisecond precision |
 
 ## Verification
 
-- `cargo test`: **40 passed**.
+- `cargo test`: **101 passed** across the workspace (58 edge).
 - `cargo clippy --all-targets -- -D warnings`: clean.
 - Local release boot with the published artifacts: 4/4 lists from artifacts,
   **0 raw**, 435,691 rules, ~20 MB RSS.
+- Beta hardenings verified: TTL clamping, profile-namespaced cache purge,
+  single-flight cleanup, bounded rate map, IP-link expiry migration.
 - DoH smoke after hardening: `doubleclick.net` → `0.0.0.0`; `example.com` →
   forwarded answer; SafeSearch `google.com` → CNAME `forcesafesearch.google.com`.
 - DoT smoke with a synthetic PROXY v2 authority header:

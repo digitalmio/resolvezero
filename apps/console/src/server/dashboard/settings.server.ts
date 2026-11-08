@@ -36,7 +36,10 @@ export async function loadSettings(ownerUserId: string, profileId?: string): Pro
       .from(profiles)
       .where(eq(profiles.id, profile.id))
       .limit(1),
-    db.select({ ip: profileSourceIps.ipAddress }).from(profileSourceIps).where(eq(profileSourceIps.profileId, profile.id)),
+    db
+      .select({ ip: profileSourceIps.ipAddress, lastSeenAt: profileSourceIps.lastSeenAt })
+      .from(profileSourceIps)
+      .where(eq(profileSourceIps.profileId, profile.id)),
     db.select({ domain: profileRules.domain }).from(profileRules).where(eq(profileRules.profileId, profile.id)),
     db.select({ domain: profileZones.domain }).from(profileZones).where(eq(profileZones.profileId, profile.id)),
     db.select({ id: profileBlocklists.id }).from(profileBlocklists).where(eq(profileBlocklists.profileId, profile.id)),
@@ -62,7 +65,10 @@ export async function loadSettings(ownerUserId: string, profileId?: string): Pro
     safeSearch: p.safeSearch ?? {},
     blockedServices: services.map((row) => row.service).sort(),
     createdAt: p.createdAt.toISOString(),
-    sourceIps: sourceIps.map((row) => row.ip),
+    sourceIps: sourceIps.map((row) => ({
+      ip: row.ip,
+      lastSeenAt: row.lastSeenAt.toISOString(),
+    })),
     counts: { rules: rules.length, zones: zones.length, lists: lists.length },
   };
 }

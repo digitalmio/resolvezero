@@ -4,6 +4,7 @@
 //! `stats_minute` / `stats_hourly` (+ per-device variants) and appends each
 //! event to a one-minute S3 window. DNS never waits on either sink.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -77,7 +78,7 @@ pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
     tokio::spawn(async move {
         let mut archive = Archive::new(&cfg, metrics.clone());
         let mut batch: Vec<QueryEvent> = Vec::new();
-        let mut pending: Vec<QueryEvent> = Vec::new();
+        let mut pending: VecDeque<QueryEvent> = VecDeque::new();
         let mut flush_tick = tokio::time::interval(FLUSH_EVERY);
         let mut archive_tick = tokio::time::interval(ARCHIVE_EVERY);
 
@@ -128,17 +129,17 @@ async fn flush(
     db: &Db,
     archive: &mut Archive,
     batch: &mut Vec<QueryEvent>,
-    pending: &mut Vec<QueryEvent>,
+    pending: &mut VecDeque<QueryEvent>,
     metrics: &Metrics,
 ) {
     if batch.is_empty() && pending.is_empty() {
         return;
     }
-    pending.append(batch);
+    pending.extend(batch.drain(..));
     while pending.len() > MAX_PENDING {
-        pending.remove(0);
+        pending.pop_front();
     }
-    match apply_rollups(db, pending).await {
+    match apply_rollups(db, pending.make_contiguous()).await {
         Ok(()) => {
             for event in pending.iter() {
                 archive.add(event);

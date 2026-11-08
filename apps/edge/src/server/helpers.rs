@@ -1,6 +1,6 @@
 use super::{AppState, QueryContext};
 use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use hickory_proto::rr::RecordType;
 
@@ -78,6 +78,83 @@ pub(super) fn record_type_name(record_type: RecordType) -> &'static str {
     }
 }
 
+/// Resolve a linked source IP to a profile. Hosted profiles without a token
+/// are refused so one transport cannot drift from the others.
+pub(super) async fn source_profile(state: &AppState, ip: &str) -> Option<String> {
+    let profile = state.store.read().await.authorize_ip(ip).cloned()?;
+    if hosted_tokenless(state, &profile).await {
+        return None;
+    }
+    note_source_ip(state, ip);
+    Some(profile)
+}
+
+/// Keep a 30-day link alive without a DB write per query.
+fn note_source_ip(state: &AppState, ip: &str) {
+    const REFRESH: Duration = Duration::from_secs(24 * 3600);
+    const MAX_TRACKED: usize = 4_096;
+    let due = {
+        let mut seen = state.seen_source_ips.lock().expect("source ip seen");
+        if let Some(last) = seen.get_mut(ip) {
+            if last.elapsed() < REFRESH {
+                false
+            } else {
+                *last = Instant::now();
+                true
+            }
+        } else if seen.len() < MAX_TRACKED {
+            seen.insert(ip.to_string(), Instant::now());
+            true
+        } else {
+            false
+        }
+    };
+    if due {
+        let db = state.db.clone();
+        let ip = ip.to_string();
+        tokio::spawn(async move {
+            let _ = db.touch_source_ip(&ip).await;
+        });
+    }
+}
+
+/// Hosted mode refuses profiles that have no token; every transport must apply
+/// the same rule so DoT cannot drift from DoH/TCP/UDP.
+pub(super) async fn hosted_tokenless(state: &AppState, profile: &str) -> bool {
+    state.cfg.hosted
+        && !state.cfg.allow_tokenless
+        && state
+            .store
+            .read()
+            .await
+            .profile_meta(profile)
+            .is_some_and(|meta| meta.token.is_none())
+}
+
+/// Track failures per profile: one profile's successful load must not clear
+/// another profile's failure from readiness.
+fn set_blocklist_status(state: &AppState, profile: &str, failed: usize, pending: usize) {
+    let count = {
+        let mut set = state
+            .blocklist_failed_profiles
+            .lock()
+            .expect("blocklist failed profiles");
+        if failed + pending > 0 {
+            set.insert(profile.to_string());
+        } else {
+            set.remove(profile);
+        }
+        set.len()
+    };
+    state.blocklist_failed.store(count, Ordering::Relaxed);
+    state.blocklist_ok.store(count == 0, Ordering::Relaxed);
+    *state.blocklist_error.lock().expect("blocklist error") = if count == 0 {
+        None
+    } else {
+        Some(format!("list load failed for {count} profile(s)"))
+    };
+}
+
 pub(super) async fn ensure_lists(state: &AppState, profile: &str) {
     match lazy::ensure_profile_loaded(
         &state.db,
@@ -90,9 +167,7 @@ pub(super) async fn ensure_lists(state: &AppState, profile: &str) {
     {
         Ok(report) if report.changed => {
             state.cache.clear();
-            state.blocklist_failed.store(0, Ordering::Relaxed);
-            state.blocklist_ok.store(true, Ordering::Relaxed);
-            *state.blocklist_error.lock().expect("blocklist error") = None;
+            set_blocklist_status(state, profile, report.failed, report.pending);
             info!(
                 profile,
                 loaded = report.loaded,
@@ -101,12 +176,7 @@ pub(super) async fn ensure_lists(state: &AppState, profile: &str) {
             );
         }
         Ok(report) if report.failed > 0 => {
-            state
-                .blocklist_failed
-                .store(report.failed, Ordering::Relaxed);
-            state.blocklist_ok.store(false, Ordering::Relaxed);
-            *state.blocklist_error.lock().expect("blocklist error") =
-                Some(format!("lazy list load failed for {profile}"));
+            set_blocklist_status(state, profile, report.failed, report.pending);
             warn!(
                 profile,
                 loaded = report.loaded,
@@ -115,12 +185,11 @@ pub(super) async fn ensure_lists(state: &AppState, profile: &str) {
             );
         }
         Ok(report) if report.loaded > 0 => {
-            state.blocklist_failed.store(0, Ordering::Relaxed);
-            state.blocklist_ok.store(true, Ordering::Relaxed);
-            *state.blocklist_error.lock().expect("blocklist error") = None;
+            set_blocklist_status(state, profile, report.failed, report.pending);
             info!(profile, loaded = report.loaded, "lazy lists ready");
         }
         Ok(report) if report.pending > 0 => {
+            set_blocklist_status(state, profile, report.failed, report.pending);
             info!(
                 profile,
                 pending = report.pending,

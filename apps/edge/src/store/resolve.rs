@@ -74,14 +74,24 @@ impl RuleStore {
 
     pub fn has_zone_name(&self, profile_id: &str, domain: &str) -> bool {
         let domain = domain.trim_end_matches('.').to_ascii_lowercase();
-        self.zones
-            .keys()
-            .any(|key| key.starts_with(&format!("{}|{}|", profile_id, domain)))
-            || self.wildcard_zones.keys().any(|key| {
-                key.starts_with(&format!("{}|", profile_id))
-                    && key.split('|').nth(1).is_some_and(|suffix| {
-                        domain == suffix || domain.ends_with(&format!(".{suffix}"))
-                    })
-            })
+        if self
+            .zone_names
+            .get(profile_id)
+            .is_some_and(|names| names.contains(&domain))
+        {
+            return true;
+        }
+        let labels: Vec<&str> = domain.split('.').collect();
+        for index in 1..labels.len() {
+            let suffix = labels[index..].join(".");
+            if self
+                .wildcard_names
+                .get(profile_id)
+                .is_some_and(|names| names.contains(&suffix))
+            {
+                return true;
+            }
+        }
+        false
     }
 }

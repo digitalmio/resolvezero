@@ -108,8 +108,13 @@ export interface SettingsData {
   safeSearch: { google?: boolean; bing?: boolean; duckduckgo?: boolean; youtube?: boolean };
   blockedServices: string[];
   createdAt: string;
-  sourceIps: string[];
+  sourceIps: SourceIpLink[];
   counts: { rules: number; zones: number; lists: number };
+}
+
+export interface SourceIpLink {
+  ip: string;
+  lastSeenAt: string;
 }
 
 export interface CachePurgeResult {

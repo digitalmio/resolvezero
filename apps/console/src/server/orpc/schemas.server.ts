@@ -152,6 +152,6 @@ export const settingsSchema = z.object({
   }),
   blockedServices: z.array(z.string()),
   createdAt: z.string(),
-  sourceIps: z.array(z.string()),
+  sourceIps: z.array(z.object({ ip: z.string(), lastSeenAt: z.string() })),
   counts: z.object({ rules: z.number(), zones: z.number(), lists: z.number() }),
 });

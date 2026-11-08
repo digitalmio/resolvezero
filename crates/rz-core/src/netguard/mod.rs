@@ -31,6 +31,13 @@ pub fn allow_http_targets() -> bool {
     allow_private_targets() && std::env::var("ALLOW_HTTP_TARGETS").as_deref() == Ok("1")
 }
 
+fn is_metadata_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => ip == Ipv4Addr::new(169, 254, 169, 254),
+        IpAddr::V6(ip) => ip == Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x0254),
+    }
+}
+
 fn is_metadata_host(host: &str) -> bool {
     matches!(
         host,
@@ -196,6 +203,7 @@ fn pinned_client(url: &Url, pin: SocketAddr, timeout: Duration) -> Result<Client
     let mut builder = Client::builder()
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
         .user_agent("resolvezero-edge-rust/0.1");
     if host.parse::<IpAddr>().is_err() {
         builder = builder.resolve(&host, pin);
@@ -223,6 +231,9 @@ async fn resolve_pinned(url: &Url, allow_private: bool) -> Result<SocketAddr, St
     }
     if addresses.is_empty() {
         return Err("host could not be resolved".into());
+    }
+    if addresses.iter().any(|addr| is_metadata_ip(addr.ip())) {
+        return Err("host resolves to a metadata address".into());
     }
     if !allow_private && addresses.iter().any(|addr| is_private_ip(addr.ip())) {
         return Err("host resolves to a private address".into());

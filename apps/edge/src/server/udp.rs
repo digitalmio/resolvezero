@@ -8,6 +8,7 @@ use crate::config::UnknownSource;
 use crate::dns;
 use crate::metrics::Metrics;
 
+use super::helpers::source_profile;
 use super::resolve::resolve_wire;
 use super::{AppState, QueryContext};
 
@@ -40,24 +41,7 @@ pub(super) async fn udp_loop(socket: Arc<UdpSocket>, state: Arc<AppState>) {
                 let state = state.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let profile = state.store.read().await.authorize_ip(&source).cloned();
-                    let profile = match profile {
-                        Some(profile) => {
-                            let tokenless = state.cfg.hosted
-                                && state
-                                    .store
-                                    .read()
-                                    .await
-                                    .profile_meta(&profile)
-                                    .is_some_and(|meta| meta.token.is_none());
-                            if tokenless {
-                                None
-                            } else {
-                                Some(profile)
-                            }
-                        }
-                        None => None,
-                    };
+                    let profile = source_profile(&state, &source).await;
                     let response = match profile {
                         Some(profile) => {
                             let log_enabled = state.store.read().await.should_log(&profile);

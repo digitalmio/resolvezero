@@ -62,7 +62,7 @@ jobs:
           # run is the alert (GitHub email); no separate monitoring stack.
           ready=$(curl -sS -m 20 -o /tmp/rz-ready.json -w '%{http_code}' https://resolvezero-edge.fly.dev/readyz || echo 000)
           echo "readyz=$ready $(cat /tmp/rz-ready.json 2>/dev/null)"
-          if [ "$ready" != "200" ] || ! jq -e '.ok == true and .dns53Bound == true and .blocklistsLoaded == true' /tmp/rz-ready.json >/dev/null; then
+          if [ "$ready" != "200" ] || ! jq -e '.ok == true and .dns53Bound == true and .subscriptionsLoaded == true and .blocklistsLoaded == true' /tmp/rz-ready.json >/dev/null; then
             echo "::error::edge readiness failed"
             exit 1
           fi

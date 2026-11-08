@@ -220,9 +220,10 @@ The full set of options lives in [`.env.example`](.env.example). The important o
 | `UPSTREAM_PRESET` / `UPSTREAM_DOH_URL` | Edge default upstream resolver |
 | `S3_*` | Raw-log archive and artifact bucket credentials |
 | `ARTIFACT_PREFIX` | Artifact key prefix (default `artifacts`) |
-| `QUERY_LOG_STDOUT` | Send raw logs to stdout instead of S3 |
 | `PROBE_DOMAIN` | Domain used by the DNS-presence canary |
-| `ALLOW_TOKENLESS_PROFILES=1` | Local-dev escape hatch; rejected in hosted mode |
+| `HOSTED=1` / `ENVIRONMENT=production` | Explicit hosted mode (tokenless refusal, artifact-only defaults) |
+| `ALLOW_TOKENLESS_PROFILES=1` | Local-dev escape hatch; rejected in hosted mode unless this is set |
+| `BLOCKLIST_MAX_ENTRIES_PER_PROFILE` | Per-profile rule budget (default `1500000`) |
 
 ### Lazy artifact loading
 
@@ -231,7 +232,9 @@ By default the edge starts with no blocklist tables:
 - `readyz` reports `lazyLists: true`, `artifactLists: 0`, `pendingLists: <n>`.
 - The first DNS query for a profile pulls that profile's artifacts, verifies each SHA-256, and installs the tables.
 - Later queries for the same profile are served from memory; other profiles stay unloaded.
-- When `blocklist_version` changes, the markers are cleared and each profile reloads on its next query. The DNS cache is flushed at the same time.
+- When `blocklist_version` changes, the markers are cleared and each profile reloads on its next query; the shared cache is flushed at the same time.
+- Cache keys are profile-namespaced, so a console purge only evicts the requesting profile's entries.
+- Forwarded TTLs are clamped to the internal cache TTL (max 300 s) so a newly added block rule takes effect quickly.
 - Failed loads are retried after `BLOCKLIST_LAZY_RETRY_SECONDS`; a failed list leaves the profile on its explicit rules until the retry.
 
 Hosted edges default to **artifact-only** list loading: if a list has no compiled artifact yet, the edge marks it pending and keeps serving rather than parsing raw text. Self-hosters without a compiler can allow raw fallback with `ARTIFACT_ONLY_LISTS=0` or preload with `EAGER_BLOCKLISTS=1`.

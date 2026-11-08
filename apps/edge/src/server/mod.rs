@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use tokio::sync::{RwLock, Semaphore};
 
@@ -22,10 +23,19 @@ pub struct AppState {
     pub logger: Arc<QueryLogger>,
     pub db: Db,
     pub ready: AtomicBool,
-    pub seen_devices: Mutex<HashSet<(String, String)>>,
+    /// True once the UDP and TCP:53 listeners were spawned successfully.
+    pub dns53_bound: AtomicBool,
+    pub seen_devices: Mutex<HashMap<String, HashMap<String, Instant>>>,
+    /// Last time a linked source IP was seen, so DB touches stay hourly.
+    pub seen_source_ips: Mutex<HashMap<String, Instant>>,
     inflight: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     pub blocklist_ok: AtomicBool,
+    /// True after at least one successful metadata/catalog sync.
+    pub subscriptions_loaded: AtomicBool,
     pub blocklist_failed: AtomicUsize,
+    /// Profiles whose most recent list load failed; readiness stays red until
+    /// every one of them recovers.
+    pub blocklist_failed_profiles: Mutex<std::collections::HashSet<String>>,
     pub blocklist_error: Mutex<Option<String>>,
     pub last_sync_at: AtomicI64,
     pub last_config_poll_at: AtomicI64,

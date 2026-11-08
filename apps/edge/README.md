@@ -160,7 +160,7 @@ curl -s localhost:8088/readyz
 # DoH POST with a wire query against /v1/<profile>/<token>
 ```
 
-Tests: `cargo test` (25 tests). Lint: `cargo clippy --all-targets`.
+Tests: `cargo test` (58 tests). Lint: `cargo clippy --all-targets`.
 
 ## Environment
 

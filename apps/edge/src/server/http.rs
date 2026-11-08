@@ -2,7 +2,9 @@ use super::api::{handle_update_ip, handle_whoami};
 use super::purge::{handle_logs, handle_purge, valid_device};
 use super::resolve::resolve_wire;
 use super::{AppState, QueryContext};
+use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use axum::extract::{Path, State};
@@ -11,6 +13,8 @@ use axum::response::{IntoResponse, Response};
 use base64::Engine as _;
 
 pub(super) const DOH_ROUTE: &str = "/v1/{*rest}";
+const MAX_DEVICES_PER_PROFILE: usize = 200;
+const DEVICE_REFRESH: Duration = Duration::from_secs(3600);
 
 pub(super) async fn doh_handler(
     State(state): State<Arc<AppState>>,
@@ -20,17 +24,7 @@ pub(super) async fn doh_handler(
     uri: Uri,
     body: Bytes,
 ) -> Response {
-    let client_ip = headers
-        .get("fly-client-ip")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string)
-        .or_else(|| {
-            headers
-                .get("x-forwarded-for")
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.split(',').next())
-                .map(|value| value.trim().to_string())
-        });
+    let client_ip = caller_ip(&headers);
     let client_key = client_ip.clone().unwrap_or_else(|| "unknown".into());
     if !state.doh_rate.allow(&client_key) {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
@@ -95,16 +89,8 @@ pub(super) async fn doh_handler(
     if !state.store.read().await.has_profile(profile_id, token) {
         return StatusCode::NOT_FOUND.into_response();
     }
-    if state.cfg.hosted {
-        let tokenless = state
-            .store
-            .read()
-            .await
-            .profile_meta(profile_id)
-            .is_some_and(|meta| meta.token.is_none());
-        if tokenless {
-            return StatusCode::NOT_FOUND.into_response();
-        }
+    if super::helpers::hosted_tokenless(&state, profile_id).await {
+        return StatusCode::NOT_FOUND.into_response();
     }
 
     let wire = if method == Method::GET {
@@ -149,12 +135,24 @@ pub(super) async fn doh_handler(
     };
 
     if let Some(device) = &context.device {
-        let key = (profile_id.to_string(), device.clone());
-        let is_new = {
+        let should_touch = {
             let mut seen = state.seen_devices.lock().expect("device seen");
-            seen.insert(key)
+            let devices = seen.entry(profile_id.to_string()).or_default();
+            if let Some(last) = devices.get_mut(device) {
+                if last.elapsed() < DEVICE_REFRESH {
+                    false
+                } else {
+                    *last = Instant::now();
+                    true
+                }
+            } else if devices.len() >= MAX_DEVICES_PER_PROFILE {
+                false
+            } else {
+                devices.insert(device.clone(), Instant::now());
+                true
+            }
         };
-        if is_new {
+        if should_touch {
             let db = state.db.clone();
             let profile = profile_id.to_string();
             let device = device.clone();
@@ -207,21 +205,20 @@ pub(super) fn query_param(uri: &Uri, key: &str) -> Option<String> {
 }
 
 pub(super) fn caller_ip(headers: &HeaderMap) -> Option<String> {
+    let parse = |value: &str| value.trim().parse::<IpAddr>().ok().map(|ip| ip.to_string());
     if let Some(value) = headers
         .get("fly-client-ip")
         .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(parse)
     {
-        return Some(value.to_string());
+        return Some(value);
     }
     if std::env::var("ALLOW_UNTRUSTED_IP_HEADERS").as_deref() == Ok("1") {
         return headers
             .get("x-forwarded-for")
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.split(',').next())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty());
+            .and_then(parse);
     }
     None
 }
@@ -232,6 +229,7 @@ pub(super) async fn authorized(state: &AppState, profile: &str, token: Option<St
         return false;
     }
     !(state.cfg.hosted
+        && !state.cfg.allow_tokenless
         && store
             .profile_meta(profile)
             .is_some_and(|meta| meta.token.is_none()))

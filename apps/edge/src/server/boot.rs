@@ -6,7 +6,7 @@ use super::privdrop::drop_privileges;
 use super::transports::tcp_loop;
 use super::udp::udp_loop;
 use super::AppState;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -48,7 +48,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         );
     }
 
-    if std::env::var("FLY_REGION").is_ok() && !cfg.allow_tokenless {
+    if cfg.hosted && !cfg.allow_tokenless {
         let tokenless = store.read().await.tokenless_profiles();
         if !tokenless.is_empty() {
             return Err(format!(
@@ -69,10 +69,14 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         logger,
         db: db.clone(),
         ready: AtomicBool::new(false),
-        seen_devices: Mutex::new(HashSet::new()),
+        dns53_bound: AtomicBool::new(false),
+        seen_devices: Mutex::new(HashMap::new()),
+        seen_source_ips: Mutex::new(HashMap::new()),
         inflight: Mutex::new(HashMap::new()),
         blocklist_ok: AtomicBool::new(false),
+        subscriptions_loaded: AtomicBool::new(false),
         blocklist_failed: AtomicUsize::new(0),
+        blocklist_failed_profiles: Mutex::new(std::collections::HashSet::new()),
         blocklist_error: Mutex::new(None),
         last_sync_at: AtomicI64::new(0),
         last_config_poll_at: AtomicI64::new(now_seconds()),
@@ -95,8 +99,9 @@ pub async fn run(cfg: Config) -> Result<(), String> {
     } else {
         lists::sync_once(&db, &store, &cache, &cfg).await
     };
-    match initial {
+    let initial_ok = match initial {
         Ok(report) => {
+            state.subscriptions_loaded.store(true, Ordering::Relaxed);
             state
                 .blocklist_ok
                 .store(report.failed == 0, Ordering::Relaxed);
@@ -110,14 +115,16 @@ pub async fn run(cfg: Config) -> Result<(), String> {
                 lazy = cfg.lazy_lists,
                 "initial blocklist metadata sync complete"
             );
+            true
         }
         Err(err) => {
             state.blocklist_ok.store(false, Ordering::Relaxed);
             *state.blocklist_error.lock().expect("blocklist error") = Some(err.clone());
-            warn!(%err, "initial blocklist sync failed; serving explicit rules only");
+            warn!(%err, "initial blocklist sync failed; retrying");
+            false
         }
-    }
-    if cfg.hosted {
+    };
+    if cfg.hosted && !cfg.allow_tokenless {
         let tokenless = state.store.read().await.tokenless_profiles();
         if !tokenless.is_empty() {
             error!(
@@ -161,6 +168,9 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         }
     }
 
+    tokio::spawn(udp_loop(Arc::new(udp), state.clone()));
+    tokio::spawn(tcp_loop(tcp, state.clone()));
+    state.dns53_bound.store(true, Ordering::Relaxed);
     state.ready.store(true, Ordering::Relaxed);
     info!(
         region = %cfg.region,
@@ -169,8 +179,6 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         "edge ready"
     );
 
-    tokio::spawn(udp_loop(Arc::new(udp), state.clone()));
-    tokio::spawn(tcp_loop(tcp, state.clone()));
     if let Some(listener) = dot_listener {
         tokio::spawn(dot_loop(listener, state.clone()));
     }
@@ -204,6 +212,7 @@ pub async fn run(cfg: Config) -> Result<(), String> {
         state.clone(),
         versions.config,
         versions.blocklist,
+        initial_ok,
     ));
 
     wait_for_shutdown().await;
