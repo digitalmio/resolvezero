@@ -289,7 +289,7 @@ export function createDohApp(deps: DohAppDeps) {
     deps.recorder?.recordQuery("forward");
     deps.recorder?.recordRtt(rttMs);
 
-    return c.body(responseWire, 200, {
+    return c.body(normalized ?? responseWire, 200, {
       "content-type": "application/dns-message",
     });
   });
