@@ -1,0 +1,39 @@
+# Explicit cutover/rollback for the artifact workers.
+#
+#   cutover:  node_count=1, rust_count=0   (Node active, Rust paused)
+#   rollback: node_count=0, rust_count=1   (Rust active, Node paused)
+#
+# Node is deployed in shadow mode by default (fly.artifacts.toml); set
+# COMPILER_SHADOW=0 before using it as the active worker.
+name: compiler-control
+
+on:
+  workflow_dispatch:
+    inputs:
+      node_count:
+        description: "resolvezero-artifacts machines"
+        type: choice
+        options: ["1", "0"]
+        default: "1"
+      rust_count:
+        description: "resolvezero-compiler machines"
+        type: choice
+        options: ["1", "0"]
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flyctl
+      - name: scale node artifacts worker
+        run: flyctl scale count "${{ inputs.node_count }}" -a resolvezero-artifacts -y
+      - name: scale rust compiler
+        run: flyctl scale count "${{ inputs.rust_count }}" -a resolvezero-compiler -y
