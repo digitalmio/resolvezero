@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p scripts --noEmit && tsc -p packages/db --noEmit && pnpm --filter @resolvezero/rules typecheck && pnpm --filter @resolvezero/artifacts typecheck",
+    "typecheck": "tsc -p scripts --noEmit && tsc -p packages/db --noEmit && pnpm --filter @resolvezero/rules typecheck && pnpm --filter @resolvezero/artifacts typecheck && pnpm --filter @resolvezero/edge-node typecheck",
     "db:generate": "pnpm --filter '@resolvezero/db' db:generate",
     "db:migrate": "pnpm --filter '@resolvezero/db' db:migrate",
     "db:push": "pnpm --filter '@resolvezero/db' db:push",
