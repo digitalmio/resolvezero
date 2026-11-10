@@ -6,20 +6,14 @@
  *   pnpm tsx scripts/artifacts.ts --status
  *   pnpm tsx scripts/artifacts.ts --all --dry-run
  *
- * The compiler itself is Rust (`target/release/rz-compile`);
- * this script only orchestrates: run compiler → upload to E2 → record the
- * hash in Postgres. Edges then fetch the 4 MB artifact instead of parsing.
+ * Compilation is in-process (`@resolvezero/rules`), so this script no longer
+ * shells out to the Rust `rz-compile` binary. The worker
+ * (`apps/artifacts/src/main.ts`) uses the same library.
  */
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-
+import { createArtifactStore, compileUrl } from "@resolvezero/rules";
 import { rawClient } from "@resolvezero/db/client";
 
-interface CompilerOutput {
+interface CompiledRow {
   id: string;
   source: string;
   allow: number;
@@ -27,6 +21,8 @@ interface CompilerOutput {
   rules: number;
   bytes: number;
   compiler: string;
+  sidecar: string;
+  data: Uint8Array;
 }
 
 const args = process.argv.slice(2);
@@ -36,11 +32,9 @@ const value = (name: string, fallback?: string) => {
   return index >= 0 ? args[index + 1] : fallback;
 };
 
-const compiler = value("--compiler", process.env.RZ_COMPILE ?? "target/release/rz-compile")!;
-const prefix = (process.env.ARTIFACT_PREFIX || "artifacts").replace(/^\/+|\/+$/g, "");
 const dryRun = flag("--dry-run");
 const updateDb = !flag("--no-db") && !dryRun;
-
+const explicitFormat = value("--format", "auto")!;
 const db = rawClient();
 
 async function status(): Promise<void> {
@@ -56,59 +50,35 @@ async function status(): Promise<void> {
      order by pb.url
   `);
   console.table(rows);
-  const artifacts = await db.unsafe("select count(*)::int as count, coalesce(sum(bytes), 0)::bigint as bytes from rule_artifacts");
-  console.log(`artifacts: ${artifacts[0]?.count ?? 0}, stored bytes: ${artifacts[0]?.bytes ?? 0}`);
+  const artifacts = await db.unsafe(
+    "select count(*)::int as count, coalesce(sum(bytes), 0)::bigint as bytes from rule_artifacts",
+  );
+  console.log(
+    `artifacts: ${artifacts[0]?.count ?? 0}, stored bytes: ${artifacts[0]?.bytes ?? 0}`,
+  );
 }
 
-function s3(): S3Client {
-  const bucket = process.env.S3_BUCKET;
-  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-  if (!bucket || !accessKeyId || !secretAccessKey) {
-    throw new Error("S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY are required");
-  }
-  return new S3Client({
-    region: process.env.S3_REGION ?? "auto",
-    endpoint: process.env.S3_ENDPOINT,
-    forcePathStyle: true,
-    credentials: { accessKeyId, secretAccessKey },
-  });
+async function compile(url: string, format: string): Promise<CompiledRow> {
+  const compiled = await compileUrl(url, { format, source: url });
+  return {
+    id: compiled.hash,
+    source: url,
+    allow: compiled.allow,
+    block: compiled.block,
+    rules: compiled.rules,
+    bytes: compiled.data.length,
+    compiler: "rz-compile-node/0.1",
+    sidecar: compiled.sidecar,
+    data: compiled.data,
+  };
 }
 
-function compile(url: string): { meta: CompilerOutput; bytes: Uint8Array; sidecar: string } {
-  const out = mkdtempSync(join(tmpdir(), "rz-artifact-"));
-  const stdout = execFileSync(compiler, ["--url", url, "--out", out], {
-    encoding: "utf8",
-    maxBuffer: 8 * 1024 * 1024,
-  });
-  const meta = JSON.parse(stdout.trim().split("\n").pop() ?? "{}") as CompilerOutput;
-  if (!meta.id) throw new Error(`compiler produced no id for ${url}`);
-  const bytes = new Uint8Array(readFileSync(join(out, `${meta.id}.bin`)));
-  const sidecar = readFileSync(join(out, `${meta.id}.json`), "utf8");
-  return { meta, bytes, sidecar };
-}
-
-async function publish(url: string): Promise<void> {
-  const { meta, bytes, sidecar } = compile(url);
-  const bucket = process.env.S3_BUCKET!;
+async function publish(url: string, format: string): Promise<void> {
+  const meta = await compile(url, format);
   if (!dryRun) {
-    const client = s3();
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: `${prefix}/${meta.id}.bin`,
-        Body: bytes,
-        ContentType: "application/octet-stream",
-      }),
-    );
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: `${prefix}/${meta.id}.json`,
-        Body: sidecar,
-        ContentType: "application/json",
-      }),
-    );
+    const store = createArtifactStore();
+    if (!store) throw new Error("S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY are required");
+    await store.put(meta.id, meta.data, meta.sidecar);
     if (updateDb) {
       await db.unsafe(
         `insert into rule_artifacts (hash, source_url, bytes, allow_count, block_count, compiler)
@@ -139,29 +109,37 @@ async function main(): Promise<void> {
     await status();
     return;
   }
-  // Fail early: a compiler that isn't built is the most common mistake.
-  execFileSync(compiler, ["--help"], { encoding: "utf8", maxBuffer: 1024 * 1024 });
 
   const explicit = value("--url");
-  const urls = explicit
-    ? [explicit]
-    : (
-        await db.unsafe(
-          "select distinct url from profile_blocklists where enabled = true order by url",
-        )
-      ).map((row) => row.url as string);
-  if (urls.length === 0) {
+  let targets: { url: string; format: string }[];
+  if (explicit) {
+    const rows = await db.unsafe(
+      "select min(format) as format from profile_blocklists where enabled = true and url = $1",
+      [explicit],
+    );
+    targets = [{ url: explicit, format: (rows[0]?.format as string) ?? explicitFormat }];
+  } else {
+    const rows = await db.unsafe(`
+      select url, min(format) as format
+        from profile_blocklists
+       where enabled = true
+       group by url
+       order by url
+    `);
+    targets = rows.map((row) => ({ url: row.url as string, format: row.format as string }));
+  }
+  if (targets.length === 0) {
     console.log("no enabled lists");
     return;
   }
 
   let published = 0;
-  for (const url of urls) {
+  for (const target of targets) {
     try {
-      await publish(url);
+      await publish(target.url, target.format === "auto" ? explicitFormat : target.format);
       published += 1;
     } catch (err) {
-      console.error(`failed: ${url}: ${err instanceof Error ? err.message : String(err)}`);
+      console.error(`failed: ${target.url}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -171,7 +149,7 @@ async function main(): Promise<void> {
     await db.unsafe(
       "update edge_config_state set blocklist_version = blocklist_version + 1, updated_at = now() where id = true",
     );
-    console.log(`bumped blocklist_version; ${published}/${urls.length} lists published`);
+    console.log(`bumped blocklist_version; ${published}/${targets.length} lists published`);
   }
 }
 

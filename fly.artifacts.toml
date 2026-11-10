@@ -1,0 +1,31 @@
+# Node artifact worker. No public ingress; it only needs Postgres + S3 and
+# polls for new list URLs every COMPILE_POLL_SECONDS.
+#
+# Start in COMPILER_SHADOW=1: it compiles/uploads artifacts and records
+# rule_artifacts, but does not update profile_blocklists or bump the blocklist
+# watermark. Flip to 0 only after parity with the Rust compiler.
+app = "resolvezero-artifacts"
+primary_region = "fra"
+kill_timeout = 30
+
+[build]
+  dockerfile = "Dockerfile.artifacts"
+
+[deploy]
+  strategy = "immediate"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  # Node parse transients for a 500k-rule list are larger than Rust's.
+  memory = "1gb"
+
+[env]
+  LOG_LEVEL = "info"
+  ARTIFACT_PREFIX = "artifacts"
+  COMPILE_INTERVAL_SECONDS = "21600"
+  COMPILE_POLL_SECONDS = "10"
+  COMPILER_HEARTBEAT_SECONDS = "15"
+  FORCE_COMPILE = "1"
+  # Shadow mode: do not touch profile_blocklists/blocklist_version.
+  COMPILER_SHADOW = "1"

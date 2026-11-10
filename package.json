@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -p scripts --noEmit && tsc -p packages/db --noEmit",
+    "typecheck": "tsc -p scripts --noEmit && tsc -p packages/db --noEmit && pnpm --filter @resolvezero/rules typecheck && pnpm --filter @resolvezero/artifacts typecheck",
     "db:generate": "pnpm --filter '@resolvezero/db' db:generate",
     "db:migrate": "pnpm --filter '@resolvezero/db' db:migrate",
     "db:push": "pnpm --filter '@resolvezero/db' db:push",
@@ -28,6 +28,7 @@
     "@resolvezero/db": "workspace:*",
     "better-auth": "^1.7.7",
     "tsx": "^4.19.0",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "@resolvezero/rules": "workspace:*"
   }
 }

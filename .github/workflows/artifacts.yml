@@ -1,6 +1,6 @@
 # Break-glass/manual artifact compilation. The primary compiler is the
-# dedicated `resolvezero-compiler` Fly worker (apps/compiler/src/main.rs);
-# this workflow remains as a fallback if that machine is unavailable.
+# Node `resolvezero-artifacts` Fly worker (apps/artifacts); this workflow
+# publishes artifacts without needing that machine.
 name: artifacts
 
 on:
@@ -23,11 +23,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
       - name: install
         run: pnpm install --frozen-lockfile
-      - name: build compiler
-        run: cargo build --release -p resolvezero-compiler --bin rz-compile
       - name: compile + publish
         env:
           # App role: the compiler only needs DML on rule_artifacts and
@@ -39,5 +36,4 @@ jobs:
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
           ARTIFACT_PREFIX: ${{ vars.ARTIFACT_PREFIX || 'artifacts' }}
-          RZ_COMPILE: target/release/rz-compile
         run: pnpm exec tsx scripts/artifacts.ts --all

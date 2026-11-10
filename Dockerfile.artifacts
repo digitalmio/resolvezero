@@ -1,0 +1,24 @@
+# Node artifact worker (replaces the Rust resolvezero-compiler image).
+FROM node:24-bookworm-slim
+
+WORKDIR /app
+
+# Pin pnpm (Node images may or may not ship corepack).
+RUN npm install -g pnpm@10.2.0
+
+# Workspace-aware install: root manifests + dependency manifests for caching.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/db/package.json packages/db/package.json
+COPY packages/rules/package.json packages/rules/package.json
+COPY apps/artifacts/package.json apps/artifacts/package.json
+RUN pnpm install --frozen-lockfile --prod
+
+COPY packages/db packages/db
+COPY packages/rules packages/rules
+COPY apps/artifacts apps/artifacts
+
+ENV NODE_ENV=production
+ENV HOME=/tmp
+
+# No public ingress: this process only talks to Postgres and S3.
+CMD ["./node_modules/.bin/tsx", "apps/artifacts/src/main.ts"]
