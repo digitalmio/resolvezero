@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import {
   edgeConfigState,
@@ -70,6 +70,8 @@ export async function startRuleSync(
   let pendingPoll = false;
   let lastPollAt: number | null = null;
   let lastPollError: string | null = null;
+  // Reload hourly even without a version bump so expired IP links drop out.
+  let lastSnapshotAt = Date.now();
 
   async function readVersions(): Promise<Versions> {
     const rows = await db
@@ -113,7 +115,8 @@ export async function startRuleSync(
           ipAddress: profileSourceIps.ipAddress,
           profileId: profileSourceIps.profileId,
         })
-        .from(profileSourceIps),
+        .from(profileSourceIps)
+        .where(sql`${profileSourceIps.lastSeenAt} > now() - interval '30 days'`),
       db
         .select({
           profileId: profileZones.profileId,
@@ -159,9 +162,13 @@ export async function startRuleSync(
   async function poll(): Promise<void> {
     const before = await readVersions();
 
-    if (before.config !== lastConfigVersion) {
+    if (
+      before.config !== lastConfigVersion ||
+      Date.now() - lastSnapshotAt >= 3_600_000
+    ) {
       await snapshot();
       lastConfigVersion = before.config;
+      lastSnapshotAt = Date.now();
       log.info({ version: before.config, stats: store.stats }, "config snapshot loaded");
     }
 
@@ -204,6 +211,7 @@ export async function startRuleSync(
       lastBlocklistVersion = initial.blocklist;
       lastPollAt = Date.now();
       lastPollError = null;
+      lastSnapshotAt = Date.now();
       log.info({ version: initial.config, stats: store.stats }, "snapshot loaded");
       break;
     } catch (err) {

@@ -68,8 +68,9 @@ export class DnsCache {
     wire: Uint8Array,
     upstream?: string | null,
     onRefresh?: () => Promise<void>,
+    profileId = "",
   ): Uint8Array<ArrayBuffer> | undefined {
-    const meta = queryMeta(wire, upstream);
+    const meta = queryMeta(wire, upstream, profileId);
     if (!meta) return undefined;
     const cached = this.cache.get(meta.key);
     if (!cached) return undefined;
@@ -100,8 +101,13 @@ export class DnsCache {
    * @param queryWire the original query (defines the cache key/flags/case)
    * @param responseWire the upstream response
    */
-  set(queryWire: Uint8Array, responseWire: Uint8Array, upstream?: string | null): void {
-    const meta = queryMeta(queryWire, upstream);
+  set(
+    queryWire: Uint8Array,
+    responseWire: Uint8Array,
+    upstream?: string | null,
+    profileId = "",
+  ): void {
+    const meta = queryMeta(queryWire, upstream, profileId);
     const packet = safeDecode(responseWire);
     if (!meta || !packet) return;
 
@@ -116,6 +122,10 @@ export class DnsCache {
     // Normalize: request-case question name + no OPT replay.
     if (packet.questions?.[0]) packet.questions[0].name = meta.rawName;
     packet.additionals = (packet.additionals ?? []).filter((r) => r.type !== "OPT");
+    // Clamp every forwarded TTL to the internal cache lifetime. Without this,
+    // the first answer (and every hit) carries the upstream's 1h+ TTL, so a
+    // newly added rule can appear to be ignored for hours on client caches.
+    clampTtls(packet, Math.floor(ttl / 1000));
 
     const normalized = encodePacket(packet);
     if (!normalized) return;
@@ -138,13 +148,13 @@ export class DnsCache {
    * evict the same upstream answer for other profiles — safe because policy
    * and zones are evaluated before the cache.
    */
-  purge(name: string, recordType?: string | null): number {
+  purge(profileId: string, name: string, recordType?: string | null): number {
     const normalized = name.toLowerCase().replace(/\.+$/, "");
     const wantedType = recordType?.toUpperCase();
     let removed = 0;
     for (const key of this.cache.keys()) {
-      const [keyName, keyType] = key.split("|");
-      if (keyName !== normalized) continue;
+      const [keyProfile, keyName, keyType] = key.split("|");
+      if (keyProfile !== profileId || keyName !== normalized) continue;
       if (wantedType && keyType !== wantedType) continue;
       this.cache.delete(key);
       removed++;
@@ -160,7 +170,11 @@ export class DnsCache {
   }
 }
 
-function queryMeta(wire: Uint8Array, upstream?: string | null): QueryMeta | undefined {
+function queryMeta(
+  wire: Uint8Array,
+  upstream?: string | null,
+  profileId = "",
+): QueryMeta | undefined {
   const packet = safeDecode(wire);
   const q = packet?.questions?.[0];
   if (!q) return undefined;
@@ -170,7 +184,7 @@ function queryMeta(wire: Uint8Array, upstream?: string | null): QueryMeta | unde
   const doBit = hasDoBit(packet);
   const cdBit = (((packet.flags ?? 0) & 0x0010) !== 0);
   return {
-    key: `${name}|${q.type}|${cls}|${doBit ? "do" : "nodo"}|${cdBit ? "cd" : "nocd"}|${ecsKey(packet)}|${upstream ?? "default"}`,
+    key: `${profileId}|${name}|${q.type}|${cls}|${doBit ? "do" : "nodo"}|${cdBit ? "cd" : "nocd"}|${ecsKey(packet)}|${upstream ?? "default"}`,
     rawName,
     doBit,
     cdBit,
@@ -237,6 +251,21 @@ function patchResponse(
   if (packet.questions?.[0]) packet.questions[0].name = queryName;
   if (elapsedSeconds > 0) decrementTtls(packet, elapsedSeconds);
   return encodePacket(packet) ?? cached.wire;
+}
+
+function clampTtls(packet: Packet, maxSeconds: number): void {
+  const cap = Math.max(1, maxSeconds);
+  const records = [
+    ...(packet.answers ?? []),
+    ...(packet.authorities ?? []),
+    ...(packet.additionals ?? []),
+  ] as { ttl?: number; type?: string; data?: { minimum?: number } }[];
+  for (const record of records) {
+    if (typeof record.ttl === "number") record.ttl = Math.min(record.ttl, cap);
+    if (record.type === "SOA" && typeof record.data?.minimum === "number") {
+      record.data.minimum = Math.min(record.data.minimum, cap);
+    }
+  }
 }
 
 function decrementTtls(packet: Packet, elapsedSeconds: number): void {

@@ -163,6 +163,11 @@ export function createAdminApp(deps: AdminDeps) {
       if (existing[0] && existing[0].profileId !== profileId) {
         return c.json({ error: "IP is linked to another profile" }, 409);
       }
+      // Re-linking an address you already own refreshes its 30-day lease.
+      await db
+        .update(profileSourceIps)
+        .set({ lastSeenAt: new Date() })
+        .where(eq(profileSourceIps.ipAddress, ip));
     }
 
     log.info({ profileId, ip }, "source IP linked");

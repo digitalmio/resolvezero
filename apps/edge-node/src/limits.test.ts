@@ -25,9 +25,18 @@ describe("createRateLimiter", () => {
     const allow = createRateLimiter(1, 100, 2);
     expect(allow("a")).toBe(true);
     expect(allow("b")).toBe(true);
-    expect(allow("c")).toBe(true); // map clears at the cap rather than growing
+    expect(allow("c")).toBe(false); // hard cap: new keys rejected, no map clear
     vi.setSystemTime(101);
     expect(allow("a")).toBe(true);
+  });
+});
+
+describe("IPv6 keys", () => {
+  test("collapses addresses to their /64", () => {
+    const allow = createRateLimiter(1, 1_000);
+    expect(allow("2001:db8:1:2:3:4:5:6")).toBe(true);
+    expect(allow("2001:db8:1:2:ffff:ffff:ffff:ffff")).toBe(false);
+    expect(allow("2001:db8:1:3::1")).toBe(true);
   });
 });
 

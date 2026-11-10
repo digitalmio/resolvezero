@@ -24,24 +24,15 @@ import { matchProbeNonce } from "./probe";
 import { safeSearchTarget } from "./safeSearch";
 import { createRateLimiter, positiveInt, Semaphore } from "./limits";
 import type { Transport } from "./metrics";
+import { resolveDnsPacket } from "./dns53Resolve";
+import * as tuning from "./dns53Tuning";
+import { PROXY_SIGNATURE, concatBytes, indexOfCrlf, matchesPrefix, type TcpState } from "./proxy";
 
 const log = moduleLogger("dns53");
 
-const TCP_MAX_BUFFER_BYTES = Math.max(4096, Number(process.env.TCP_MAX_BUFFER_BYTES ?? 65_536) || 65_536);
-const TCP_IDLE_TIMEOUT_MS = Math.max(5_000, Number(process.env.TCP_IDLE_TIMEOUT_MS ?? 30_000) || 30_000);
-const TCP_MAX_LIFETIME_MS = positiveInt(process.env.TCP_MAX_LIFETIME_MS, 120_000);
-const TCP_MAX_CONNECTIONS = Math.max(1, Number(process.env.TCP_MAX_CONNECTIONS ?? 512) || 512);
-const TCP_MAX_CONNECTIONS_PER_SOURCE = positiveInt(process.env.TCP_MAX_CONNECTIONS_PER_SOURCE, 8);
-const TCP_MAX_INFLIGHT = positiveInt(process.env.TCP_MAX_INFLIGHT, 128);
-const UDP_RATE_LIMIT_PER_MIN = positiveInt(process.env.UDP_RATE_LIMIT_PER_MIN, 600);
+const UDP_RATE_LIMIT_PER_MIN = positiveInt(process.env.UDP_RATE_LIMIT_PER_MIN, 6000);
+const TCP_RATE_LIMIT_PER_MIN = positiveInt(process.env.TCP_RATE_LIMIT_PER_MIN, 6000);
 const UDP_MAX_INFLIGHT = positiveInt(process.env.UDP_MAX_INFLIGHT, 1024);
-
-interface TcpState {
-  buffer: Uint8Array;
-  headerParsed: boolean;
-  sourceIp: string;
-  counted: boolean;
-}
 
 export interface Dns53Deps {
   store: RuleStore;
@@ -63,6 +54,8 @@ export interface Dns53Deps {
   onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp" | "dot"): void;
   /** Ensure this profile's lazy blocklist artifacts are loaded before policy. */
   ensureLists?(profileId: string): Promise<void>;
+  /** Keep an actively used source-IP link alive (at most once/day). */
+  onSourceSeen?(ip: string): void;
 }
 
 export interface Dns53Handle {
@@ -82,47 +75,15 @@ export interface Dns53Handle {
  *    or silence with =silent (open-resolver defense, readme §4).
  * - Same pipeline as DoH: zone override → blocklist → LRU → upstream.
  */
-/** PROXY protocol v1 signature ("PROXY "). */
-const PROXY_SIGNATURE = new TextEncoder().encode("PROXY ");
-
-function matchesPrefix(buf: Uint8Array, signature: Uint8Array): boolean {
-  const n = Math.min(buf.length, signature.length);
-  for (let i = 0; i < n; i++) {
-    if (buf[i] !== signature[i]) return false;
-  }
-  return true;
-}
-
-function indexOfCrlf(buf: Uint8Array): number {
-  for (let i = 0; i + 1 < buf.length; i++) {
-    if (buf[i] === 13 && buf[i + 1] === 10) return i;
-  }
-  return -1;
-}
-
-function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
-  if (a.length === 0) return b;
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a);
-  out.set(b, a.length);
-  return out;
-}
-
 export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle | null> {
   const host = deps.host ?? process.env.UDP_HOST ?? "fly-global-services";
   const port = deps.port ?? Number(process.env.UDP_PORT ?? 53);
   const tcpStates = new WeakMap<object, TcpState>();
   const udpRateLimit = createRateLimiter(UDP_RATE_LIMIT_PER_MIN, 60_000, 20_000);
+  const queryRateLimit = createRateLimiter(TCP_RATE_LIMIT_PER_MIN, 60_000, 20_000);
   const udpSlots = new Semaphore(UDP_MAX_INFLIGHT);
-  const tcpSlots = new Semaphore(TCP_MAX_INFLIGHT);
+  const tcpSlots = new Semaphore(tuning.TCP_MAX_INFLIGHT);
   const tcpSourceCounts = new Map<string, number>();
-
-  /** Refresh a cached entry before it expires (no client-visible latency). */
-  const refresh = async (queryWire: Uint8Array, upstreamUrl?: string | null): Promise<void> => {
-    const result = await deps.upstream.resolveWire(queryWire, upstreamUrl ?? undefined);
-    deps.dnsCache.set(queryWire, result.wire, upstreamUrl);
-    deps.recorder?.recordRtt(result.rttMs);
-  };
 
   let udp: dgram.Socket | undefined;
   let tcp: net.Server | undefined;
@@ -177,12 +138,12 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     try {
       tcp = net.createServer((socket) => {
         const deadline = setTimeout(() => {
-          log.warn({ lifetimeMs: TCP_MAX_LIFETIME_MS }, "closing long-lived TCP DNS connection");
+          log.warn({ lifetimeMs: tuning.TCP_MAX_LIFETIME_MS }, "closing long-lived TCP DNS connection");
           socket.destroy();
-        }, TCP_MAX_LIFETIME_MS);
+        }, tuning.TCP_MAX_LIFETIME_MS);
         deadline.unref?.();
-        socket.setTimeout(TCP_IDLE_TIMEOUT_MS, () => {
-          log.warn({ timeoutMs: TCP_IDLE_TIMEOUT_MS }, "closing idle TCP DNS connection");
+        socket.setTimeout(tuning.TCP_IDLE_TIMEOUT_MS, () => {
+          log.warn({ timeoutMs: tuning.TCP_IDLE_TIMEOUT_MS }, "closing idle TCP DNS connection");
           socket.destroy();
         });
         socket.on("data", (chunk) => tcpData(socket, new Uint8Array(chunk)));
@@ -198,7 +159,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
           tcpStates.delete(socket);
         });
       });
-      tcp.maxConnections = TCP_MAX_CONNECTIONS;
+      tcp.maxConnections = tuning.TCP_MAX_CONNECTIONS;
       await new Promise<void>((resolve, reject) => {
         const onError = (err: Error) => reject(err);
         tcp!.once("error", onError);
@@ -221,7 +182,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     udpPort,
     tcpPort: tcp ? port : undefined,
     resolve: (wire, sourceIp, transport, profileId) =>
-      handlePacket(wire, sourceIp, transport, profileId),
+      resolveDnsPacket(deps, queryRateLimit, wire, sourceIp, transport, profileId),
     async stop() {
       await new Promise<void>((resolve) => udp!.close(() => resolve()));
       if (tcp) {
@@ -233,7 +194,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
 
   // ---- UDP path ----
   async function handleUdp(wire: Uint8Array, sourceIp: string): Promise<Uint8Array | null> {
-    const reply = await handlePacket(wire, sourceIp, "udp");
+    const reply = await resolveDnsPacket(deps, queryRateLimit, wire, sourceIp, "udp");
     if (reply && reply.length > UDP_MAX_PAYLOAD) {
       // TC bit — real clients will retry over TCP
       const q = decodeQuestion(wire);
@@ -258,7 +219,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
       };
       tcpStates.set(socket, state);
     }
-    if (state.buffer.length + chunk.length > TCP_MAX_BUFFER_BYTES) {
+    if (state.buffer.length + chunk.length > tuning.TCP_MAX_BUFFER_BYTES) {
       log.warn({ bytes: state.buffer.length + chunk.length }, "closing oversized TCP DNS buffer");
       socket.destroy();
       return;
@@ -284,7 +245,7 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
 
     if (!state.counted) {
       const active = tcpSourceCounts.get(state.sourceIp) ?? 0;
-      if (active >= TCP_MAX_CONNECTIONS_PER_SOURCE) {
+      if (active >= tuning.TCP_MAX_CONNECTIONS_PER_SOURCE) {
         log.warn({ sourceIp: state.sourceIp, active }, "closing TCP DNS connection over per-source cap");
         socket.destroy();
         return;
@@ -313,14 +274,14 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
         socket.destroy();
         return;
       }
-      void handlePacket(wire, sourceIp, "tcp")
+      void resolveDnsPacket(deps, queryRateLimit, wire, sourceIp, "tcp")
         .then((reply) => {
           if (!reply) return;
           const frame = new Uint8Array(reply.length + 2);
           frame[0] = reply.length >> 8;
           frame[1] = reply.length & 0xff;
           frame.set(reply, 2);
-          if (socket.writableLength > TCP_MAX_BUFFER_BYTES) {
+          if (socket.writableLength > tuning.TCP_MAX_BUFFER_BYTES) {
             log.warn({ pending: socket.writableLength }, "closing TCP DNS connection with backed-up writes");
             socket.destroy();
             return;
@@ -335,213 +296,5 @@ export async function createDns53Service(deps: Dns53Deps): Promise<Dns53Handle |
     }
   }
 
-  /** Core decision pipeline shared by UDP+TCP. Pure enough for tests. */
-  async function handlePacket(
-    wire: Uint8Array,
-    sourceIp: string,
-    transport: Transport,
-    profileOverride?: string,
-  ): Promise<Uint8Array | null> {
-    // 1. Source-IP auth — unknown source: REFUSED (default) or silent drop.
-    //    DoT passes a profile resolved from the SNI hostname instead.
-    //    QueryLog events are NEVER emitted for unauthorized sources (privacy).
-    const profileId = profileOverride ?? deps.store.authorizeSourceIp(sourceIp);
-    if (!profileId) {
-      deps.recorder?.recordDrop("unauthorized_source");
-      if ((process.env.UDP_UNKNOWN_SOURCE ?? "refused") === "refused") {
-        try {
-          return refusedResponse(decodeQuestion(wire));
-        } catch {
-          return null; // unparseable packet stays silent even in refused mode
-        }
-      }
-      return null;
-    }
-
-    // 2. Parse question — broken packet also gets silence
-    let question;
-    try {
-      question = decodeQuestion(wire);
-    } catch {
-      return null;
-    }
-
-    // 3. Resolver-presence canary. The random hostname has no public record;
-    //    only clients using this resolver reach this point. Record it and
-    //    answer NXDOMAIN so no wildcard certificate is needed.
-    const probeNonce = matchProbeNonce(question.name, deps.probeDomain ?? null);
-    if (probeNonce) {
-      deps.onProbeSeen?.(probeNonce, transport);
-      return nxdomainResponse(question);
-    }
-
-    // 4. Zone override (split-horizon; user config wins, AAA/CNAME/etc.)
-    const zone = deps.store.resolveZone(profileId, question.name, question.type as never);
-    if (zone) {
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "override",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        reason: "zone",
-        transport,
-      });
-      deps.recorder?.recordQuery("forward");
-      try {
-        return zoneAnswer(question, zone);
-      } catch {
-        return servfailResponse(question);
-      }
-    }
-
-    // 4b. Local name exists but not for this type: local NODATA.
-    if (deps.store.hasZoneName(profileId, question.name)) {
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "override",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        reason: "zone",
-        transport,
-      });
-      deps.recorder?.recordQuery("forward");
-      return noDataResponse(question);
-    }
-
-    // 4. Blocklist (explicit rules first, then remote subscriptions w/ @@ allow precedence)
-    //    Explicit ALLOW must also short-circuit remote blocks — parity with DoH.
-    const explicit = deps.store.resolve(profileId, question.name);
-    if (explicit === "block") {
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "block",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        reason: "manual",
-        transport,
-      });
-      deps.recorder?.recordQuery("block");
-      return blockedResponse(question, deps.store.blockAnswer(profileId));
-    }
-
-    // SafeSearch rewrites: CNAME the search host to the provider's safe endpoint.
-    const safeTarget = safeSearchTarget(deps.store.safeSearchSettings(profileId), question.name);
-    if (safeTarget) {
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "override",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        reason: "safesearch",
-        transport,
-      });
-      deps.recorder?.recordQuery("forward");
-      return cnameResponse(question, safeTarget);
-    }
-
-    await deps.ensureLists?.(profileId);
-    const remote = explicit ? undefined : deps.store.resolveRemoteDetailed(profileId, question.name);
-    if (remote?.action === "block") {
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "block",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        reason: "blocklist",
-        listId: remote.listId,
-        transport,
-      });
-      deps.recorder?.recordQuery("block");
-      return blockedResponse(question, deps.store.blockAnswer(profileId));
-    }
-
-    // 5. Synthetic local names (nip.io-style, scoped to .lan/.home.arpa)
-    const local = localNameAnswer(wire, {
-      localDomains: deps.localDomains ?? ["lan"],
-      localTtl: deps.localTtl ?? 60,
-      allowPublicIpEncoding: deps.allowPublicIpEncoding === true,
-    });
-    if (local) {
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "override",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        reason: "zone",
-        transport,
-      });
-      deps.recorder?.recordQuery("forward");
-      return local;
-    }
-
-    // 6. Cache (keyed by question + upstream)
-    const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
-    const upstream = deps.store.profileUpstreamLabel(profileId);
-    const cached = deps.dnsCache.get(wire, upstreamUrl, () => refresh(wire, upstreamUrl));
-    if (cached) {
-      deps.recorder?.recordCacheHit(transport);
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "forward",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        transport,
-        upstream,
-      });
-      deps.recorder?.recordQuery("forward");
-      return cached;
-    }
-
-    // 6. Forward upstream (per-profile choice)
-    deps.recorder?.recordCacheMiss(transport);
-    try {
-      const { wire: responseWire, rttMs } = await deps.upstream.resolveWire(
-        wire,
-        upstreamUrl,
-      );
-      deps.dnsCache.set(wire, responseWire, upstreamUrl);
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "forward",
-        rttMs,
-        clientIp: sourceIp,
-        device: null,
-        transport,
-        upstream,
-      });
-      deps.recorder?.recordQuery("forward");
-      deps.recorder?.recordRtt(rttMs);
-      return responseWire;
-    } catch (err) {
-      log.warn({ err, domain: question.name }, "upstream failed over UDP client");
-      deps.logQuery({
-        profileId,
-        domain: question.name,
-        action: "forward",
-        rttMs: null,
-        clientIp: sourceIp,
-        device: null,
-        transport,
-        upstream,
-      });
-      deps.recorder?.recordQuery("forward");
-      return servfailResponse(question);
-    }
-  }
 }
 

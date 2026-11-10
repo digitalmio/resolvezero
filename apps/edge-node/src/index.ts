@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { asc, gte } from "drizzle-orm";
+
 import { db } from "@resolvezero/db/client";
-import { dnsCachePurges, dnsProbes, profileDevices } from "@resolvezero/db/schema";
+import { profileDevices } from "@resolvezero/db/schema";
 import { startPruneLoop } from "@resolvezero/db";
 import { dropPrivileges, parseLocalDomains } from "@resolvezero/shared";
 import { QueryLogBatcher } from "./batcher";
-import { createDohApp, type QueryLogEntry } from "./doh";
+import { createDohApp } from "./doh";
+import { createLogQuery } from "./queryLog";
 import { DnsCache } from "./dnsCache";
 import { moduleLogger } from "./logger";
 import { resolveWire } from "./upstream";
@@ -23,6 +24,9 @@ import { createDns53Service, type Dns53Handle } from "./dns53";
 import { createDotService, type DotHandle } from "./dot";
 import { S3ArchiveSink, createS3ClientFromEnv } from "./sinks/s3";
 import { normalizeProbeDomain } from "./probe";
+import { onSourceSeen, recordProbe } from "./edgeWrites";
+import { startPurgePoller } from "./purgePoll";
+import { readinessPayload } from "./readiness";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const METRICS_PORT = Number(process.env.METRICS_PORT ?? 9091);
@@ -33,7 +37,6 @@ if (!process.env.DATABASE_URL) {
 }
 
 const log = moduleLogger("boot");
-const logQueryLogger = moduleLogger("query");
 
 const store = new RuleStore();
 const dnsCache = new DnsCache();
@@ -72,80 +75,9 @@ if (!archive && !stdoutQueryLog) {
   log.warn("raw query logging disabled: set S3_* or QUERY_LOG_STDOUT=1 (stats still recorded)");
 }
 
-// Record resolver-presence canaries. This is intentionally write-behind and
-// best-effort: a DB hiccup must never affect DNS answers or the query path.
-function recordProbe(nonce: string, transport: "doh" | "udp" | "tcp" | "dot" | "dot"): void {
-  void db
-    .insert(dnsProbes)
-    .values({
-      nonce,
-      transport,
-      region: process.env.FLY_REGION ?? "local",
-    })
-    .onConflictDoNothing()
-    .catch((err) => log.warn({ err }, "probe insert failed"));
-}
+startPurgePoller(dnsCache);
 
-// Cache purges are per-POP in-memory state, so every edge polls a small
-// request table and evicts locally. Upstream resolver caches remain TTL-bound.
-const PURGE_POLL_MS = Math.max(1_000, Number(process.env.CACHE_PURGE_POLL_MS ?? 5_000) || 5_000);
-let lastPurgeAt = new Date(Date.now() - 10 * 60_000);
-const processedPurges = new Set<string>();
-
-async function pollCachePurges(): Promise<void> {
-  const rows = await db
-    .select({
-      id: dnsCachePurges.id,
-      domain: dnsCachePurges.domain,
-      recordType: dnsCachePurges.recordType,
-      createdAt: dnsCachePurges.createdAt,
-    })
-    .from(dnsCachePurges)
-    .where(gte(dnsCachePurges.createdAt, lastPurgeAt))
-    .orderBy(asc(dnsCachePurges.createdAt))
-    .limit(500);
-
-  for (const row of rows) {
-    if (processedPurges.has(row.id)) continue;
-    processedPurges.add(row.id);
-    const removed = dnsCache.purge(row.domain, row.recordType);
-    if (removed > 0) {
-      log.info(
-        { domain: row.domain, recordType: row.recordType, removed },
-        "cache entries purged",
-      );
-    }
-    if (row.createdAt > lastPurgeAt) lastPurgeAt = row.createdAt;
-  }
-
-  // Purges are rare; keep the dedupe set bounded during pathological use.
-  if (processedPurges.size > 5_000) processedPurges.clear();
-}
-
-const purgeTimer = setInterval(() => {
-  void pollCachePurges().catch((err) => log.warn({ err }, "cache purge poll failed"));
-}, PURGE_POLL_MS);
-purgeTimer.unref?.();
-void pollCachePurges().catch((err) => log.warn({ err }, "initial cache purge poll failed"));
-
-// Enqueue only when the profile hasn't opted out of logging.
-function logQuery(entry: QueryLogEntry): void {
-  if (!store.shouldLog(entry.profileId)) return;
-  if (stdoutQueryLog) {
-    // One line per event — the Log Shipper contract (kind:"query").
-    logQueryLogger.info({
-      kind: "query",
-      time: new Date().toISOString() as string,
-      profile: entry.profileId,
-      domain: entry.domain,
-      action: entry.action,
-      rttMs: entry.rttMs,
-      clientIp: entry.clientIp,
-      region: process.env.FLY_REGION ?? "local",
-    });
-  }
-  batcher.add(entry); // rollups always (still respected below opt-out)
-}
+const logQuery = createLogQuery(store, batcher, stdoutQueryLog);
 
 // Only the primary region owns one-off DDL/prune; every POP runs the sync loop.
 const isPrimaryRegion =
@@ -206,38 +138,7 @@ const { app: healthApp, metricsApp, recorder } = createHealthApp({
   // Metrics are served on a separate private port (Fly [metrics] scrapes it);
   // never expose them on the public 8080 app.
   exposeMetrics: false,
-  readiness: () => {
-    const rs = ruleSync.status();
-    const bs = blocklists.status();
-    const blocklistsLoaded =
-      readiness.blocklistsLoaded && bs.lastError == null && bs.failedUrls.length === 0;
-    return {
-      ok: readiness.rulesLoaded && blocklistsLoaded && readiness.dns53Bound,
-      details: {
-        region: process.env.FLY_REGION ?? "local",
-        rulesLoaded: readiness.rulesLoaded,
-        blocklistsLoaded,
-        dns53Bound: readiness.dns53Bound,
-        lazyLists: true,
-        artifactOnly: process.env.ARTIFACT_ONLY_LISTS === "1",
-        remoteLists: store.remoteBlocklistEntryCount,
-        remoteListTables: store.stats.remoteListTables,
-        artifactLists: store.stats.artifactLists,
-        rawLists: store.stats.rawLists,
-        pendingLists: store.stats.pendingLists,
-        profiles: store.stats.profileCount,
-        configPollAgeMs: rs.lastPollAt == null ? null : Date.now() - rs.lastPollAt,
-        // Public readiness must not expose URLs/errors that may contain
-        // credentials or database details.
-        configPollError: rs.lastPollError != null,
-        blocklistLastSyncAt: bs.lastSyncAt,
-        blocklistError: bs.lastError != null,
-        failedBlocklists: bs.failedUrls.length,
-        rssMb: rssMb(),
-        memoryLimitMb: memoryLimitMb(),
-      },
-    };
-  },
+  readiness: () => readinessPayload({ readiness, ruleSync, blocklists, store }),
 });
 
 const app = new Hono()
@@ -289,6 +190,7 @@ if (process.env.DNS53_ENABLED !== "0") {
     allowPublicIpEncoding: ALLOW_PUBLIC_IP_ENCODING,
     probeDomain: PROBE_DOMAIN,
     onProbeSeen: recordProbe,
+    onSourceSeen,
     ensureLists: (profileId) => blocklists.ensureProfileLoaded(profileId),
   });
   if (!dns53Handle) {

@@ -1,0 +1,28 @@
+# Node edge (restored) — lazy per-profile artifacts, no Rust in the image.
+FROM node:24-bookworm-slim
+
+# App entrypoint override (kept for tests/canaries).
+ARG ENTRY=apps/edge-node/src/index.ts
+ENV APP_ENTRY=$ENTRY
+
+WORKDIR /app
+
+RUN npm install -g pnpm@10.2.0
+
+# Workspace-aware install: root manifests + dependency manifests for caching.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/db/package.json packages/db/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY apps/edge-node/package.json apps/edge-node/package.json
+RUN pnpm install --frozen-lockfile --prod
+
+COPY packages/db packages/db
+COPY packages/shared packages/shared
+COPY apps/edge-node apps/edge-node
+
+ENV NODE_ENV=production
+ENV HOME=/tmp
+EXPOSE 8080 9091 53 53/udp 853
+
+# Start as root only to bind 53/853; the app drops privileges after binding.
+CMD ["sh", "-c", "exec ./node_modules/.bin/tsx $APP_ENTRY"]

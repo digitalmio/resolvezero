@@ -144,6 +144,24 @@ describe("DnsCache", () => {
     expect((later.answers?.[0] as { ttl?: number }).ttl).toBe(235);
   });
 
+  test("clamps forwarded TTLs to the cache lifetime", () => {
+    const cache = new DnsCache();
+    cache.set(query("long.test"), response("long.test", 1, { ttl: 86_400 }), undefined, "p1");
+    const packet = decode(Buffer.from(cache.get(query("long.test", 2), undefined, undefined, "p1")!));
+    expect((packet.answers?.[0] as { ttl?: number }).ttl).toBe(300);
+  });
+
+  test("cache entries and purges are profile-namespaced", () => {
+    const cache = new DnsCache();
+    cache.set(query("tenant.test"), response("tenant.test"), undefined, "p1");
+    cache.set(query("tenant.test"), response("tenant.test"), undefined, "p2");
+    expect(cache.get(query("tenant.test", 2), undefined, undefined, "p1")).toBeDefined();
+    expect(cache.get(query("tenant.test", 2), undefined, undefined, "p2")).toBeDefined();
+    expect(cache.purge("p1", "tenant.test")).toBe(1);
+    expect(cache.get(query("tenant.test", 3), undefined, undefined, "p1")).toBeUndefined();
+    expect(cache.get(query("tenant.test", 4), undefined, undefined, "p2")).toBeDefined();
+  });
+
   test("stops serving an entry once its TTL has elapsed", () => {
     let now = 1_000_000;
     const cache = new DnsCache(() => now);
@@ -158,7 +176,7 @@ describe("DnsCache", () => {
     cache.set(query("keep.test"), response("keep.test"));
     cache.set(query("purge.test"), response("purge.test"), "https://a/dns-query");
 
-    expect(cache.purge("PURGE.test.")).toBe(2);
+    expect(cache.purge("", "PURGE.test.")).toBe(2);
     expect(cache.get(query("purge.test"))).toBeUndefined();
     expect(cache.get(query("purge.test"), "https://a/dns-query")).toBeUndefined();
     expect(cache.get(query("keep.test"))).toBeDefined();

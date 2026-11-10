@@ -15,66 +15,14 @@ import {
 import { matchProbeNonce } from "./probe";
 import { safeSearchTarget } from "./safeSearch";
 import type { RuleAction } from "./ruleStore";
-import type { RuleStore, ZoneAnswer } from "./ruleStore";
-import type { DnsCache } from "./dnsCache";
-import type { Recorder } from "./metrics";
+import type { QueryLogEntry, DohAppDeps } from "./dohTypes";
+import { clientIp, readDohWire, resolveDohIdentity } from "./dohAuth";
+import { refreshDohCache } from "./dohCache";
 import { localNameAnswer, type ZoneRecordType } from "@resolvezero/shared";
-import { readBytesBounded } from "./body";
 import { createRateLimiter, positiveInt, Semaphore } from "./limits";
 
-export type QueryLogReason = "manual" | "blocklist" | "zone" | "safesearch";
-
-export interface QueryLogEntry {
-  profileId: string;
-  domain: string;
-  action: RuleAction | "forward" | "override"; // 'override' = served from local zone
-  rttMs: number | null;
-  clientIp: string | null;
-  /** Device tag from device-tagged DoH path (/v1/:p/:device) — null when absent. */
-  device: string | null;
-  /** Why the policy action happened. Omitted for ordinary forwards. */
-  reason?: QueryLogReason;
-  /** profile_blocklists.id for blocklist hits (never the URL: it may contain secrets). */
-  listId?: string;
-  transport?: "doh" | "udp" | "tcp" | "dot" | "dot";
-  /** Safe upstream label (preset, "custom", or "edge-default"). */
-  upstream?: string;
-}
-
-export interface Upstream {
-  resolveWire(
-    wire: Uint8Array,
-    upstreamUrl?: string,
-  ): Promise<{ wire: Uint8Array<ArrayBuffer>; rttMs: number }>;
-}
-
-export interface DohAppDeps {
-  store: RuleStore;
-  dnsCache: DnsCache;
-  upstream: Upstream;
-  logQuery(entry: QueryLogEntry): void;
-  /** Ensure this profile's lazy blocklist artifacts are loaded before policy. */
-  ensureLists?(profileId: string): Promise<void>;
-  /** Lazily record a first-seen device slug (DB write-behind; edge keeps Map). */
-  onNewDevice?(profileId: string, device: string): void;
-  /** Optional Prometheus recorder (wired by index.ts when metrics are on). */
-  recorder?: Recorder;
-  /** Local suffixes for IP-encoded names (default: lan). */
-  localDomains?: readonly string[];
-  localTtl?: number;
-  allowPublicIpEncoding?: boolean;
-  /** Resolver-presence canary suffix; no public record should exist for it. */
-  probeDomain?: string | null;
-  /** Called for a valid probe lookup, after profile auth. */
-  onProbeSeen?(nonce: string, transport: "doh" | "udp" | "tcp" | "dot"): void;
-}
-
-/** Device tag charset: NextDNS-style url-safe short names. */
-const DEVICE_RE = /^[a-zA-Z0-9_-]{1,32}$/;
-
-const DOH_RATE_LIMIT_PER_MIN = positiveInt(process.env.DOH_RATE_LIMIT_PER_MIN, 600);
+const DOH_RATE_LIMIT_PER_MIN = positiveInt(process.env.DOH_RATE_LIMIT_PER_MIN, 6000);
 const DOH_MAX_INFLIGHT = positiveInt(process.env.DOH_MAX_INFLIGHT, 512);
-
 export function createDohApp(deps: DohAppDeps) {
   const app = new Hono().basePath("/v1");
   const rateLimit = createRateLimiter(DOH_RATE_LIMIT_PER_MIN, 60_000, 20_000);
@@ -82,74 +30,30 @@ export function createDohApp(deps: DohAppDeps) {
 
   app.use("*", async (_c, next) => {
     const started = performance.now();
-    try {
-      await next();
-    } finally {
-      deps.recorder?.recordDuration("doh", performance.now() - started);
-    }
+    try { await next(); } finally { deps.recorder?.recordDuration("doh", performance.now() - started); }
   });
-
-  /** Refresh a cached entry before it expires (no client-visible latency). */
-  const refresh = async (queryWire: Uint8Array, upstreamUrl?: string | null): Promise<void> => {
-    const result = await deps.upstream.resolveWire(queryWire, upstreamUrl ?? undefined);
-    deps.dnsCache.set(queryWire, result.wire, upstreamUrl);
-    deps.recorder?.recordRtt(result.rttMs);
-  };
 
   app.on(["GET", "POST"], ":profileId/:seg2?/:token?", async (c) => {
     // ---- Profile auth (RFC-style silent failures) ----
-    // Path shapes (NextDNS-parity: device between profile and token):
-    //   /v1/:id                  bare profile (token-free mode)
-    //   /v1/:id/:token           bare profile + token
-    //   /v1/:id/:device          token-free profile, device-tagged
-    //   /v1/:id/:device/:token   tokened profile, device-tagged
-    const profileId = c.req.param("profileId");
-    const token = c.req.param("token") as string | undefined;
-    const seg2 = c.req.param("seg2") as string | undefined;
-
-    let device: string | null = null;
-    let effectiveToken: string | undefined = token;
-    if (seg2 !== undefined) {
-      if (token !== undefined) {
-        // 3 segments: seg2 = device, token = third
-        if (!DEVICE_RE.test(seg2)) return c.body(null, 404);
-        device = seg2;
-      } else if (deps.store.hasToken(profileId)) {
-        effectiveToken = seg2; // tokened profile, bare path
-      } else if (DEVICE_RE.test(seg2)) {
-        device = seg2; // token-free profile, device-tagged
-      } else {
-        return c.body(null, 404);
-      }
-    }
-
+    const identity = resolveDohIdentity(
+      deps.store,
+      c.req.param("profileId"),
+      c.req.param("token") as string | undefined,
+      c.req.param("seg2") as string | undefined,
+    );
+    if (!identity) return c.body(null, 404);
+    const { profileId, device, token: effectiveToken } = identity;
     if (!deps.store.hasProfile(profileId, effectiveToken)) {
-      return c.body(null, 404); // silent — never authenticate the attacker
+      return c.body(null, 404);
     }
 
     if (device !== null) {
       const isNew = deps.store.applyDeviceSeen(profileId, device);
-      if (isNew) deps.onNewDevice?.(profileId, device);
+      const refresh = !isNew && deps.store.deviceRefreshDue(profileId, device, 3_600_000);
+      if (isNew || refresh) deps.onNewDevice?.(profileId, device);
     }
-    // ---- Extract wire-format query (RFC 8484) ----
-    let queryWire: Uint8Array | undefined;
-    try {
-      if (c.req.method === "GET") {
-        const dns = c.req.query("dns");
-        if (dns && dns.length > 4096) return c.body(null, 400);
-        if (dns) queryWire = base64urlDecode(dns);
-      } else if (c.req.header("content-type") === "application/dns-message") {
-        const len = Number(c.req.header("content-length") ?? "0");
-        if (len > 65535) return c.body(null, 400);
-        queryWire = await readBytesBounded(c.req.raw.body, 65535, len);
-        if (queryWire.length === 0) return c.body(null, 400);
-      }
-    } catch {
-      return c.body(null, 400);
-    }
-    if (!queryWire?.length) {
-      return c.body(null, 400);
-    }
+    const queryWire = await readDohWire(c);
+    if (!queryWire?.length) return c.body(null, 400);
 
     let question: { id: number; name: string; type: string };
     try {
@@ -315,7 +219,7 @@ export function createDohApp(deps: DohAppDeps) {
     // ---- DNS response LRU cache (keyed by question + upstream) ----
     const upstreamUrl = deps.store.profileUpstream(profileId) ?? undefined;
     const upstream = deps.store.profileUpstreamLabel(profileId);
-    const cached = deps.dnsCache.get(queryWire, upstreamUrl, () => refresh(queryWire, upstreamUrl));
+    const cached = deps.dnsCache.get(queryWire, upstreamUrl, () => refreshDohCache(deps, queryWire, upstreamUrl, profileId), profileId);
     if (cached) {
       // Cache hits are still queries the user asked for — log them so the
       // dashboard/rollups match the readme's "all queries are logged".
@@ -371,7 +275,7 @@ export function createDohApp(deps: DohAppDeps) {
       upstreamSlots.release();
     }
 
-    deps.dnsCache.set(queryWire, responseWire, upstreamUrl);
+    deps.dnsCache.set(queryWire, responseWire, upstreamUrl, profileId);
     deps.logQuery({
       profileId,
       domain: question.name,
@@ -393,18 +297,4 @@ export function createDohApp(deps: DohAppDeps) {
   return app;
 }
 
-function clientIp(c: { req: { header(name: string): string | undefined } }): string | null {
-  return c.req.header("fly-client-ip") ?? c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-}
-
-function base64urlDecode(s: string): Uint8Array | undefined {
-  try {
-    const normalized = s.replace(/-/g, "+").replace(/_/g, "/");
-    const bytes = Buffer.from(normalized, "base64");
-    // reject non-canonical padding junk
-    if (bytes.length === 0) return undefined;
-    return new Uint8Array(bytes);
-  } catch {
-    return undefined;
-  }
-}
+export type { QueryLogEntry, QueryLogReason, Upstream, DohAppDeps } from "./dohTypes";
