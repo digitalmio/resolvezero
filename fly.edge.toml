@@ -35,8 +35,14 @@ kill_timeout = 30
   # only list source. Do not rely on FLY_REGION detection alone.
   HOSTED = "1"
   # Household router IPs aggregate every device; 10 qps was too low.
+  # These are abuse ceilings, not per-account quotas: a household averages
+  # 1-5 qps and the ceiling only matters during bursts/attacks.
   DOH_RATE_LIMIT_PER_MIN = "6000"
   UDP_RATE_LIMIT_PER_MIN = "6000"
+  # One profile may load up to one 0.5M-rule list (the current four public
+  # lists total ~442k). The global 5M budget stays conservative on this 512MB
+  # machine; raise it with RAM, not with user count.
+  BLOCKLIST_MAX_ENTRIES_PER_PROFILE = "500000"
   # Raw-log persistence is the in-process S3 sink (S3_* secrets in Fly): one
   # object per profile per minute, so console lag stays near 1–2 min. The logs
   # API lists the last two UTC days when no date is given.

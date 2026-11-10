@@ -27,5 +27,7 @@ kill_timeout = 30
   COMPILE_POLL_SECONDS = "10"
   COMPILER_HEARTBEAT_SECONDS = "15"
   FORCE_COMPILE = "1"
+  # Match the edge's per-profile list budget.
+  BLOCKLIST_MAX_ENTRIES_PER_PROFILE = "500000"
   # Shadow mode: do not touch profile_blocklists/blocklist_version.
   COMPILER_SHADOW = "1"

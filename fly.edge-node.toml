@@ -20,6 +20,10 @@ kill_timeout = 30
   DOH_RATE_LIMIT_PER_MIN = "6000"
   UDP_RATE_LIMIT_PER_MIN = "6000"
   TCP_RATE_LIMIT_PER_MIN = "6000"
+  # Worst case: 128 active profiles with unique 0.5M-rule lists on 1GB.
+  # Shared list URLs are stored once, so typical subscriptions use far less.
+  BLOCKLIST_MAX_TOTAL_ENTRIES = "64000000"
+  BLOCKLIST_MAX_ENTRIES_PER_PROFILE = "500000"
   # Keep test queries out of the production log prefix.
   S3_LOG_PREFIX = "node-test-logs"
   # Shared DB: never run retention prune from the test app.
