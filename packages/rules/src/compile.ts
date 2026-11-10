@@ -74,6 +74,10 @@ export async function fetchListText(
 
 export function compileText(text: string, options: CompileOptions = {}): CompiledArtifact {
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+  const maxBytes = options.maxBytes ?? DEFAULT_MAX_LIST_BYTES;
+  if (Buffer.byteLength(text) > maxBytes) {
+    throw new Error(`list is larger than ${maxBytes} bytes`);
+  }
   const format = options.format ?? "auto";
   const detectedFormat = resolveListFormat(text, format);
   const parsed = parseList(text, detectedFormat);

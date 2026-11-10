@@ -58,7 +58,8 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 - Emits raw logs to S3-compatible storage and bounded rollups to Postgres.
 - Polls a Postgres watermark every few seconds; no `LISTEN`/`NOTIFY` on the hot path.
 
-**Compiler worker (`apps/compiler/src/main.rs`, binary `rz-compiler`)**
+**Artifact worker (`apps/artifacts`, Node)** — the Rust worker
+(`apps/compiler`, binary `rz-compiler`) remains available for rollback.
 - Runs on a dedicated Fly machine (`fly.compiler.toml`, `Dockerfile.compiler`), not on the request path.
 - Polls every 10 seconds for new user lists and refreshes artifacts older than six hours.
 - Uploads content-addressed blobs to S3 and bumps `blocklist_version` once per changed cycle.
@@ -80,7 +81,9 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 | Path | Purpose |
 |---|---|
 | `apps/edge` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats |
-| `apps/compiler` | Artifact compiler worker (`rz-compiler`) and one-shot `rz-compile` |
+| `apps/artifacts` | Node artifact worker + one-shot compiler CLI |
+| `packages/rules` | Shared parser, fingerprint table, RZA1 codec, SSRF-safe fetch |
+| `apps/compiler` | Rust fallback worker (`rz-compiler`) and `rz-compile` |
 | `apps/console` | TanStack Start console, API docs, and authenticated server functions |
 | `apps/agent` | Local DNS-to-DoH forwarding agent (Rust) |
 | `crates/rz-core` | Shared artifact, parser, fingerprint, and SSRF primitives |
@@ -89,7 +92,8 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 | `scripts` | Operational TS/shell scripts: migrations, seeding, smoke tests, compiler fallback |
 | `docs` | Artifact format, rules-at-scale, Rust edge security, token-at-rest notes |
 | `Dockerfile.edge`, `fly.edge.toml` | Production edge image and Fly config |
-| `Dockerfile.compiler`, `fly.compiler.toml` | Dedicated artifact compiler worker |
+| `Dockerfile.artifacts`, `fly.artifacts.toml` | Node artifact worker (`resolvezero-artifacts`) |
+| `Dockerfile.compiler`, `fly.compiler.toml` | Rust fallback worker (`resolvezero-compiler`) |
 | `Dockerfile.console`, `fly.console.toml` | Console image and Fly config |
 
 ## Self-hosting
@@ -166,7 +170,7 @@ set -a
 source .env
 set +a
 
-cargo run --release -p resolvezero-compiler --bin rz-compiler
+pnpm exec tsx apps/artifacts/src/main.ts
 ```
 
 In production the compiler is a dedicated Fly app (`fly.compiler.toml`) with no public ingress. It only needs `DATABASE_URL` and the `S3_*` credentials. The edge pulls the resulting artifacts lazily.

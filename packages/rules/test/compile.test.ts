@@ -73,6 +73,10 @@ describe("compile", () => {
     expect(() => compileText(HOSTS, { maxEntries: 2 })).toThrow(/budget/);
   });
 
+  test("enforces the per-list byte budget", () => {
+    expect(() => compileText(HOSTS, { maxBytes: 10 })).toThrow(/larger/);
+  });
+
   test("redacts credentials in logs", () => {
     expect(redactUrl("https://user:pass@example.com/private/list?token=x")).toBe(
       "https://example.com/…",

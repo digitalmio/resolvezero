@@ -45,8 +45,9 @@ gaps) in [`docs/rust-edge-security.md`](../../docs/rust-edge-security.md).
 
 ## Artifacts
 
-Compilation runs on the dedicated **`resolvezero-compiler` Fly machine**
-(`apps/compiler/src/main.rs`, binary `rz-compiler`): every 10 s it picks up new user lists (no artifact),
+Compilation runs on the dedicated **`resolvezero-artifacts` Fly machine**
+(`apps/artifacts`, Node; the Rust `resolvezero-compiler` remains for rollback):
+every 10 s it picks up new user lists (no artifact),
 refreshes artifacts older than 6 h, uploads content-addressed blobs to E2, and
 bumps `blocklist_version`. GitHub Actions only builds/deploys that worker and
 keeps a manual fallback; the runtime no longer depends on Actions.
@@ -57,7 +58,8 @@ with an **empty catalog** and loads only the queried profile's artifacts on the
 first request (`EAGER_BLOCKLISTS=1` restores preloading). With the four live
 lists published as artifacts, the first query loads **4/4 lists from artifacts,
 0 from text**; the PoP then serves 435k rules from **13 MB RSS** on Fly (Node
-edge at the same rules: 164 MB). The one-shot compiler is `rz-compile` in `apps/compiler`.
+edge at the same rules: 164 MB). The one-shot compiler is
+`apps/artifacts/src/cli.ts`; the Rust `rz-compile` produces identical bytes.
 
 `/readyz` exposes `lazyLists`, `artifactLists`, `rawLists`, `pendingLists`, and
 `remoteLists`, so a cold PoP is distinguishable from a broken one.

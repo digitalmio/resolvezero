@@ -179,6 +179,8 @@ secrets — never pasted here.
 - Remote `doh_token` regen from dashboard (admin RPC path already exists in `.env` admin).
 - Rules-at-scale design documented in [`docs/rules-at-scale.md`](docs/rules-at-scale.md): compiled base bundles + tenant overlays, artifact store/manifest, 2 GB capacity estimates, Node-vs-Bun findings, and why Redis is not the rule path. Not implemented yet.
 
+- **Node artifact worker (2026-11-10):** added `packages/rules` (list parser, xxhash64 fingerprint table with Rust-matching sort+dedupe, RZA1 codec, SSRF-safe pinned fetch, bounded bodies, S3 artifact store) and `apps/artifacts` (Node worker + `rz-compile`-equivalent CLI). `scripts/artifacts.ts` now compiles in-process instead of shelling out to Rust. Parity verified byte-for-byte against `rz-compile` for the same fetched content (fixtures, live Hagezi, live AdGuard). Hagezi's hash matched the latest Rust-produced DB row; AdGuard's differed only because the live list had changed since the last Rust compile. Deployed `resolvezero-artifacts` (fra, 1 GB, no ingress) in **`COMPILER_SHADOW=1`**: it uploads artifacts and records `rule_artifacts`/`compiler_status`, but leaves `profile_blocklists` and `blocklist_version` untouched. `resolvezero-compiler` remains the active worker for rollback. Cutover still requires flipping `COMPILER_SHADOW=0` and pausing the Rust worker.
+
 ## Tooling cheat-sheet
 - Deploy: push `main` (CI) or `scripts/deploy.sh local` (regions fra+lhr); control: `scripts/deploy.sh control`.
 - Probes: `pnpm exec tsx scripts/probe-blocks.ts` (external, token hardcoded), `pnpm exec tsx scripts/self-udp-probe.ts` (in-VM via `fly ssh console`), `pnpm exec tsx scripts/check-lists.ts` (list health).

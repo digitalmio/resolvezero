@@ -1,7 +1,7 @@
 # Rule Artifacts — Format & Pipeline
 
-**Status:** implemented on `feat/rust-edge`
-**Last updated:** 2026-11-07
+**Status:** implemented; Node compiler is the hosted worker (shadow rollout)
+**Last updated:** 2026-11-10
 
 Compiled, content-addressed blocklist artifacts shared by the Node and Rust
 edges. The binary format is deliberately tiny: no strings, no parse on the
@@ -39,7 +39,7 @@ Size: `24 + 8 × rules`. A 500k-rule list is 4.0 MB (vs ~15 MB of source text).
 
 ## 2. Sidecar
 
-`<sha256>.json`:
+`<sha256>.json` (the `compiler` field differs by runtime):
 
 ```json
 {
@@ -78,15 +78,21 @@ Postgres is the manifest:
 
 ## 4. Compiler
 
-`apps/compiler/src/bin/rz-compile.rs`:
+The hosted worker is Node (`apps/artifacts`), sharing `packages/rules` with the
+future Node edge:
 
 ```sh
-rz-compile --url https://example/list.txt --out ./artifacts
-rz-compile --file ./list.txt --format hosts --out ./artifacts
+pnpm exec tsx apps/artifacts/src/cli.ts --url https://example/list.txt --out ./artifacts
+pnpm exec tsx apps/artifacts/src/cli.ts --file ./list.txt --format hosts --out ./artifacts
 ```
 
-It reuses the same parser and fingerprint builder as the edge. Output is the
-`.bin` + `.json`; the sidecar is also printed to stdout.
+It uses the same parser, xxhash64 seed 0, sorted/deduped arrays, and `RZA1`
+encoder as the Rust compiler; byte-for-byte parity is covered by tests and was
+verified against the live Hagezi/AdGuard lists. Output is the `.bin` + `.json`;
+the sidecar is also printed to stdout.
+
+The Rust `rz-compile` binary (`apps/compiler/src/bin/rz-compile.rs`) remains in
+the repository for fallback/rollback and produces identical artifact bytes.
 
 ## 5. Publishing
 
@@ -99,7 +105,7 @@ pnpm exec tsx scripts/artifacts.ts --status
 
 For every distinct enabled `profile_blocklists.url` it:
 
-1. runs `rz-compile` (path via `RZ_COMPILE`),
+1. compiles in-process with `@resolvezero/rules`,
 2. uploads `<hash>.bin` + `<hash>.json` to E2,
 3. upserts `rule_artifacts`,
 4. sets `artifact_hash` / `artifact_rules` / `compiled_at` on the rows,
