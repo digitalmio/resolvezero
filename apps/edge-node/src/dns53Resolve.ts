@@ -211,7 +211,7 @@ export async function resolveDnsPacket(
       wire,
       upstreamUrl,
     );
-    deps.dnsCache.set(wire, responseWire, upstreamUrl, profileId);
+    const normalized = deps.dnsCache.set(wire, responseWire, upstreamUrl, profileId);
     deps.logQuery({
       profileId,
       domain: question.name,
@@ -224,7 +224,7 @@ export async function resolveDnsPacket(
     });
     deps.recorder?.recordQuery("forward");
     deps.recorder?.recordRtt(rttMs);
-    return responseWire;
+    return normalized ?? responseWire;
   } catch (err) {
     log.warn({ err, domain: question.name }, "upstream failed over UDP client");
     deps.logQuery({

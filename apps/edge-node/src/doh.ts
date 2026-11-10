@@ -275,7 +275,7 @@ export function createDohApp(deps: DohAppDeps) {
       upstreamSlots.release();
     }
 
-    deps.dnsCache.set(queryWire, responseWire, upstreamUrl, profileId);
+    const normalized = deps.dnsCache.set(queryWire, responseWire, upstreamUrl, profileId);
     deps.logQuery({
       profileId,
       domain: question.name,

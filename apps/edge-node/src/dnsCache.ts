@@ -106,13 +106,13 @@ export class DnsCache {
     responseWire: Uint8Array,
     upstream?: string | null,
     profileId = "",
-  ): void {
+  ): Uint8Array<ArrayBuffer> | undefined {
     const meta = queryMeta(queryWire, upstream, profileId);
     const packet = safeDecode(responseWire);
-    if (!meta || !packet) return;
+    if (!meta || !packet) return undefined;
 
     const rcode = (packet.flags ?? 0) & 0x000f;
-    if (rcode !== 0 && rcode !== 3) return; // only NOERROR / NXDOMAIN
+    if (rcode !== 0 && rcode !== 3) return undefined; // only NOERROR / NXDOMAIN
 
     const negative = rcode === 3 || (packet.answers ?? []).length === 0;
     const cap = negative ? MAX_NEGATIVE_TTL_MS : MAX_POSITIVE_TTL_MS;
@@ -128,13 +128,14 @@ export class DnsCache {
     clampTtls(packet, Math.floor(ttl / 1000));
 
     const normalized = encodePacket(packet);
-    if (!normalized) return;
+    if (!normalized) return undefined;
     const now = this.now();
     this.cache.set(
       meta.key,
       { wire: normalized, questionName: meta.rawName, cachedAt: now, expiresAt: now + ttl },
       { ttl },
     );
+    return normalized;
   }
 
   /** Drop every cached upstream answer (blocklist refresh may change policy). */

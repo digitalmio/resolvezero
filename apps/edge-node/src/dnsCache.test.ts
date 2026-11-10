@@ -146,7 +146,8 @@ describe("DnsCache", () => {
 
   test("clamps forwarded TTLs to the cache lifetime", () => {
     const cache = new DnsCache();
-    cache.set(query("long.test"), response("long.test", 1, { ttl: 86_400 }), undefined, "p1");
+    const first = cache.set(query("long.test"), response("long.test", 1, { ttl: 86_400 }), undefined, "p1")!;
+    expect((decode(Buffer.from(first)).answers?.[0] as { ttl?: number }).ttl).toBe(300);
     const packet = decode(Buffer.from(cache.get(query("long.test", 2), undefined, undefined, "p1")!));
     expect((packet.answers?.[0] as { ttl?: number }).ttl).toBe(300);
   });
