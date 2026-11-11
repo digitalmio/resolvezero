@@ -23,29 +23,8 @@ const RETRY_MS = positiveInt(process.env.BLOCKLIST_LAZY_RETRY_SECONDS, 60) * 100
 /** Hosted default: never parse raw text; wait for the compiler artifact. */
 const ARTIFACT_ONLY = process.env.ARTIFACT_ONLY_LISTS === "1";
 
-export interface BlocklistDeps {
-  store: RuleStore;
-  dnsCache: DnsCache;
-}
-
-export interface BlocklistStatus {
-  lastSyncAt: number | null;
-  lastError: string | null;
-  /** URLs that failed or are waiting for an artifact in the latest load. */
-  failedUrls: string[];
-}
-
-export interface BlocklistSyncHandle {
-  /** Metadata-only re-sync (debounced). Does not fetch list content. */
-  syncNow(): Promise<void>;
-  /** Boot-time metadata sync — lists load lazily on first query. */
-  initialSync(): Promise<void>;
-  /** Fetch only this profile's missing artifacts (single-flight, gated). */
-  ensureProfileLoaded(profileId: string): Promise<void>;
-  stop(): void;
-  status(): BlocklistStatus;
-}
-
+import type { BlocklistDeps, BlocklistSyncHandle } from "./blocklistTypes";
+export type { BlocklistDeps, BlocklistStatus, BlocklistSyncHandle } from "./blocklistTypes";
 
 /**
  * Shared-catalog, per-profile lazy loading:
@@ -66,6 +45,7 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
   let lastSyncAt: number | null = null;
   let lastError: string | null = null;
   const failedByProfile = new Map<string, Set<string>>();
+  const quotaUrls = new Set<string>();
   const loadingProfiles = new Map<string, Promise<void>>();
   let gate: Promise<unknown> = Promise.resolve();
 
@@ -199,9 +179,20 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
           }
 
           if (!fitsBudget(profileEntries, oldEntries, table.entryCount, MAX_ENTRIES_PER_PROFILE)) {
-            throw new Error(
-              `per-profile rule budget exceeded (${Math.max(0, profileEntries - oldEntries) + table.entryCount} > ${MAX_ENTRIES_PER_PROFILE})`,
+            quotaUrls.add(subscription.url);
+            await markStatus(subscription, "quota_exceeded", oldEntries);
+            log.warn(
+              {
+                profileId,
+                url: subscription.url,
+                entries: table.entryCount,
+                resident: profileEntries,
+                oldEntries,
+                cap: MAX_ENTRIES_PER_PROFILE,
+              },
+              "per-profile rule budget exceeded; list skipped without failing readiness",
             );
+            continue;
           }
           if (
             !fitsBudget(
@@ -222,6 +213,7 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
             source,
           );
           profileEntries = Math.max(0, profileEntries - oldEntries) + table.entryCount;
+          quotaUrls.delete(subscription.url);
           clearFailure(profileId, subscription.url);
           await markStatus(subscription, "ok", table.entryCount, detectedFormat);
           log.info(
@@ -287,7 +279,12 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
       for (const urls of failedByProfile.values()) {
         for (const url of urls) failedUrls.add(url);
       }
-      return { lastSyncAt, lastError, failedUrls: [...failedUrls] };
+      return {
+        lastSyncAt,
+        lastError,
+        failedUrls: [...failedUrls],
+        quotaSkipped: quotaUrls.size,
+      };
     },
   };
 }

@@ -21,6 +21,15 @@ import {
 import { requireSessionUser } from "./auth.server";
 
 const NAME_MAX = 40;
+const DEFAULT_PROFILE_LIMIT = 2;
+
+/** Per-account profile cap; plan-specific limits arrive with billing. */
+export function profileLimit(): number {
+  const configured = Number(process.env.MAX_PROFILES_PER_ACCOUNT ?? DEFAULT_PROFILE_LIMIT);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : DEFAULT_PROFILE_LIMIT;
+}
 
 /** Trim + collapse whitespace; reject empty or over-long names. */
 export function normalizeProfileName(raw: unknown): string {
@@ -42,6 +51,13 @@ export const createProfile = createServerFn({ method: "POST" })
       .where(eq(profiles.ownerUserId, user.id));
     if (existing.some((row) => row.name.toLowerCase() === data.name.toLowerCase())) {
       throw new Error("You already have a profile with that name.");
+    }
+
+    const limit = profileLimit();
+    if (existing.length >= limit) {
+      throw new Error(
+        `Your plan allows ${limit} profiles. Delete an existing profile or upgrade to add another.`,
+      );
     }
 
     const [created] = await db

@@ -16,6 +16,7 @@ interface BlocklistSource {
     lastSyncAt: number | null;
     lastError: string | null;
     failedUrls: string[];
+    quotaSkipped: number;
   };
 }
 
@@ -49,6 +50,7 @@ export function readinessPayload(input: {
       blocklistLastSyncAt: bs.lastSyncAt,
       blocklistError: bs.lastError != null,
       failedBlocklists: bs.failedUrls.length,
+      quotaSkipped: bs.quotaSkipped,
       rssMb: rssMb(),
       memoryLimitMb: memoryLimitMb(),
     },

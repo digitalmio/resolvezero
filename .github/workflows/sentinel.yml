@@ -58,29 +58,65 @@ jobs:
           fi
           echo "all healthy"
 
-          # App-level probe: readiness + real DNS listeners. A failed scheduled
-          # run is the alert (GitHub email); no separate monitoring stack.
-          ready=$(curl -sS -m 20 -o /tmp/rz-ready.json -w '%{http_code}' https://resolvezero-edge.fly.dev/readyz || echo 000)
-          echo "readyz=$ready $(cat /tmp/rz-ready.json 2>/dev/null)"
-          if [ "$ready" != "200" ] || ! jq -e '.ok == true and .dns53Bound == true and .subscriptionsLoaded == true and .blocklistsLoaded == true' /tmp/rz-ready.json >/dev/null; then
-            echo "::error::edge readiness failed"
+          # App-level probe: every started machine, not just whichever one
+          # anycast happens to return. Per-PoP lazy catalogs can differ, so a
+          # green region must not hide a stale/red one.
+          machine_rows=$($FLYBIN machines list -a resolvezero-edge --json | jq -r '
+            .[]
+            | select((.state // "started") == "started")
+            | [.id, .region] | @tsv')
+          if [ -z "$machine_rows" ]; then
+            echo "::error::no started edge machines"
             exit 1
           fi
-          age=$(jq -r '.configPollAgeMs // 0' /tmp/rz-ready.json)
-          failed=$(jq -r '(.failedBlocklists // []) | length' /tmp/rz-ready.json)
-          if [ "$age" -gt 300000 ]; then
-            echo "::error::config poll age ${age}ms > 300s"
-            exit 1
-          fi
-          if [ "$failed" -gt 0 ]; then
-            echo "::error::${failed} blocklist(s) failed on the last sync"
-            exit 1
-          fi
-          rss=$(jq -r '.rssMb // 0' /tmp/rz-ready.json)
-          limit=$(jq -r '.memoryLimitMb // 0' /tmp/rz-ready.json)
-          echo "rss=${rss}MB / ${limit}MB"
-          if [ "$limit" -gt 0 ] && [ $((rss * 100 / limit)) -ge 85 ]; then
-            echo "::error::edge rss ${rss}MB is >=85% of ${limit}MB — resize the machine or investigate the last sync"
+          ready_fail=0
+          summary="| machine | region | status | artifacts | pending | failed | quota | rss |\n|---|---|---|---:|---:|---:|---:|---:|\n"
+          while IFS=$'\t' read -r mid region; do
+            [ -z "$mid" ] && continue
+            body_file="/tmp/rz-ready-$mid.json"
+            code=$(curl -sS -m 20 -H "fly-force-instance-id: $mid" \
+              -o "$body_file" -w '%{http_code}' \
+              https://resolvezero-edge.fly.dev/readyz || echo 000)
+            body=$(jq -c . "$body_file" 2>/dev/null || echo '{}')
+            err=""
+            [ "$code" = "200" ] || err="http $code"
+            if ! jq -e --arg r "$region" '
+              .ok == true
+              and .dns53Bound == true
+              and .blocklistsLoaded == true
+              and ((.subscriptionsLoaded // true) == true)
+              and .region == $r
+            ' "$body_file" >/dev/null 2>&1; then
+              err="${err:+$err; }readiness/region"
+            fi
+            age=$(jq -r '.configPollAgeMs // 0' "$body_file" 2>/dev/null || echo 0)
+            [ "$age" -le 300000 ] || err="${err:+$err; }pollAge=${age}ms"
+            failed=$(jq -r '.failedBlocklists // 0' "$body_file" 2>/dev/null || echo 0)
+            [ "$failed" -eq 0 ] || err="${err:+$err; }failed=${failed}"
+            rss=$(jq -r '.rssMb // 0' "$body_file" 2>/dev/null || echo 0)
+            limit=$(jq -r '.memoryLimitMb // 0' "$body_file" 2>/dev/null || echo 0)
+            if [ "$limit" -gt 0 ] && [ $((rss * 100 / limit)) -ge 85 ]; then
+              err="${err:+$err; }rss=${rss}/${limit}MB"
+            fi
+            artifacts=$(jq -r '.artifactLists // 0' "$body_file" 2>/dev/null || echo 0)
+            pending=$(jq -r '.pendingLists // 0' "$body_file" 2>/dev/null || echo 0)
+            quota=$(jq -r '.quotaSkipped // 0' "$body_file" 2>/dev/null || echo 0)
+            if [ -n "$err" ]; then
+              echo "::error::machine $mid ($region): $err — $body"
+              ready_fail=1
+              status="FAIL"
+            else
+              status="ok"
+            fi
+            summary="${summary}| $mid | $region | $status | $artifacts | $pending | $failed | $quota | ${rss}/${limit}MB |\n"
+          done <<< "$machine_rows"
+          echo -e "$summary"
+          {
+            echo "### Edge readiness by machine"
+            echo -e "$summary"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ready_fail" -ne 0 ]; then
+            echo "::error::one or more edge machines failed readiness"
             exit 1
           fi
           # Compiler heartbeat and artifact freshness. The compiler is the only

@@ -16,6 +16,8 @@ kill_timeout = 20
   # Invite-only beta: blocks GitHub and email-OTP account creation. Existing
   # accounts (invited by seeding their account row) still sign in.
   AUTH_ALLOW_SIGNUP = "0"
+  # Beta personal plan: at most two profiles (policy groups) per account.
+  MAX_PROFILES_PER_ACCOUNT = "2"
 
 [http_service]
   internal_port = 8080
