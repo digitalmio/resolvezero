@@ -113,6 +113,13 @@ export class RemoteCatalog {
     this.loadedProfiles.set(profileId, { at: Date.now(), failed });
   }
 
+  /** Profiles whose last lazy load failed or is waiting for an artifact. */
+  failedProfiles(): string[] {
+    return [...this.loadedProfiles.entries()]
+      .filter(([, load]) => load.failed > 0)
+      .map(([profileId]) => profileId);
+  }
+
   clearLoaded(): void {
     this.loadedProfiles.clear();
   }

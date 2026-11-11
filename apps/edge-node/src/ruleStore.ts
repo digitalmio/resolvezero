@@ -167,6 +167,10 @@ export class RuleStore {
     this.remote.clearLoaded();
   }
 
+  failedProfiles(): string[] {
+    return this.remote.failedProfiles();
+  }
+
   listUpToDate(subscription: ListSubscription): boolean {
     return this.remote.listUpToDate(subscription);
   }

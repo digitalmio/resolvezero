@@ -2,6 +2,7 @@ import { moduleLogger } from "./logger";
 import { SuffixFingerprintBuilder, type SuffixFingerprintTable } from "./fingerprint";
 import { fetchListText, loadArtifactTable, parseList, resolveListFormat } from "./listSource";
 import { markStatus } from "./listStatus";
+import { fitsBudget } from "./budget";
 import { createGate } from "./gate";
 import { createS3ClientFromEnv, type S3ClientLike } from "./sinks/s3";
 import type { RuleStore } from "./ruleStore";
@@ -150,14 +151,20 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
       const deadline = Date.now() + CYCLE_DEADLINE_MS;
       let failed = 0;
       let pendingArtifacts = 0;
-      let profileEntries = subscriptions.reduce(
-        (sum, sub) =>
-          sum + (deps.store.listUpToDate(sub) ? deps.store.listEntryCount(sub.url) : 0),
-        0,
-      );
+      // Count every resident table for this profile, including stale ones.
+      // A reload replaces the old table, so the old count is subtracted when
+      // checking/applying the new one rather than double-counted.
+      const seenUrls = new Set<string>();
+      let profileEntries = 0;
+      for (const sub of subscriptions) {
+        if (seenUrls.has(sub.url)) continue;
+        seenUrls.add(sub.url);
+        profileEntries += deps.store.listEntryCount(sub.url);
+      }
 
       for (const subscription of subscriptions) {
         if (deps.store.listUpToDate(subscription)) continue;
+        const oldEntries = deps.store.listEntryCount(subscription.url);
         if (Date.now() > deadline) {
           failed += 1;
           recordFailure(profileId, subscription.url);
@@ -191,23 +198,30 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
             source = "raw";
           }
 
-          if (profileEntries + table.entryCount > MAX_ENTRIES_PER_PROFILE) {
+          if (!fitsBudget(profileEntries, oldEntries, table.entryCount, MAX_ENTRIES_PER_PROFILE)) {
             throw new Error(
-              `per-profile rule budget exceeded (${profileEntries + table.entryCount} > ${MAX_ENTRIES_PER_PROFILE})`,
+              `per-profile rule budget exceeded (${Math.max(0, profileEntries - oldEntries) + table.entryCount} > ${MAX_ENTRIES_PER_PROFILE})`,
             );
           }
-          if (deps.store.remoteBlocklistEntryCount + table.entryCount > MAX_TOTAL_ENTRIES) {
+          if (
+            !fitsBudget(
+              deps.store.remoteBlocklistEntryCount,
+              oldEntries,
+              table.entryCount,
+              MAX_TOTAL_ENTRIES,
+            )
+          ) {
             throw new Error(
-              `global rule budget exceeded (${deps.store.remoteBlocklistEntryCount + table.entryCount} > ${MAX_TOTAL_ENTRIES})`,
+              `global rule budget exceeded (${Math.max(0, deps.store.remoteBlocklistEntryCount - oldEntries) + table.entryCount} > ${MAX_TOTAL_ENTRIES})`,
             );
           }
-          profileEntries += table.entryCount;
           deps.store.upsertList(
             subscription.url,
             table,
             subscription.artifactHash ?? null,
             source,
           );
+          profileEntries = Math.max(0, profileEntries - oldEntries) + table.entryCount;
           clearFailure(profileId, subscription.url);
           await markStatus(subscription, "ok", table.entryCount, detectedFormat);
           log.info(
@@ -240,6 +254,17 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
     }
   };
 
+  // Retry failed/pending profiles even if no client queries arrive; readiness
+  // must not stay red until the next user query after a transient S3 error.
+  const retryTimer = setInterval(() => {
+    for (const profileId of deps.store.failedProfiles()) {
+      void ensureProfileLoaded(profileId).catch((err) =>
+        log.warn({ err, profileId }, "lazy list retry failed"),
+      );
+    }
+  }, RETRY_MS);
+  retryTimer.unref?.();
+
   if (intervalHours > 0) {
     // Jitter ±10% so fra/lhr don't hit the same list hosts in lockstep.
     const jitterMs = intervalHours * 3600_000 * (0.9 + Math.random() * 0.2);
@@ -255,6 +280,7 @@ export function startBlocklistSync(deps: BlocklistDeps): BlocklistSyncHandle {
     ensureProfileLoaded,
     stop() {
       if (timer) clearInterval(timer);
+      clearInterval(retryTimer);
     },
     status() {
       const failedUrls = new Set<string>();
