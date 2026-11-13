@@ -43,13 +43,13 @@ export function ProfileMenu({
             type="button"
             disabled={loading}
             aria-busy={loading}
-            className="flex h-8 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-transparent px-3 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--ink)] transition-colors hover:bg-[var(--paper-2)] disabled:cursor-wait disabled:opacity-60"
+            className="flex h-8 items-center gap-2 border border-white/20 bg-transparent px-3 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[var(--sidebar-text)] transition-colors hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
           >
             <span className="max-w-[120px] truncate">{label}</span>
             {!loading ? (
               <ChevronDown
                 size={14}
-                className={`shrink-0 text-[var(--muted)] transition-transform ${open ? 'rotate-180' : ''}`}
+                className={`shrink-0 text-[var(--sidebar-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
               />
             ) : null}
           </button>

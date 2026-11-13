@@ -55,7 +55,7 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
             dataKey="key"
             tickLine={false}
             axisLine={false}
-            tick={{ fontSize: 10, fill: 'var(--muted)' }}
+            tick={{ fontSize: 9, fill: 'var(--muted)', fontFamily: 'var(--font-mono)' }}
             interval="preserveStartEnd"
             minTickGap={32}
             tickFormatter={(value: string) => {
@@ -68,7 +68,7 @@ export function QueryChart({ data }: { data: QueryChartPoint[] }) {
             width={42}
             tickLine={false}
             axisLine={false}
-            tick={{ fontSize: 10, fill: 'var(--muted)' }}
+            tick={{ fontSize: 9, fill: 'var(--muted)', fontFamily: 'var(--font-mono)' }}
             tickFormatter={(value: number) => axisNumber(value)}
             allowDecimals={false}
             tickCount={4}
@@ -144,22 +144,22 @@ function ChartTooltip({
   if (!active || !point) return null
 
   return (
-    <div className="min-w-[164px] rounded-[10px] border border-[var(--line-strong)] bg-[var(--card)] px-2.5 py-2 text-[11px] shadow-[var(--shadow-pop)]">
-      <p className="text-[10px] text-[var(--muted)]">
+    <div className="min-w-[164px] border border-[var(--ink)] bg-[var(--card)] px-2.5 py-2 font-mono text-[10px] shadow-[4px_4px_0_var(--ink)]">
+      <p className="uppercase tracking-[0.06em] text-[var(--muted)]">
         {point.full}
         {point.partial ? ' · in progress' : ''}
       </p>
       <div className="mt-1.5 space-y-1">
         <div className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-[var(--ink)]" />
+            <span className="size-1.5 bg-[var(--ink)]" />
             Queries
           </span>
           <span className="rz-mono tabular-nums">{count.format(point.total)}</span>
         </div>
         <div className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-[var(--accent)]" />
+            <span className="size-1.5 bg-[var(--accent)]" />
             Blocked
           </span>
           <span className="rz-mono tabular-nums">{count.format(point.blocked)}</span>

@@ -91,10 +91,10 @@ export function SignInCard() {
   }
 
   return (
-            <div className="rounded-[var(--radius)] border border-[var(--line)] bg-[var(--card)] p-7 shadow-[var(--shadow-card)] sm:p-8">
+            <div className="border border-[var(--ink)] bg-[var(--card)] p-7 shadow-[6px_6px_0_var(--ink)] sm:p-8">
               <p className="rz-eyebrow">Welcome back</p>
-              <h2 className="mt-3 text-[1.7rem] font-semibold tracking-[-0.03em]">Sign in</h2>
-              <p className="mt-3 text-[12px] leading-6 text-[var(--muted)]">
+              <h2 className="mt-3 font-serif text-[2.2rem] leading-none tracking-[-0.02em]">Sign in</h2>
+              <p className="mt-4 text-[12px] leading-6 text-[var(--muted)]">
                 No password to lose. We email you a 6-digit code — it proves the address and gets you in.
               </p>
 
@@ -161,20 +161,20 @@ export function SignInCard() {
               )}
 
               {info ? (
-                <p className="mt-4 border border-[var(--line)] bg-[var(--sage)] px-3 py-2 text-[11px] leading-5 text-[var(--ink)]">
+                <p className="mt-4 border border-[var(--line-strong)] bg-[var(--sage)] px-3 py-2 font-mono text-[10px] leading-5 text-[var(--ink)]">
                   {info}
                 </p>
               ) : null}
 
               {error ? (
-                <p role="alert" className="mt-4 border border-[#e7b4ae] bg-[var(--accent-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--danger)]">
+                <p role="alert" className="mt-4 border border-[var(--danger)] bg-[var(--accent-soft)] px-3 py-2 font-mono text-[10px] leading-5 text-[var(--danger)]">
                   {error}
                 </p>
               ) : null}
 
               <div className="mt-6 flex items-center gap-3">
                 <span className="h-px flex-1 bg-[var(--line)]" />
-                <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">or</span>
+                <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--muted)]">or</span>
                 <span className="h-px flex-1 bg-[var(--line)]" />
               </div>
 

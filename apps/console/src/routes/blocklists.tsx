@@ -56,15 +56,22 @@ function Blocklists() {
         <Stat label="Healthy" value={`${healthy}/${data.lists.length}`} detail="Last sync status" />
       </div>
 
+      {data.lists.some((list) => list.lastStatus === 'quota_exceeded') ? (
+        <p className="border border-[var(--warning)] bg-[var(--warning-soft)] px-4 py-3 font-mono text-[10px] uppercase leading-5 tracking-[0.06em] text-[var(--warning)]">
+          One or more lists exceed this profile&apos;s rule budget and stay inactive. Remove a list or
+          upgrade the plan to bring them back.
+        </p>
+      ) : null}
+
       <div className="rz-card overflow-hidden">
         {adding ? <AddListForm profileId={data.profileId} onDone={() => setAdding(false)} /> : null}
-        <div className="flex items-center gap-2 border-b border-[var(--line)] p-4 text-[11px] text-[var(--muted)]">
+        <div className="flex items-center gap-2 border-b border-[var(--line)] p-4 font-mono text-[9.5px] uppercase tracking-[0.08em] text-[var(--muted)]">
           <Layers3 size={14} /> Parsed once per URL and shared across profiles on each edge.
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left">
             <thead>
-              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[11px] font-medium text-[var(--muted)]">
+              <tr className="border-b border-[var(--line-strong)] bg-[var(--paper-2)]/50 font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--muted)]">
                 <th className="px-5 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Format</th>
                 <th className="px-4 py-3 font-medium">Entries</th>
@@ -120,14 +127,21 @@ function Blocklists() {
 function StatusPill({ enabled, status }: { enabled: boolean; status: string | null }) {
   if (!enabled) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-[var(--sage)] px-2 py-1 text-[10px] font-medium text-[var(--muted)]">
+      <span className="rz-tick text-[var(--muted)]">
         <AlertCircle size={11} /> disabled
+      </span>
+    )
+  }
+  if (status === 'quota_exceeded') {
+    return (
+      <span className="rz-tick rz-tick-warning">
+        <AlertCircle size={11} /> quota exceeded
       </span>
     )
   }
   const ok = status === 'ok'
   return (
-    <span className={['inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-[10px] font-medium', ok ? 'bg-[var(--green-soft)] text-[var(--green)]' : 'bg-[var(--accent-soft)] text-[var(--warning)]'].join(' ')}>
+    <span className={['rz-tick', ok ? 'rz-tick-positive' : 'rz-tick-warning'].join(' ')}>
       {ok ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}
       {status ?? 'pending'}
     </span>
@@ -137,9 +151,9 @@ function StatusPill({ enabled, status }: { enabled: boolean; status: string | nu
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rz-card p-5">
-      <p className="text-[11px] text-[var(--muted)]">{label}</p>
-      <p className="mt-2 rz-font-display text-[26px] font-semibold tracking-[-0.045em]">{value}</p>
-      <p className="mt-1 text-[10px] text-[var(--muted)]">{detail}</p>
+      <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--muted)]">{label}</p>
+      <p className="mt-2 rz-font-display text-[28px] font-semibold tracking-[-0.045em]">{value}</p>
+      <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--muted)]">{detail}</p>
     </div>
   )
 }

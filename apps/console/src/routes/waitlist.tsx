@@ -120,12 +120,12 @@ function WaitlistPage() {
             )}
           </div>
 
-          <div className="rz-mesh rz-card flex flex-col border-white/10 p-6 text-[var(--sidebar-text)]">
+          <div className="flex flex-col border border-[var(--ink)] bg-[var(--ink)] p-6 text-[var(--sidebar-text)]">
             <span className="flex size-9 items-center justify-center rounded-[var(--radius-sm)] bg-white/10 text-[var(--lime)]">
               <Server size={16} />
             </span>
-            <h2 className="mt-4 text-[15px] font-semibold">Prefer to run it yourself?</h2>
-            <p className="mt-1.5 text-[12px] leading-6 text-[var(--sidebar-muted)]">
+            <h2 className="mt-4 font-serif text-[1.45rem] leading-tight">Prefer to run it yourself?</h2>
+            <p className="mt-2 text-[11.5px] leading-6 text-[var(--sidebar-muted)]">
               The edge and console are self-hostable today. Bring Postgres and a GitHub OAuth app; the README covers the
               rest. No waitlist.
             </p>

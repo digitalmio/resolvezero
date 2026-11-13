@@ -29,14 +29,14 @@ function authErrorMessage(error: string | undefined): string | null {
 
 function Proof({ index, icon, title, detail }: { index: string; icon: ReactNode; title: string; detail: string }) {
   return (
-    <div className="grid grid-cols-[2.25rem_1fr] gap-3 border-t border-white/15 py-4">
-      <span className="rz-mono pt-0.5 text-[9px] text-[var(--brand)]">{index}</span>
+    <div className="grid grid-cols-[2.25rem_1fr] gap-3 border-t border-dashed border-white/20 py-4">
+      <span className="rz-mono pt-0.5 text-[9px] text-[var(--signal)]">{index}</span>
       <div>
-        <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--sidebar-text)]">
+        <p className="flex items-center gap-2 font-mono text-[9.5px] font-medium uppercase tracking-[0.14em] text-[var(--sidebar-text)]">
           <span className="text-[var(--sidebar-muted)]">{icon}</span>
           {title}
         </p>
-        <p className="mt-1 text-[11px] leading-5 text-[var(--sidebar-muted)]">{detail}</p>
+        <p className="mt-1.5 text-[11px] leading-5 text-[var(--sidebar-muted)]">{detail}</p>
       </div>
     </div>
   )
@@ -47,10 +47,10 @@ function LoginPage() {
   const message = authErrorMessage(error)
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)] lg:grid lg:grid-cols-2">
-      <section className="rz-mesh relative flex flex-col overflow-hidden px-5 py-5 text-[var(--sidebar-text)] lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
+      <section className="relative flex flex-col overflow-hidden bg-[var(--sidebar)] px-5 py-5 text-[var(--sidebar-text)] lg:min-h-screen lg:px-14 lg:py-12 xl:px-20">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-16 -right-10 select-none rz-font-display text-[18rem] font-extrabold leading-none tracking-[-0.09em] text-white/[0.035] lg:text-[24rem]"
+          className="pointer-events-none absolute -bottom-24 -right-8 hidden select-none rz-serif text-[20rem] italic leading-none text-white/[0.05] lg:block lg:text-[28rem]"
         >
           RØ
         </div>
@@ -62,18 +62,23 @@ function LoginPage() {
               ResolveZero
             </span>
           </div>
-          <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
-            DNS / Privacy
+          <span className="border border-[var(--signal)] px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--signal)]">
+            Beta / Invite only
           </span>
         </div>
 
         <div className="relative z-10 hidden flex-1 flex-col justify-center py-16 lg:flex">
-          <p className="mb-5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--sidebar-muted)]">
-            Open-source DNS firewall
+          <p className="mb-6 font-mono text-[9.5px] uppercase tracking-[0.18em] text-[var(--sidebar-muted)]">
+            01 — Open-source DNS firewall
           </p>
-          <h1 className="rz-hero-title max-w-[560px]">ResolveZero</h1>
-          <p className="mt-6 max-w-[430px] text-[16px] leading-7 text-[var(--sidebar-muted)]">
-            Your DNS. Your rules. Filter at the edge, resolve local names, and keep the logs in storage you own.
+          <h1 className="rz-hero-title max-w-[600px]">
+            Your DNS.
+            <br />
+            Your rules.
+          </h1>
+          <p className="mt-7 max-w-[430px] text-[14px] leading-6 text-[var(--sidebar-muted)]">
+            Filter at the edge, resolve local names, and keep the logs in storage you own.
+            No third-party resolver in the middle.
           </p>
 
           <div className="mt-10 max-w-[430px]">
@@ -98,8 +103,10 @@ function LoginPage() {
           </div>
         </div>
 
-        <p className="relative z-10 hidden border-t border-white/15 pt-4 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--sidebar-muted)] lg:block">
-          Private by default · No third-party DNS · Self-hosted friendly
+        <p className="relative z-10 hidden justify-between border-t border-dashed border-white/20 pt-4 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--sidebar-muted)] lg:flex">
+          <span>Private by default</span>
+          <span>No third-party DNS</span>
+          <span>Self-hosted friendly</span>
         </p>
       </section>
 
@@ -116,20 +123,21 @@ function LoginPage() {
             ) : null}
             <SignInCard />
 
-            <p className="mt-4 text-center text-[11px] leading-5 text-[var(--muted)]">
-              Don’t have an account yet?{' '}
+            <p className="mt-5 text-center font-mono text-[9.5px] uppercase tracking-[0.1em] text-[var(--muted)]">
+              No account yet?{' '}
               <Link
                 to="/waitlist"
-                className="font-semibold text-[var(--ink)] underline decoration-[var(--brand)] decoration-2 underline-offset-4 hover:text-[var(--brand)]"
+                className="font-medium text-[var(--ink)] underline decoration-[var(--brand)] decoration-2 underline-offset-4 hover:text-[var(--brand)]"
               >
-                Click here
+                Join the waitlist
               </Link>
             </p>
           </div>
         </main>
 
-        <footer className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--muted)]">
-          Self-hosted friendly · open-source console
+        <footer className="flex justify-between border-t border-[var(--line-strong)] pt-4 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--muted)]">
+          <span>Self-hosted friendly</span>
+          <span>Open-source console</span>
         </footer>
       </section>
     </div>

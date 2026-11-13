@@ -59,7 +59,7 @@ function Devices() {
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">DoH devices</h2>
               <p className="mt-1 text-[12px] text-[var(--muted)]">Identified by device tag in the DoH URL</p>
             </div>
-            <span className="rounded-full bg-[var(--green-soft)] px-2.5 py-1 text-[10px] font-medium text-[var(--green)]">{dohDevices.length} active</span>
+            <span className="border border-[var(--green)] bg-[var(--green-soft)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--green)]">{dohDevices.length} active</span>
           </div>
           <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
             {dohDevices.length === 0 ? <p className="px-5 py-10 text-center text-[12px] text-[var(--muted)]">No DoH device tags in the last 24h.</p> : null}
@@ -103,7 +103,7 @@ function Devices() {
                   <p className="font-mono text-[11px]">{source.queries}</p>
                   <p className="text-[10px] text-[var(--muted)]">queries · 24h</p>
                 </div>
-                <span className={['size-1.5 rounded-full', source.name === 'Unknown device' ? 'bg-[var(--warning)]' : 'bg-[var(--green)]'].join(' ')} />
+                <span className={['size-1.5', source.name === 'Unknown device' ? 'bg-[var(--warning)]' : 'bg-[var(--green)]'].join(' ')} />
               </div>
             ))}
           </div>

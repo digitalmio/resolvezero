@@ -26,7 +26,7 @@ export function TimeZoneMenu() {
           type="button"
           aria-label={`Time zone: ${label}`}
           title={`Timestamps are shown in ${pref === 'utc' ? 'UTC' : 'browser time'}. Change it here.`}
-          className="flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-2.5 text-[11px] font-medium text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)]"
+          className="flex h-8 items-center gap-1.5 border border-white/20 bg-transparent px-2.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-[var(--sidebar-muted)] transition-colors hover:bg-white/5 hover:text-[var(--sidebar-text)]"
         >
           <Clock3 size={12} />
           <span className="hidden sm:inline">{label}</span>

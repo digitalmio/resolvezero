@@ -80,7 +80,6 @@ function Overview() {
 
   const header = (
     <div className="relative">
-      <div aria-hidden="true" className="rz-dot-grid pointer-events-none absolute -inset-x-3 -top-6 h-36 opacity-60" />
       <PageHeader
         eyebrow={data ? `Network · ${profileLabel} profile` : 'Network'}
         title={data ? `${greeting}, ${firstName}` : greeting}
@@ -186,8 +185,8 @@ function Overview() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="rz-section-title">Query volume</h2>
-              <p className="mt-1.5 text-[11px] text-[var(--muted)]">
-                Total vs blocked queries · {rangeConfig.description.toLowerCase()} · hover for exact date
+              <p className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--muted)]">
+                Total vs blocked · {rangeConfig.description.toLowerCase()} · hover for exact time
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -202,9 +201,9 @@ function Overview() {
                     onClick={() => setRange(option.key)}
                     aria-pressed={range === option.key}
                     className={[
-                      'px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.06em] transition-colors',
+                      'px-2.5 py-1.5 font-mono text-[9px] font-medium uppercase tracking-[0.08em] transition-colors',
                       range === option.key
-                        ? 'bg-[var(--brand)] text-white'
+                        ? 'bg-[var(--ink)] text-[var(--signal)]'
                         : 'text-[var(--muted)] hover:bg-[var(--paper-2)] hover:text-[var(--ink)]',
                     ].join(' ')}
                   >
@@ -214,12 +213,12 @@ function Overview() {
               </div>
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-5 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--muted)]">
+          <div className="mt-4 flex items-center gap-5 font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--muted)]">
             <span className="flex items-center gap-2">
-              <span className="size-1.5 rounded-full bg-[var(--ink)]" /> Queries
+              <span className="size-1.5 bg-[var(--ink)]" /> Queries
             </span>
             <span className="flex items-center gap-2">
-              <span className="size-1.5 rounded-full bg-[var(--accent)]" /> Blocked
+              <span className="size-1.5 bg-[var(--accent)]" /> Blocked
             </span>
           </div>
           <QueryChart data={chartData} />

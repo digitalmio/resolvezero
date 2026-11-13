@@ -55,10 +55,13 @@ export function AppShell({ session }: { session: SessionUser | null }) {
 
   return (
     <div className="min-h-screen bg-[var(--paper)] text-[var(--ink)]">
-      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-[var(--line)] bg-[var(--card)]/95 pl-3 pr-4 backdrop-blur-xl sm:pr-6">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center gap-3 border-b border-white/10 bg-[var(--sidebar)] pl-3 pr-4 text-[var(--sidebar-text)] sm:pr-6">
         <Link to="/" aria-label="ResolveZero home" className="flex shrink-0 items-center">
-          <img src={logo} alt="" className="size-9 shrink-0 sm:size-10" />
+          <img src={logo} alt="" className="size-9 shrink-0 invert sm:size-10" />
         </Link>
+        <span className="hidden font-mono text-[9px] uppercase tracking-[0.22em] text-[var(--sidebar-muted)] lg:inline">
+          DNS / Firewall
+        </span>
 
         <ProfileMenu profiles={data?.profiles ?? []} activeId={data?.profileId ?? ''} label={profileLabel} loading={!data} />
 
@@ -69,9 +72,9 @@ export function AppShell({ session }: { session: SessionUser | null }) {
             target="_blank"
             rel="noreferrer"
             title="Open the API reference"
-            className="hidden h-8 items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--line)] bg-[var(--card)] px-3 text-[11px] font-medium text-[var(--muted)] transition-colors hover:bg-[var(--paper-2)] hover:text-[var(--ink)] md:inline-flex"
+            className="hidden h-8 items-center gap-2 border border-white/20 px-3 font-mono text-[9.5px] uppercase tracking-[0.1em] text-[var(--sidebar-muted)] transition-colors hover:bg-white/5 hover:text-[var(--sidebar-text)] md:inline-flex"
           >
-            <Braces size={12} className="text-[var(--brand)]" />
+            <Braces size={12} className="text-[var(--signal)]" />
             API docs
           </a>
         </div>
@@ -111,7 +114,8 @@ export function AppShell({ session }: { session: SessionUser | null }) {
         <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 pb-4 pt-6">
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2.5 pb-2 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--sidebar-muted)]/80">
+              <p className="flex items-center gap-2 px-2.5 pb-2 font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--sidebar-muted)]/80">
+                <span className="h-px w-3 bg-[var(--sidebar-muted)]/50" />
                 {group.label}
               </p>
               {group.items.map((item) => (
@@ -126,7 +130,7 @@ export function AppShell({ session }: { session: SessionUser | null }) {
         </nav>
 
         <div className="px-3 pb-3">
-          <div className="rounded-[var(--radius)] border border-white/10 bg-white/[0.04] p-3.5">
+          <div className="border border-white/15 p-3.5">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.06em]">
                 <span
@@ -150,7 +154,8 @@ export function AppShell({ session }: { session: SessionUser | null }) {
             </div>
           </div>
 
-          <p className="px-2.5 pb-1.5 pt-5 text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--sidebar-muted)]/80">
+          <p className="flex items-center gap-2 px-2.5 pb-1.5 pt-5 font-mono text-[9px] uppercase tracking-[0.18em] text-[var(--sidebar-muted)]/80">
+            <span className="h-px w-3 bg-[var(--sidebar-muted)]/50" />
             Account
           </p>
           {accountNav.map((item) => (
