@@ -5,6 +5,10 @@ Status: **experimental branch** (`design/mono-editorial`). Not merged, not deplo
 Reference: <https://mega.dev/> — flat ink canvas, mono UI labels, editorial serif
 headlines, acid signal accent, hard 1px rules, no soft shadows.
 
+Actions are deep green (`--green`) so they read as "go / secure" and stay distinct
+from the acid selection highlight; orange is kept for the small brand mark and
+the focus ring.
+
 ## Tokens (`apps/console/src/styles.css`)
 
 | Token | Value | Role |
@@ -12,7 +16,8 @@ headlines, acid signal accent, hard 1px rules, no soft shadows.
 | `--paper` | `#f1efe7` | bone canvas |
 | `--card` | `#faf8f1` | card surface |
 | `--sidebar` | `#0c0b09` | ink chrome |
-| `--brand` | `#ff3b00` | primary CTA, eyebrow mark |
+| `--brand` | `#ff3b00` | brand mark, focus ring, warm accent |
+| `--green` | `#0b6b46` | primary CTA, healthy states |
 | `--signal` | `#e8ff00` | active nav, selected range, ticks |
 | `--line` / `--line-strong` | ink 16% / 42% | hairline and hard rules |
 | `--radius` | `2px` | square-ish edges |

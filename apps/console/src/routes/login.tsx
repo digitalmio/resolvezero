@@ -127,7 +127,7 @@ function LoginPage() {
               No account yet?{' '}
               <Link
                 to="/waitlist"
-                className="font-medium text-[var(--ink)] underline decoration-[var(--brand)] decoration-2 underline-offset-4 hover:text-[var(--brand)]"
+                className="font-medium text-[var(--ink)] underline decoration-[var(--green)] decoration-2 underline-offset-4 hover:text-[var(--green)]"
               >
                 Join the waitlist
               </Link>

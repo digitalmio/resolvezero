@@ -34,7 +34,7 @@ export function TopBlockedCard({ items }: { items: { domain: string; count: stri
       </div>
       <Link
         to="/logs"
-        className="mt-5 inline-flex items-center gap-1 font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--ink)] hover:text-[var(--brand)]"
+        className="mt-5 inline-flex items-center gap-1 font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--ink)] hover:text-[var(--green)]"
       >
         Open query log <ArrowUpRight size={12} />
       </Link>
@@ -117,7 +117,7 @@ export function LocalDnsCard({ count }: { count: number }) {
       <p className="mt-3 text-[10px] leading-5 text-[var(--muted)]">Answer .lan names before blocklists and upstream.</p>
       <Link
         to="/local-dns"
-        className="mt-auto inline-flex items-center gap-1 pt-5 font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--ink)] hover:text-[var(--brand)]"
+        className="mt-auto inline-flex items-center gap-1 pt-5 font-mono text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--ink)] hover:text-[var(--green)]"
       >
         Manage records <ArrowUpRight size={12} />
       </Link>
