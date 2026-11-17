@@ -21,11 +21,11 @@ If an exception is used, keep the reason obvious in the file or the PR descripti
 
 ## Project shape
 
-- `apps/edge` — production DNS/DoH/DoT edge (Rust). Keep the hot path allocation-light.
-- `apps/compiler` — artifact compiler worker (`rz-compiler`) and one-shot `rz-compile` (Rust).
-- `crates/rz-core` — shared artifact, parser, fingerprint, SSRF, and S3 primitives.
-- `crates/rz-db` — shared Postgres access for the edge and compiler.
-- `apps/agent` — per-host DNS-to-DoH agent (Rust).
+- `apps/edge-node` — production DNS/DoH/DoT edge (Node/TypeScript).
+- `apps/artifacts` — Node artifact worker and one-shot compiler CLI.
+- `packages/rules` — shared parser, fingerprint, RZA1 codec, SSRF, and S3 primitives.
+- `apps/agent` — per-host DNS-to-DoH agent (Rust; the remaining Rust service).
+- The former Rust edge/compiler is archived in the `rust-fallback-2026-11-17` tag.
 - `apps/console` — TanStack Start console and authenticated server functions (React 19 + Vite + Tailwind 4).
 - `packages/db` — Drizzle schema and client. Schema changes need a migration.
 - `scripts/` — operational TypeScript and shell scripts (migrations, smoke tests, compiler fallback).

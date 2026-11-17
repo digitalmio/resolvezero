@@ -1,3 +1,5 @@
+> **Historical:** the Rust edge was retired on 2026-11-17. The code reviewed here is archived in the `rust-fallback-2026-11-17` tag; production runs the Node edge.
+
 # Rust Edge — Security Review Follow-up
 
 **Scope:** the 2026-11-07 review of `apps/edge`, `crates/rz-core`, and `crates/rz-db`

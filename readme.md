@@ -50,7 +50,7 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
                                  └──▶ Edge pulls on first use
 ```
 
-**Edge data plane (`apps/edge`)**
+**Edge data plane (`apps/edge-node`)**
 - Holds profile policies in memory and resolves from an O(1) rule lookup.
 - Authenticates via DoH profile token, per-device tag, UDP source-IP allowlist, or DoT SNI.
 - Answers local zones first, then rules/blocklists, then cache or upstream DoH.
@@ -58,9 +58,9 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 - Emits raw logs to S3-compatible storage and bounded rollups to Postgres.
 - Polls a Postgres watermark every few seconds; no `LISTEN`/`NOTIFY` on the hot path.
 
-**Artifact worker (`apps/artifacts`, Node)** — the Rust worker
-(`apps/compiler`, binary `rz-compiler`) remains available for rollback.
-- Runs on a dedicated Fly machine (`fly.compiler.toml`, `Dockerfile.compiler`), not on the request path.
+**Artifact worker (`apps/artifacts`, Node)** — the active hosted producer.
+- Runs on a dedicated Fly machine (`fly.artifacts.toml`, `Dockerfile.artifacts`), not on the request path.
+- The former Rust worker is archived in the `rust-fallback-2026-11-17` tag; it is not deployed.
 - Polls every 10 seconds for new user lists and refreshes artifacts older than six hours.
 - Uploads content-addressed blobs to S3 and bumps `blocklist_version` once per changed cycle.
 - Writes a heartbeat and per-cycle status to `compiler_status`; the hourly sentinel alerts if the worker or artifacts go stale.
@@ -80,22 +80,17 @@ ResolveZero is a personal DNS and DNS-over-HTTPS resolver. It filters queries at
 
 | Path | Purpose |
 |---|---|
-| `apps/edge` | Production DNS/DoH/DoT edge (Rust), policy cache, logs, stats |
-| `apps/edge-node` | Restored Node edge (lazy per-profile artifacts; test app) |
+| `apps/edge-node` | Production DNS/DoH/DoT edge (Node), policy cache, logs, stats |
 | `apps/artifacts` | Node artifact worker + one-shot compiler CLI |
 | `packages/rules` | Shared parser, fingerprint table, RZA1 codec, SSRF-safe fetch |
-| `apps/compiler` | Rust fallback worker (`rz-compiler`) and `rz-compile` |
 | `apps/console` | TanStack Start console, API docs, and authenticated server functions |
 | `apps/agent` | Local DNS-to-DoH forwarding agent (Rust) |
-| `crates/rz-core` | Shared artifact, parser, fingerprint, and SSRF primitives |
-| `crates/rz-db` | Shared Postgres access for the edge and compiler |
 | `packages/db` | Drizzle schema, migrations, database client |
 | `scripts` | Operational TS/shell scripts: migrations, seeding, smoke tests, compiler fallback |
 | `docs` | Artifact format, rules-at-scale, Rust edge security, token-at-rest notes |
-| `Dockerfile.edge`, `fly.edge.toml` | Production edge image and Fly config |
-| `Dockerfile.edge-node`, `fly.edge-node.toml` | Node edge test app (`resolvezero-edge-node`) |
+| `Dockerfile.edge-node`, `fly.edge.toml` | Production edge image and Fly config |
+| `fly.edge-node.toml` | Node edge test app (`resolvezero-edge-node`) |
 | `Dockerfile.artifacts`, `fly.artifacts.toml` | Node artifact worker (`resolvezero-artifacts`) |
-| `Dockerfile.compiler`, `fly.compiler.toml` | Rust fallback worker (`resolvezero-compiler`) |
 | `Dockerfile.console`, `fly.console.toml` | Console image and Fly config |
 
 ## Self-hosting
@@ -148,15 +143,14 @@ node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/migrate.ts
 
 `DATABASE_URL_ADMIN` is used only for migrations. Runtime uses `DATABASE_URL`.
 
-### 3. Run the Rust edge
+### 3. Run the Node edge
 
 ```sh
 set -a
 source .env
 set +a
 
-cd apps/edge
-cargo run --release --bin resolvezero-edge
+pnpm --filter @resolvezero/edge-node dev
 ```
 
 Port 53 requires root or `CAP_NET_BIND_SERVICE`. For local development, set `DNS_PORT=5353` and use DoH on `http://localhost:8080`, or set `DROP_PRIVILEGES=0` if you are not running as root.
@@ -175,7 +169,7 @@ set +a
 pnpm exec tsx apps/artifacts/src/main.ts
 ```
 
-In production the compiler is a dedicated Fly app (`fly.compiler.toml`) with no public ingress. It only needs `DATABASE_URL` and the `S3_*` credentials. The edge pulls the resulting artifacts lazily.
+In production the compiler is a dedicated Fly app (`fly.artifacts.toml`) with no public ingress. It only needs `DATABASE_URL` and the `S3_*` credentials. The edge pulls the resulting artifacts lazily.
 
 ### 5. Run the console
 

@@ -1,3 +1,5 @@
+> **Historical:** file paths below refer to the Rust edge archived in `rust-fallback-2026-11-17`. The current implementation is `apps/edge-node` + `packages/rules`.
+
 # Rules at Scale — Architecture Notes
 
 **Status:** design discussion, not implemented

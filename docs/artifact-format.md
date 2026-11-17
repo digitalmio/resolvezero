@@ -31,7 +31,7 @@ offset  size  field
 ```
 
 - Each entry is the **xxhash64 (seed 0)** of a normalized domain, implemented
-  in `crates/rz-core/src/fingerprint.rs`.
+  in `packages/rules/src/fingerprint.ts`.
 - Rules are stored exactly as written; the query side probes every label
   suffix, which preserves subtree semantics.
 - Allow entries are checked before block entries, across all lists.
@@ -94,10 +94,9 @@ encoder as the Rust compiler; byte-for-byte parity is covered by tests and was
 verified against the live Hagezi/AdGuard lists. Output is the `.bin` + `.json`;
 the sidecar is also printed to stdout.
 
-The Rust `rz-compile` binary (`apps/compiler/src/bin/rz-compile.rs`) remains in
-the repository for fallback/rollback and produces identical artifact bytes.
-The Rust daemon (`resolvezero-compiler`) is scaled to 0; the Node worker writes
-`compiler_status` and advances `blocklist_version` itself.
+The Rust edge/compiler source is archived in the `rust-fallback-2026-11-17`
+tag; it is not in the current tree and has no Fly machines. The Node worker
+writes `compiler_status` and advances `blocklist_version` itself.
 
 ## 5. Publishing
 
@@ -131,9 +130,9 @@ status columns (`artifact_hash` was added after) to avoid sync loops.
   `blocklists.ts`): if `artifact_hash` is set, GET the object, verify sha256,
   and decode it into the rule store. Lazy loading fetches only the profiles
   queried since the last `blocklist_version` bump.
-- **Rust edge** (`apps/edge/src/lists.rs`, shared decode in `crates/rz-core`):
-  the same artifact path with a small SigV4 client. It is no longer deployed,
-  but remains the parity/rollback implementation.
+- **Rust edge** (archived in `rust-fallback-2026-11-17`): the same artifact
+  path with a small SigV4 client. It is no longer deployed; the tag is the
+  parity/rollback reference.
 - On any artifact failure the Node edge keeps the list pending/failed and
   reports it in `/readyz`; artifact-only mode does not parse raw text as a
   fallback.
