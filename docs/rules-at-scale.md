@@ -1,3 +1,5 @@
+> **Historical:** the staging/test apps were retired on 2026-11-17. Production is the Node edge on `resolvezero-edge`.
+
 > **Historical:** file paths below refer to the Rust edge archived in `rust-fallback-2026-11-17`. The current implementation is `apps/edge-node` + `packages/rules`.
 
 # Rules at Scale — Architecture Notes
