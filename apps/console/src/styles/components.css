@@ -1,0 +1,206 @@
+@layer components {
+.rz-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.rz-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rz-eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--brand);
+}
+
+.rz-display {
+  font-family: var(--font-display);
+  font-stretch: 118%;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.rz-font-display {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.rz-hero-title {
+  font-family: var(--font-serif);
+  font-size: clamp(3.6rem, 6.4vw, 6rem);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 0.88;
+  color: var(--sidebar-text);
+}
+
+.rz-page-title {
+  font-family: var(--font-serif);
+  font-size: clamp(2.1rem, 3.4vw, 3rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+  color: var(--ink);
+}
+
+.rz-page-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+}
+
+.rz-section-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.rz-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.rz-input {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.rz-input:focus {
+  border-color: var(--ink);
+  outline: 2px solid var(--ink);
+  outline-offset: 0;
+}
+
+.rz-input::placeholder {
+  color: color-mix(in oklab, var(--muted) 72%, transparent);
+}
+
+.rz-field-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rz-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 0;
+  border: 1px solid var(--line-strong);
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+}
+
+.rz-pill-positive {
+  border-color: color-mix(in oklab, var(--green) 45%, transparent);
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.rz-pill-warning {
+  border-color: color-mix(in oklab, var(--warning) 40%, transparent);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.rz-pill-danger {
+  border-color: color-mix(in oklab, var(--danger) 40%, transparent);
+  background: var(--accent-soft);
+  color: var(--danger);
+}
+
+.rz-pill-accent {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.rz-hairline {
+  border-color: var(--line);
+}
+
+.rz-serif {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+/* Hard offset edge used sparingly on the login card and primary CTA. */
+.rz-hard {
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.rz-hard-brand {
+  box-shadow: 5px 5px 0 var(--brand);
+}
+
+/* Small mono tick used for metadata rows and table statuses. */
+.rz-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rz-tick-positive {
+  color: var(--green);
+}
+
+.rz-tick-warning {
+  color: var(--warning);
+}
+
+.rz-tick-danger {
+  color: var(--danger);
+}
+}

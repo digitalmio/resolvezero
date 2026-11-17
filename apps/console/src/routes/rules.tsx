@@ -64,7 +64,7 @@ function Rules() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-left">
             <thead>
-              <tr className="border-b border-[var(--line)] bg-[var(--paper)]/60 text-[11px] font-medium text-[var(--muted)]">
+              <tr className="border-b border-[var(--line-strong)] bg-[var(--paper-2)]/50 font-mono text-[9px] uppercase tracking-[0.12em] text-[var(--muted)]">
                 <th className="px-5 py-3 font-medium">Domain</th>
                 <th className="px-4 py-3 font-medium">Action</th>
                 <th className="px-4 py-3 font-medium text-right">Enabled</th>
@@ -117,10 +117,10 @@ function Rules() {
 function ActionPill({ action }: { action: string }) {
   const style =
     action === 'block'
-      ? 'bg-[var(--accent-soft)] text-[#b74716] ring-[var(--line)]'
-      : 'bg-[var(--green-soft)] text-[var(--green)] ring-[var(--line)]'
+      ? 'border-[var(--danger)] text-[var(--danger)]'
+      : 'border-[var(--green)] text-[var(--green)]'
   return (
-    <span className={`inline-flex items-center rounded-[var(--radius-sm)] px-2 py-1 text-[10px] font-medium capitalize tracking-[0.02em] ring-1 ${style}`}>
+    <span className={`inline-flex items-center border px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-[0.1em] ${style}`}>
       {action}
     </span>
   )

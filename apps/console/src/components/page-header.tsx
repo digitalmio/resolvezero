@@ -16,7 +16,7 @@ export function PageHeader({
   meta?: ReactNode
 }) {
   return (
-    <div className="border-b border-[var(--line)] pb-6">
+    <div className="border-b border-[var(--line-strong)] pb-6">
       <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div className="min-w-0">
           {eyebrow ? <p className="rz-eyebrow mb-4">{eyebrow}</p> : null}
@@ -25,7 +25,7 @@ export function PageHeader({
             <div className="min-w-0">
               <h1 className="rz-page-title">{title}</h1>
               {description ? (
-                <p className="mt-3 max-w-2xl text-[12px] leading-6 text-[var(--muted)]">{description}</p>
+                <p className="mt-3 max-w-2xl text-[12.5px] leading-6 text-[var(--muted)]">{description}</p>
               ) : null}
             </div>
           </div>
