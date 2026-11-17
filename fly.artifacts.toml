@@ -1,9 +1,9 @@
 # Node artifact worker. No public ingress; it only needs Postgres + S3 and
 # polls for new list URLs every COMPILE_POLL_SECONDS.
 #
-# Start in COMPILER_SHADOW=1: it compiles/uploads artifacts and records
-# rule_artifacts, but does not update profile_blocklists or bump the blocklist
-# watermark. Flip to 0 only after parity with the Rust compiler.
+# COMPILER_SHADOW=0 is the active producer: it writes profile_blocklists and
+# bumps the blocklist watermark. Set it back to 1 and scale the Rust compiler
+# back up to roll back.
 app = "resolvezero-artifacts"
 primary_region = "fra"
 kill_timeout = 30
@@ -29,5 +29,5 @@ kill_timeout = 30
   FORCE_COMPILE = "1"
   # Match the edge's per-profile list budget.
   BLOCKLIST_MAX_ENTRIES_PER_PROFILE = "550000"
-  # Shadow mode: do not touch profile_blocklists/blocklist_version.
-  COMPILER_SHADOW = "1"
+  # Active producer: writes profile_blocklists and advances blocklist_version.
+  COMPILER_SHADOW = "0"
