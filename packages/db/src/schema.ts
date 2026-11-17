@@ -360,6 +360,8 @@ export const statsHourly = pgTable(
       .references(() => profiles.id),
     /** Start of the aggregated hour (UTC). */
     hour: timestamp("hour", { withTimezone: true }).notNull(),
+    /** Edge machine that wrote this row (FLY_MACHINE_ID). */
+    machine: varchar("machine", { length: 32 }).notNull().default("legacy"),
     totalQueries: integer("total_queries").notNull().default(0),
     blocked: integer("blocked").notNull().default(0),
     /** Sum of upstream RTT over forwarded queries (ms) + count for mean. */
@@ -375,8 +377,8 @@ export const statsHourly = pgTable(
     topDevices: jsonb("top_devices").$type<StatsTopEntry[]>().notNull().default(sql`'[]'::jsonb`),
   },
   (t) => [
-    // one row per profile per hour — the rollup writer upserts on this
-    primaryKey({ columns: [t.profileId, t.hour] }),
+    // one row per profile per hour per edge machine
+    primaryKey({ columns: [t.profileId, t.hour, t.machine] }),
   ],
 );
 
@@ -398,6 +400,7 @@ export const statsHourlyDevice = pgTable(
     /** Raw client-provided slug (`[a-zA-Z0-9_-]{1,32}` at the edge). */
     device: varchar("device", { length: 64 }).notNull(),
     hour: timestamp("hour", { withTimezone: true }).notNull(),
+    machine: varchar("machine", { length: 32 }).notNull().default("legacy"),
     totalQueries: integer("total_queries").notNull().default(0),
     blocked: integer("blocked").notNull().default(0),
     rttSumMs: bigint("rtt_sum_ms", { mode: "number" }).notNull().default(0),
@@ -408,7 +411,7 @@ export const statsHourlyDevice = pgTable(
     topBlocked: jsonb("top_blocked").$type<StatsTopEntry[]>().notNull().default(sql`'[]'::jsonb`),
   },
   (t) => [
-    primaryKey({ columns: [t.profileId, t.device, t.hour] }),
+    primaryKey({ columns: [t.profileId, t.device, t.hour, t.machine] }),
     index("stats_hourly_device_profile_hour_idx").on(t.profileId, t.hour),
   ],
 );
@@ -425,11 +428,12 @@ export const statsMinuteDevice = pgTable(
       .references(() => profiles.id, { onUpdate: "cascade", onDelete: "cascade" }),
     device: varchar("device", { length: 64 }).notNull(),
     minute: timestamp("minute", { withTimezone: true }).notNull(),
+    machine: varchar("machine", { length: 32 }).notNull().default("legacy"),
     totalQueries: integer("total_queries").notNull().default(0),
     blocked: integer("blocked").notNull().default(0),
   },
   (t) => [
-    primaryKey({ columns: [t.profileId, t.device, t.minute] }),
+    primaryKey({ columns: [t.profileId, t.device, t.minute, t.machine] }),
     index("stats_minute_device_profile_minute_idx").on(t.profileId, t.minute),
   ],
 );
@@ -447,11 +451,12 @@ export const statsMinute = pgTable(
       .references(() => profiles.id),
     /** Start of the aggregated minute (UTC). */
     minute: timestamp("minute", { withTimezone: true }).notNull(),
+    machine: varchar("machine", { length: 32 }).notNull().default("legacy"),
     totalQueries: integer("total_queries").notNull().default(0),
     blocked: integer("blocked").notNull().default(0),
   },
   (t) => [
-    primaryKey({ columns: [t.profileId, t.minute] }),
+    primaryKey({ columns: [t.profileId, t.minute, t.machine] }),
   ],
 );
 

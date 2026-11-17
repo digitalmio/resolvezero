@@ -8,25 +8,6 @@ pub(super) fn floor(value: i64, width: i64) -> i64 {
     value - value.rem_euclid(width)
 }
 
-pub(super) fn merge(target: &mut HashMap<String, i64>, source: &HashMap<String, i64>) {
-    for (key, count) in source {
-        *target.entry(key.clone()).or_insert(0) += count;
-    }
-}
-
-pub(super) fn merge_json(target: &mut HashMap<String, i64>, json: String, key: &str) {
-    if let Ok(Value::Array(entries)) = serde_json::from_str::<Value>(&json) {
-        for entry in entries {
-            if let (Some(name), Some(count)) = (
-                entry.get(key).and_then(Value::as_str),
-                entry.get("count").and_then(Value::as_i64),
-            ) {
-                *target.entry(name.to_string()).or_insert(0) += count;
-            }
-        }
-    }
-}
-
 pub(super) fn top_json(map: &HashMap<String, i64>, key: &str, cap: usize) -> String {
     let mut entries: Vec<(&String, &i64)> = map.iter().collect();
     entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
@@ -60,29 +41,6 @@ mod tests {
         assert_eq!(floor(125, 60), 120);
         assert_eq!(floor(-1, 60), -60);
         assert_eq!(floor(3_600, 3_600), 3_600);
-    }
-
-    #[test]
-    fn merges_counter_maps() {
-        let mut target = HashMap::from([("a".to_string(), 2)]);
-        let source = HashMap::from([("a".to_string(), 3), ("b".to_string(), 1)]);
-        merge(&mut target, &source);
-        assert_eq!(target["a"], 5);
-        assert_eq!(target["b"], 1);
-    }
-
-    #[test]
-    fn merges_json_tops_and_ignores_bad_shapes() {
-        let mut target = HashMap::new();
-        merge_json(
-            &mut target,
-            r#"[{"domain":"a","count":2},{"domain":"a","count":3},{"count":9}]"#.to_string(),
-            "domain",
-        );
-        assert_eq!(target["a"], 5);
-        merge_json(&mut target, "not json".to_string(), "domain");
-        merge_json(&mut target, r#"[{"domain":"b"}]"#.to_string(), "domain");
-        assert_eq!(target.len(), 1);
     }
 
     #[test]

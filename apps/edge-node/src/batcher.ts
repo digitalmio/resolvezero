@@ -52,9 +52,9 @@ export class QueryLogBatcher {
   private readonly log: Logger;
 
   constructor(private opts: BatcherOptions) {
-    this.intervalMs = opts.flushIntervalMs ?? 2000;
-    this.maxBatch = opts.maxBatch ?? 500;
-    this.maxBuffer = opts.maxBuffer ?? 10_000;
+    this.intervalMs = opts.flushIntervalMs ?? 60_000;
+    this.maxBatch = opts.maxBatch ?? 50_000;
+    this.maxBuffer = opts.maxBuffer ?? 50_000;
     this.log = (opts.log ?? moduleLogger("batcher"));
   }
 

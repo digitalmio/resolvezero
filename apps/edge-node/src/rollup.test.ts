@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import {
   aggregate,
   hourFloor,
-  mergeTopEntries,
   minuteFloor,
   selectRunnableRows,
   toTopEntries,
@@ -85,12 +84,6 @@ describe("rollup pure helpers", () => {
     ]);
   });
 
-  test("mergeTopEntries folds prior capped lists back in", () => {
-    const m = new Map([["fresh", 2]]);
-    mergeTopEntries(m, [{ domain: "old", count: 7 }], "domain");
-    expect(m.get("old")).toBe(7);
-    expect(m.get("fresh")).toBe(2);
-  });
 });
 
 describe("minute rollups", () => {

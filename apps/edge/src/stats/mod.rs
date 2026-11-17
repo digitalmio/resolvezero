@@ -1,8 +1,10 @@
 //! Query logging: Postgres rollups + gzipped S3 archive.
 //!
-//! Mirrors the Node pipeline: a bounded in-memory batcher writes
-//! `stats_minute` / `stats_hourly` (+ per-device variants) and appends each
-//! event to a one-minute S3 window. DNS never waits on either sink.
+//! Each edge machine writes its own `stats_*` rows. The rollup is flushed once
+//! a minute and never reads a stats row back: counters are additive and top
+//! lists are merged by `stats_merge_top()` inside Postgres. The S3 archive is
+//! independent and flushes every 30 s, so the query log is not delayed by the
+//! stats interval.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -22,8 +24,9 @@ mod util;
 use archive::Archive;
 use rollup::apply_rollups;
 
-const BATCH_SIZE: usize = 500;
-const FLUSH_EVERY: Duration = Duration::from_secs(1);
+/// Emergency flush; the normal cadence is `FLUSH_EVERY`.
+const BATCH_SIZE: usize = 50_000;
+const FLUSH_EVERY: Duration = Duration::from_secs(60);
 const ARCHIVE_EVERY: Duration = Duration::from_secs(30);
 const MAX_PENDING: usize = 50_000;
 
@@ -75,6 +78,7 @@ impl QueryLogger {
 pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
     let (tx, mut rx) = mpsc::channel::<LogMessage>(20_000);
     let logger_metrics = metrics.clone();
+    let machine = machine_id();
     tokio::spawn(async move {
         let mut archive = Archive::new(&cfg, metrics.clone());
         let mut batch: Vec<QueryEvent> = Vec::new();
@@ -86,13 +90,16 @@ pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
             tokio::select! {
                 maybe = rx.recv() => match maybe {
                     Some(LogMessage::Event(event)) => {
+                        // Archive immediately so the log page is not tied to
+                        // the stats flush interval.
+                        archive.add(&event);
                         batch.push(event);
                         if batch.len() >= BATCH_SIZE {
-                            flush(&db, &mut archive, &mut batch, &mut pending, &metrics).await;
+                            flush(&db, &machine, &mut batch, &mut pending, &metrics).await;
                         }
                     }
                     Some(LogMessage::Shutdown(done)) => {
-                        flush(&db, &mut archive, &mut batch, &mut pending, &metrics).await;
+                        flush(&db, &machine, &mut batch, &mut pending, &metrics).await;
                         archive.flush_all(now()).await;
                         let _ = done.send(());
                         break;
@@ -100,7 +107,7 @@ pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
                     None => break,
                 },
                 _ = flush_tick.tick() => {
-                    flush(&db, &mut archive, &mut batch, &mut pending, &metrics).await;
+                    flush(&db, &machine, &mut batch, &mut pending, &metrics).await;
                 }
                 _ = archive_tick.tick() => {
                     archive.flush_completed(now()).await;
@@ -108,7 +115,7 @@ pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
             }
         }
 
-        flush(&db, &mut archive, &mut batch, &mut pending, &metrics).await;
+        flush(&db, &machine, &mut batch, &mut pending, &metrics).await;
         if !pending.is_empty() {
             warn!(
                 rows = pending.len(),
@@ -127,7 +134,7 @@ pub fn start(db: Db, cfg: Arc<Config>, metrics: Arc<Metrics>) -> QueryLogger {
 
 async fn flush(
     db: &Db,
-    archive: &mut Archive,
+    machine: &str,
     batch: &mut Vec<QueryEvent>,
     pending: &mut VecDeque<QueryEvent>,
     metrics: &Metrics,
@@ -139,18 +146,23 @@ async fn flush(
     while pending.len() > MAX_PENDING {
         pending.pop_front();
     }
-    match apply_rollups(db, pending.make_contiguous()).await {
-        Ok(()) => {
-            for event in pending.iter() {
-                archive.add(event);
-            }
-            pending.clear();
-        }
+    match apply_rollups(db, machine, pending.make_contiguous()).await {
+        Ok(()) => pending.clear(),
         Err(err) => {
             warn!(%err, rows = pending.len(), "query rollup failed; will retry");
             Metrics::inc(&metrics.rollup_errors);
         }
     }
+}
+
+fn machine_id() -> String {
+    std::env::var("FLY_MACHINE_ID")
+        .or_else(|_| std::env::var("FLY_ALLOC_ID"))
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "local".into())
+        .chars()
+        .take(32)
+        .collect()
 }
 
 fn now() -> i64 {

@@ -1,6 +1,6 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
-import { profiles, statsHourly, statsMinute, type StatsTopEntry } from "@resolvezero/db/schema";
+import { profiles, statsHourly, statsMinute } from "@resolvezero/db/schema";
 import type { QueryLogRow } from "./batcher";
 import { applyDeviceRollups } from "./deviceRollup";
 import {
@@ -10,8 +10,7 @@ import {
   MAX_TOP_DOMAINS,
   hourFloor,
   incr,
-  lockBucket,
-  mergeTopEntries,
+  machineId,
   minuteFloor,
   toTopEntries,
   type Tx,
@@ -24,7 +23,6 @@ export {
   MAX_TOP_DEVICES,
   MAX_TOP_DOMAINS,
   hourFloor,
-  mergeTopEntries,
   minuteFloor,
   toTopEntries,
 } from "./rollupShared";
@@ -46,34 +44,27 @@ interface BucketAgg {
 }
 
 /**
- * Updates the stats_hourly rollups for a batch of flushed query-log rows.
- * Called on every batcher flush → /stats stays near-real-time.
- *
- * Concurrency: each (profile, hour) bucket is read-merge-written inside a
- * transaction holding `pg_advisory_xact_lock`, so two edge regions flushing
- * the same bucket serialize instead of losing increments.
+ * Every machine writes its own hourly rows. The upsert adds counters and
+ * merges the top lists with `stats_merge_top()` inside Postgres, so the edge
+ * never selects the row back (that read was the PlanetScale egress driver).
  */
-async function applyHourly(rows: QueryLogRow[], tx: Tx): Promise<void> {
+async function applyHourly(rows: QueryLogRow[], machine: string, tx: Tx): Promise<void> {
   if (rows.length === 0) return;
   for (const agg of aggregate(rows).values()) {
-    await applyBucket(agg, tx);
+    await applyBucket(agg, machine, tx);
   }
 }
 
-/**
- * Full rollup pass per batcher flush: minute rows (totals-only counters,
- * SQL-additive upsert) + hourly rows (top-lists, read-merge-write).
- */
 /**
  * Apply one batched flush atomically.
  *
  * Rows for profiles that no longer exist are dropped instead of failing the
  * batch: a stale buffer entry (rename/delete) used to wedge the queue and the
  * batcher replayed the batch forever, inflating stats and the archive.
- * Minute + hourly share one transaction, so a retry can never double-count.
  */
 export async function updateRollups(rows: QueryLogRow[]): Promise<void> {
   if (rows.length === 0) return;
+  const machine = machineId();
 
   await db.transaction(async (tx) => {
     const ids = [...new Set(rows.map((row) => row.profileId))];
@@ -85,9 +76,9 @@ export async function updateRollups(rows: QueryLogRow[]): Promise<void> {
     const valid = selectRunnableRows(rows, known);
     if (valid.length === 0) return;
 
-    await applyHourly(valid, tx);
-    await applyMinutes(valid, tx);
-    await applyDeviceRollups(valid, tx);
+    await applyHourly(valid, machine, tx);
+    await applyMinutes(valid, machine, tx);
+    await applyDeviceRollups(valid, machine, tx);
   });
 }
 
@@ -96,11 +87,8 @@ export function selectRunnableRows(rows: QueryLogRow[], knownProfileIds: Set<str
   return rows.filter((row) => knownProfileIds.has(row.profileId));
 }
 
-/**
- * Minute rollups: counters only, so a plain additive upsert is
- * race-safe across multiple edge writers (unlike the hour maps).
- */
-async function applyMinutes(rows: QueryLogRow[], tx: Tx): Promise<void> {
+/** Minute rollups: counters only, plain additive upsert per machine. */
+async function applyMinutes(rows: QueryLogRow[], machine: string, tx: Tx): Promise<void> {
   if (rows.length === 0) return;
 
   const buckets = new Map<string, { profileId: string; minute: Date; total: number; blocked: number }>();
@@ -119,9 +107,15 @@ async function applyMinutes(rows: QueryLogRow[], tx: Tx): Promise<void> {
   for (const b of buckets.values()) {
     await tx
       .insert(statsMinute)
-      .values({ profileId: b.profileId, minute: b.minute, totalQueries: b.total, blocked: b.blocked })
+      .values({
+        profileId: b.profileId,
+        minute: b.minute,
+        machine,
+        totalQueries: b.total,
+        blocked: b.blocked,
+      })
       .onConflictDoUpdate({
-        target: [statsMinute.profileId, statsMinute.minute],
+        target: [statsMinute.profileId, statsMinute.minute, statsMinute.machine],
         set: {
           totalQueries: sql`${statsMinute.totalQueries} + excluded.total_queries`,
           blocked: sql`${statsMinute.blocked} + excluded.blocked`,
@@ -168,69 +162,35 @@ export function aggregate(rows: QueryLogRow[]): Map<string, BucketAgg> {
   return buckets;
 }
 
-async function applyBucket(agg: BucketAgg, tx: Tx): Promise<void> {
-  // Read-modify-write must be serialized across edge regions. A
-  // transaction-scoped advisory lock per (profile, hour) is cheap and
-  // avoids a schema migration; the lock releases on commit/rollback.
-  await lockBucket(tx, `${agg.profileId}:${agg.hour.getTime()}`);
-
-  const existing = await tx
-    .select()
-    .from(statsHourly)
-    .where(and(eq(statsHourly.profileId, agg.profileId), eq(statsHourly.hour, agg.hour)))
-    .limit(1);
-
-  const prev = existing[0] ?? {
-    totalQueries: 0,
-    blocked: 0,
-    rttSumMs: 0,
-    rttCount: 0,
-    topDomains: [] as StatsTopEntry[],
-    topBlocked: [] as StatsTopEntry[],
-    topClients: [] as StatsTopEntry[],
-    topDevices: [] as StatsTopEntry[],
-  };
-
-  const domains = new Map<string, number>();
-  const clients = new Map<string, number>();
-  const devices = new Map<string, number>();
-  const blockedDomains = new Map<string, number>();
-  mergeTopEntries(domains, prev.topDomains, "domain");
-  mergeTopEntries(clients, prev.topClients, "clientIp");
-  mergeTopEntries(devices, prev.topDevices ?? [], "device");
-  mergeTopEntries(blockedDomains, prev.topBlocked, "domain");
-  for (const [k, v] of agg.domains) incr(domains, k, v);
-  for (const [k, v] of agg.clients) incr(clients, k, v);
-  for (const [k, v] of agg.devices) incr(devices, k, v);
-  for (const [k, v] of agg.blockedDomains) incr(blockedDomains, k, v);
-
+async function applyBucket(agg: BucketAgg, machine: string, tx: Tx): Promise<void> {
   const values = {
     profileId: agg.profileId,
     hour: agg.hour,
-    totalQueries: prev.totalQueries + agg.total,
-    blocked: prev.blocked + agg.blocked,
-    rttSumMs: prev.rttSumMs + agg.rttSumMs,
-    rttCount: prev.rttCount + agg.rttCount,
-    topDomains: toTopEntries(domains, MAX_TOP_DOMAINS, "domain"),
-    topBlocked: toTopEntries(blockedDomains, MAX_TOP_BLOCKED, "domain"),
-    topClients: toTopEntries(clients, MAX_TOP_CLIENTS, "clientIp"),
-    topDevices: toTopEntries(devices, MAX_TOP_DEVICES, "device"),
+    machine,
+    totalQueries: agg.total,
+    blocked: agg.blocked,
+    rttSumMs: agg.rttSumMs,
+    rttCount: agg.rttCount,
+    topDomains: toTopEntries(agg.domains, MAX_TOP_DOMAINS, "domain"),
+    topBlocked: toTopEntries(agg.blockedDomains, MAX_TOP_BLOCKED, "domain"),
+    topClients: toTopEntries(agg.clients, MAX_TOP_CLIENTS, "clientIp"),
+    topDevices: toTopEntries(agg.devices, MAX_TOP_DEVICES, "device"),
   };
 
   await tx
     .insert(statsHourly)
     .values(values)
     .onConflictDoUpdate({
-      target: [statsHourly.profileId, statsHourly.hour],
+      target: [statsHourly.profileId, statsHourly.hour, statsHourly.machine],
       set: {
-        totalQueries: values.totalQueries,
-        blocked: values.blocked,
-        rttSumMs: values.rttSumMs,
-        rttCount: values.rttCount,
-        topDomains: values.topDomains,
-        topBlocked: values.topBlocked,
-        topClients: values.topClients,
-        topDevices: values.topDevices,
+        totalQueries: sql`${statsHourly.totalQueries} + excluded.total_queries`,
+        blocked: sql`${statsHourly.blocked} + excluded.blocked`,
+        rttSumMs: sql`${statsHourly.rttSumMs} + excluded.rtt_sum_ms`,
+        rttCount: sql`${statsHourly.rttCount} + excluded.rtt_count`,
+        topDomains: sql`stats_merge_top(${statsHourly.topDomains}, excluded.top_domains, 'domain', ${MAX_TOP_DOMAINS})`,
+        topBlocked: sql`stats_merge_top(${statsHourly.topBlocked}, excluded.top_blocked, 'domain', ${MAX_TOP_BLOCKED})`,
+        topClients: sql`stats_merge_top(${statsHourly.topClients}, excluded.top_clients, 'clientIp', ${MAX_TOP_CLIENTS})`,
+        topDevices: sql`stats_merge_top(${statsHourly.topDevices}, excluded.top_devices, 'device', ${MAX_TOP_DEVICES})`,
       },
     });
 }

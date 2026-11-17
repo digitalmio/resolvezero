@@ -129,11 +129,7 @@ export function createStatsApp(deps: StatsDeps) {
 
     let series: { bucket: string; total: number; blocked: number }[];
     let totals: ReturnType<typeof sumTotals>;
-    let hourlyForTops: {
-      totalQueries: number;
-      blocked: number;
-      rttSumMs: number;
-      rttCount: number;
+    let topRows: {
       topDomains: StatsTopEntry[];
       topBlocked: StatsTopEntry[];
       topClients: StatsTopEntry[];
@@ -153,12 +149,13 @@ export function createStatsApp(deps: StatsDeps) {
           .orderBy(asc(statsMinute.minute));
 
         const sinceHour = new Date(Math.floor(since.getTime() / 3_600_000) * 3_600_000);
-        hourlyForTops = await db.select().from(statsHourly).where(
+        const hourlyForTops = await db.select().from(statsHourly).where(
           and(eq(statsHourly.profileId, profileId), gte(statsHourly.hour, sinceHour)),
         );
 
         const exact = sumMinuteTotals(minuteRows);
         const hourly = sumTotals(hourlyForTops);
+        topRows = hourlyForTops;
         totals = { ...exact, avgRttMs: hourly.avgRttMs };
         series = buildSeries(
           minuteRows.map((r) => ({ t: r.minute.getTime(), total: r.totalQueries, blocked: r.blocked })),
@@ -168,12 +165,30 @@ export function createStatsApp(deps: StatsDeps) {
       } else {
         // Long ranges: everything from stats_hourly
         const hourRows = await db
-          .select()
+          .select({
+            hour: statsHourly.hour,
+            totalQueries: statsHourly.totalQueries,
+            blocked: statsHourly.blocked,
+            rttSumMs: statsHourly.rttSumMs,
+            rttCount: statsHourly.rttCount,
+          })
           .from(statsHourly)
           .where(and(eq(statsHourly.profileId, profileId), gte(statsHourly.hour, since)))
           .orderBy(asc(statsHourly.hour));
 
-        hourlyForTops = hourRows;
+        // Long ranges chart totals only; top lists come from the last 24h so
+        // a 90-day request does not ship 90 days of JSON.
+        const topSince = new Date(now - 24 * 60 * 60 * 1000);
+        topRows = await db
+          .select({
+            topDomains: statsHourly.topDomains,
+            topBlocked: statsHourly.topBlocked,
+            topClients: statsHourly.topClients,
+            topDevices: statsHourly.topDevices,
+          })
+          .from(statsHourly)
+          .where(and(eq(statsHourly.profileId, profileId), gte(statsHourly.hour, topSince)));
+
         totals = sumTotals(hourRows);
         series = buildSeries(
           hourRows.map((r) => ({ t: r.hour.getTime(), total: r.totalQueries, blocked: r.blocked })),
@@ -192,11 +207,11 @@ export function createStatsApp(deps: StatsDeps) {
       blocked: totals.blocked,
       blockRatio: totals.total > 0 ? Number((totals.blocked / totals.total).toFixed(4)) : 0,
       avgRttMs: totals.avgRttMs,
-      topDomains: mergeTop(hourlyForTops.map((r) => r.topDomains ?? []), "domain", limit),
-      topBlocked: mergeTop(hourlyForTops.map((r) => r.topBlocked ?? []), "domain", limit),
+      topDomains: mergeTop(topRows.map((r) => r.topDomains ?? []), "domain", limit),
+      topBlocked: mergeTop(topRows.map((r) => r.topBlocked ?? []), "domain", limit),
       series,
-      queriesPerClient: mergeTop(hourlyForTops.map((r) => r.topClients ?? []), "clientIp", limit),
-      queriesPerDevice: mergeTop(hourlyForTops.map((r) => r.topDevices ?? []), "device", limit),
+      queriesPerClient: mergeTop(topRows.map((r) => r.topClients ?? []), "clientIp", limit),
+      queriesPerDevice: mergeTop(topRows.map((r) => r.topDevices ?? []), "device", limit),
     });
   });
 
