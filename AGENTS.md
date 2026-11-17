@@ -24,8 +24,7 @@ If an exception is used, keep the reason obvious in the file or the PR descripti
 - `apps/edge-node` — production DNS/DoH/DoT edge (Node/TypeScript).
 - `apps/artifacts` — Node artifact worker and one-shot compiler CLI.
 - `packages/rules` — shared parser, fingerprint, RZA1 codec, SSRF, and S3 primitives.
-- `apps/agent` — per-host DNS-to-DoH agent (Rust; the remaining Rust service).
-- The former Rust edge/compiler is archived in the `rust-fallback-2026-11-17` tag.
+- No Rust services remain. The former Rust edge/compiler is archived in `rust-fallback-2026-11-17`; the former agent is archived in `agent-rust-final`.
 - `apps/console` — TanStack Start console and authenticated server functions (React 19 + Vite + Tailwind 4).
 - `packages/db` — Drizzle schema and client. Schema changes need a migration.
 - `scripts/` — operational TypeScript and shell scripts (migrations, smoke tests, compiler fallback).
@@ -47,9 +46,6 @@ Run before calling work done:
 pnpm test
 pnpm --filter @resolvezero/console typecheck
 pnpm --filter @resolvezero/console build
-
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 For edge or schema work, also run the relevant package typecheck (`pnpm typecheck`) and check `progress.md` for deploy/runtime caveats.
@@ -57,7 +53,7 @@ For edge or schema work, also run the relevant package typecheck (`pnpm typechec
 ### Local previews (do not kill the developer's server)
 
 - The developer's console dev server may already be running on `3000`. **Never** kill processes by port without checking what they are.
-- Start agent previews on a separate port, e.g. `3100`, with `--strictPort` so Vite fails instead of stealing another port.
+- Start any additional preview server on a separate port, e.g. `3100`, with `--strictPort` so Vite fails instead of stealing another port.
 - Use a separate Chrome debugging port, e.g. `9333`, and a temporary `--user-data-dir`.
 - Kill only PIDs you started; never use broad cleanup such as `lsof -ti tcp:3000 | xargs kill`.
 - Temporary session rows and `/tmp` files may be cleaned up; the developer's dev server and browser processes are off-limits.

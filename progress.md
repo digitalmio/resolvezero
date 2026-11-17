@@ -193,6 +193,8 @@ secrets — never pasted here.
 
 - **Retired staging and Node test apps (2026-11-17):** destroyed `resolvezero-edge-staging` (1 old machine, 213.188.210.31) and `resolvezero-edge-node` (1 machine, 4 dedicated IPv4s), releasing the IPs and ~$10/month of idle ingress. Removed `fly.edge-node.toml` and the `deploy-edge-node` workflow; production is `resolvezero-edge` (Node) and `resolvezero-artifacts` (Node). The staging/test apps shared the production DB, so this also stops their stats/log writers.
 
+- **Rust agent archived and removed (2026-11-17):** tagged `agent-rust-final`, then removed `apps/agent`, `Cargo.toml`, `Cargo.lock`, the agent CI/release workflows, and the Cargo Dependabot config. The repository is now Rust-free; the tags `rust-fallback-2026-11-17` and `agent-rust-final` preserve both retired implementations. Production is Node edge + Node artifacts + Node console.
+
 ## Tooling cheat-sheet
 - Deploy: push `main` (CI) or `scripts/deploy.sh local` (regions fra+lhr); control: `scripts/deploy.sh control`.
 - Probes: `pnpm exec tsx scripts/probe-blocks.ts` (external, token hardcoded), `pnpm exec tsx scripts/self-udp-probe.ts` (in-VM via `fly ssh console`), `pnpm exec tsx scripts/check-lists.ts` (list health).
