@@ -1,7 +1,10 @@
 # Rule Artifacts — Format & Pipeline
 
-**Status:** implemented; Node compiler is the hosted worker (shadow rollout)
-**Last updated:** 2026-11-10
+**Status:** implemented. The **Node** worker (`resolvezero-artifacts`) is the
+active hosted producer (`COMPILER_SHADOW=0`). The Rust compiler
+(`resolvezero-compiler`) is scaled to 0 and kept for rollback. Production edge
+and artifacts both run Node.
+**Last updated:** 2026-11-17
 
 Compiled, content-addressed blocklist artifacts shared by the Node and Rust
 edges. The binary format is deliberately tiny: no strings, no parse on the
@@ -49,7 +52,7 @@ Size: `24 + 8 × rules`. A 500k-rule list is 4.0 MB (vs ~15 MB of source text).
   "block": 200230,
   "rules": 200230,
   "bytes": 1601864,
-  "compiler": "rz-compile/0.1",
+  "compiler": "rz-compile-node/0.1",
   "hash": "xxhash64/seed0",
   "createdAt": "2026-11-07T11:14:00Z"
 }
@@ -78,8 +81,8 @@ Postgres is the manifest:
 
 ## 4. Compiler
 
-The hosted worker is Node (`apps/artifacts`), sharing `packages/rules` with the
-future Node edge:
+The active hosted worker is Node (`apps/artifacts`), sharing `packages/rules`
+with the production Node edge:
 
 ```sh
 pnpm exec tsx apps/artifacts/src/cli.ts --url https://example/list.txt --out ./artifacts
@@ -93,6 +96,8 @@ the sidecar is also printed to stdout.
 
 The Rust `rz-compile` binary (`apps/compiler/src/bin/rz-compile.rs`) remains in
 the repository for fallback/rollback and produces identical artifact bytes.
+The Rust daemon (`resolvezero-compiler`) is scaled to 0; the Node worker writes
+`compiler_status` and advances `blocklist_version` itself.
 
 ## 5. Publishing
 
@@ -103,7 +108,10 @@ pnpm exec tsx scripts/artifacts.ts --all
 pnpm exec tsx scripts/artifacts.ts --status
 ```
 
-For every distinct enabled `profile_blocklists.url` it:
+The active worker (`apps/artifacts/src/main.ts`) performs this loop every
+`COMPILE_POLL_SECONDS` and refreshes artifacts older than
+`COMPILE_INTERVAL_SECONDS`. The manual script remains useful for one-off
+publishes. For every distinct enabled `profile_blocklists.url` it:
 
 1. compiles in-process with `@resolvezero/rules`,
 2. uploads `<hash>.bin` + `<hash>.json` to E2,
@@ -119,13 +127,19 @@ status columns (`artifact_hash` was added after) to avoid sync loops.
 
 ## 6. Loading
 
+- **Node edge** (production, `apps/edge-node/src/artifact.ts` +
+  `blocklists.ts`): if `artifact_hash` is set, GET the object, verify sha256,
+  and decode it into the rule store. Lazy loading fetches only the profiles
+  queried since the last `blocklist_version` bump.
 - **Rust edge** (`apps/edge/src/lists.rs`, shared decode in `crates/rz-core`):
-  if `artifact_hash` is set, GET the object, verify sha256, and decode it into a
-  fingerprint table with a small SigV4 client (no AWS SDK). On any failure it
-  logs and falls back to fetching + parsing the raw text.
+  the same artifact path with a small SigV4 client. It is no longer deployed,
+  but remains the parity/rollback implementation.
+- On any artifact failure the Node edge keeps the list pending/failed and
+  reports it in `/readyz`; artifact-only mode does not parse raw text as a
+  fallback.
 
-`/readyz` exposes `artifactLists` / `rawLists`, and metrics expose
-`rz_artifact_lists` / `rz_raw_lists`, so a mixed rollout is visible.
+`/readyz` exposes `lazyLists`, `artifactLists`, `pendingLists`, `failedBlocklists`,
+and `remoteLists`; the Rust edge also exposed `rawLists`/`rz_artifact_lists`.
 
 ## 7. What to watch
 
