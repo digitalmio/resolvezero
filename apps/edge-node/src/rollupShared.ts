@@ -2,6 +2,16 @@ import { sql } from "drizzle-orm";
 import { db } from "@resolvezero/db/client";
 import type { StatsTopEntry } from "@resolvezero/db/schema";
 
+/** Fly machine id (or host fallback), bounded to the schema's varchar(32). */
+export function machineId(): string {
+  const value =
+    process.env.FLY_MACHINE_ID ??
+    process.env.FLY_ALLOC_ID ??
+    process.env.HOSTNAME ??
+    "local";
+  return value.slice(0, 32);
+}
+
 /** Drizzle transaction handle (db.transaction callback argument). */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -44,23 +54,6 @@ export function toTopEntries(
     );
 }
 
-/** Adds counts from `entries` into map `a`. Pure — unit-tested. */
-export function mergeTopEntries(
-  a: Map<string, number>,
-  entries: StatsTopEntry[],
-  keyName: "domain" | "clientIp" | "device",
-): void {
-  for (const e of entries ?? []) {
-    const k = keyName === "domain" ? e.domain : keyName === "device" ? e.device : e.clientIp;
-    if (typeof k === "string") incr(a, k, e.count);
-  }
-}
-
 export function incr(map: Map<string, number>, key: string, by = 1): void {
   map.set(key, (map.get(key) ?? 0) + by);
-}
-
-/** Transaction-scoped advisory lock; releases on commit/rollback. */
-export async function lockBucket(tx: Tx, key: string): Promise<void> {
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
 }

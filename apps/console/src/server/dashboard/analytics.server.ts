@@ -33,12 +33,21 @@ export async function loadAnalytics(
       hour: statsHourly.hour,
       total: statsHourly.totalQueries,
       blocked: statsHourly.blocked,
-      topDomains: statsHourly.topDomains,
-      topBlocked: statsHourly.topBlocked,
     })
     .from(statsHourly)
     .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, since)))
     .orderBy(asc(statsHourly.hour));
+
+  // Top lists only need a short window: shipping 31 days of jsonb was a
+  // multi-megabyte read per analytics page.
+  const topSince = new Date(now.getTime() - 7 * 24 * HOUR);
+  const topRows = await db
+    .select({
+      topDomains: statsHourly.topDomains,
+      topBlocked: statsHourly.topBlocked,
+    })
+    .from(statsHourly)
+    .where(and(eq(statsHourly.profileId, profile.id), gte(statsHourly.hour, topSince)));
 
   const dayMap = new Map<string, { total: number; blocked: number }>();
   const hourMap = new Map<number, { total: number; blocked: number }>();
@@ -50,8 +59,6 @@ export async function loadAnalytics(
   for (const row of rows) {
     total30d += row.total;
     blocked30d += row.blocked;
-    merge(domains, row.topDomains);
-    merge(blockedDomains, row.topBlocked);
     const day = formatInTimeZone(row.hour, zone, "yyyy-MM-dd");
     const d = dayMap.get(day) ?? { total: 0, blocked: 0 };
     d.total += row.total;
@@ -62,6 +69,11 @@ export async function loadAnalytics(
     hv.total += row.total;
     hv.blocked += row.blocked;
     hourMap.set(h, hv);
+  }
+
+  for (const row of topRows) {
+    merge(domains, row.topDomains);
+    merge(blockedDomains, row.topBlocked);
   }
 
   const hourSeries: AnalyticsData["series"]["24h"] = [];

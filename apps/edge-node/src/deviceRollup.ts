@@ -1,6 +1,5 @@
-import { and, eq, sql } from "drizzle-orm";
-import { db } from "@resolvezero/db/client";
-import { statsHourlyDevice, statsMinuteDevice, type StatsTopEntry } from "@resolvezero/db/schema";
+import { sql } from "drizzle-orm";
+import { statsHourlyDevice, statsMinuteDevice } from "@resolvezero/db/schema";
 
 import type { QueryLogRow } from "./batcher";
 import {
@@ -8,8 +7,6 @@ import {
   MAX_DEVICE_TOP_DOMAINS,
   hourFloor,
   incr,
-  lockBucket,
-  mergeTopEntries,
   minuteFloor,
   toTopEntries,
   type Tx,
@@ -26,8 +23,6 @@ export interface DeviceBucketAgg {
   domains: Map<string, number>;
   blockedDomains: Map<string, number>;
 }
-
-const EMPTY_TOP: StatsTopEntry[] = [];
 
 /**
  * Groups rows into per-(profile, device, hour) aggregates. Rows without a
@@ -70,74 +65,54 @@ export function aggregateDevices(rows: QueryLogRow[]): Map<string, DeviceBucketA
 }
 
 /**
- * Writes the per-device rollups for one flush. Runs inside the caller's
- * transaction so a retried batch can never double-count.
- *
- * Hourly rows hold top-lists, so they are read-merge-written under a
- * transaction-scoped advisory lock (same reason as the profile hourly rows).
- * Minute rows are counters only and use an additive upsert.
+ * Writes the per-device rollups for one flush inside the caller's transaction.
+ * Per-machine rows and the SQL top-list merge mean no read-back and no lock.
  */
-export async function applyDeviceRollups(rows: QueryLogRow[], tx: Tx): Promise<void> {
+export async function applyDeviceRollups(rows: QueryLogRow[], machine: string, tx: Tx): Promise<void> {
   if (rows.length === 0) return;
 
   for (const agg of aggregateDevices(rows).values()) {
-    await applyDeviceBucket(agg, tx);
+    await applyDeviceBucket(agg, machine, tx);
   }
-  await applyDeviceMinutes(rows, tx);
+  await applyDeviceMinutes(rows, machine, tx);
 }
 
-async function applyDeviceBucket(agg: DeviceBucketAgg, tx: Tx): Promise<void> {
-  await lockBucket(tx, `device:${agg.profileId}:${agg.device}:${agg.hour.getTime()}`);
-
-  const existing = await tx
-    .select()
-    .from(statsHourlyDevice)
-    .where(
-      and(
-        eq(statsHourlyDevice.profileId, agg.profileId),
-        eq(statsHourlyDevice.device, agg.device),
-        eq(statsHourlyDevice.hour, agg.hour),
-      ),
-    )
-    .limit(1);
-
-  const prev = existing[0];
-  const domains = new Map<string, number>();
-  const blockedDomains = new Map<string, number>();
-  mergeTopEntries(domains, prev?.topDomains ?? EMPTY_TOP, "domain");
-  mergeTopEntries(blockedDomains, prev?.topBlocked ?? EMPTY_TOP, "domain");
-  for (const [k, v] of agg.domains) incr(domains, k, v);
-  for (const [k, v] of agg.blockedDomains) incr(blockedDomains, k, v);
-
+async function applyDeviceBucket(agg: DeviceBucketAgg, machine: string, tx: Tx): Promise<void> {
   const values = {
     profileId: agg.profileId,
     device: agg.device,
     hour: agg.hour,
-    totalQueries: (prev?.totalQueries ?? 0) + agg.total,
-    blocked: (prev?.blocked ?? 0) + agg.blocked,
-    rttSumMs: (prev?.rttSumMs ?? 0) + agg.rttSumMs,
-    rttCount: (prev?.rttCount ?? 0) + agg.rttCount,
-    topDomains: toTopEntries(domains, MAX_DEVICE_TOP_DOMAINS, "domain"),
-    topBlocked: toTopEntries(blockedDomains, MAX_DEVICE_TOP_BLOCKED, "domain"),
+    machine,
+    totalQueries: agg.total,
+    blocked: agg.blocked,
+    rttSumMs: agg.rttSumMs,
+    rttCount: agg.rttCount,
+    topDomains: toTopEntries(agg.domains, MAX_DEVICE_TOP_DOMAINS, "domain"),
+    topBlocked: toTopEntries(agg.blockedDomains, MAX_DEVICE_TOP_BLOCKED, "domain"),
   };
 
   await tx
     .insert(statsHourlyDevice)
     .values(values)
     .onConflictDoUpdate({
-      target: [statsHourlyDevice.profileId, statsHourlyDevice.device, statsHourlyDevice.hour],
+      target: [
+        statsHourlyDevice.profileId,
+        statsHourlyDevice.device,
+        statsHourlyDevice.hour,
+        statsHourlyDevice.machine,
+      ],
       set: {
-        totalQueries: values.totalQueries,
-        blocked: values.blocked,
-        rttSumMs: values.rttSumMs,
-        rttCount: values.rttCount,
-        topDomains: values.topDomains,
-        topBlocked: values.topBlocked,
+        totalQueries: sql`${statsHourlyDevice.totalQueries} + excluded.total_queries`,
+        blocked: sql`${statsHourlyDevice.blocked} + excluded.blocked`,
+        rttSumMs: sql`${statsHourlyDevice.rttSumMs} + excluded.rtt_sum_ms`,
+        rttCount: sql`${statsHourlyDevice.rttCount} + excluded.rtt_count`,
+        topDomains: sql`stats_merge_top(${statsHourlyDevice.topDomains}, excluded.top_domains, 'domain', ${MAX_DEVICE_TOP_DOMAINS})`,
+        topBlocked: sql`stats_merge_top(${statsHourlyDevice.topBlocked}, excluded.top_blocked, 'domain', ${MAX_DEVICE_TOP_BLOCKED})`,
       },
     });
 }
 
-async function applyDeviceMinutes(rows: QueryLogRow[], tx: Tx): Promise<void> {
+async function applyDeviceMinutes(rows: QueryLogRow[], machine: string, tx: Tx): Promise<void> {
   const buckets = new Map<
     string,
     { profileId: string; device: string; minute: Date; total: number; blocked: number }
@@ -163,11 +138,17 @@ async function applyDeviceMinutes(rows: QueryLogRow[], tx: Tx): Promise<void> {
         profileId: b.profileId,
         device: b.device,
         minute: b.minute,
+        machine,
         totalQueries: b.total,
         blocked: b.blocked,
       })
       .onConflictDoUpdate({
-        target: [statsMinuteDevice.profileId, statsMinuteDevice.device, statsMinuteDevice.minute],
+        target: [
+          statsMinuteDevice.profileId,
+          statsMinuteDevice.device,
+          statsMinuteDevice.minute,
+          statsMinuteDevice.machine,
+        ],
         set: {
           totalQueries: sql`${statsMinuteDevice.totalQueries} + excluded.total_queries`,
           blocked: sql`${statsMinuteDevice.blocked} + excluded.blocked`,
@@ -175,4 +156,3 @@ async function applyDeviceMinutes(rows: QueryLogRow[], tx: Tx): Promise<void> {
       });
   }
 }
-

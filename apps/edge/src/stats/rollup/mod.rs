@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sqlx::{Postgres, Row, Transaction};
+use sqlx::{Postgres, Transaction};
 
 use rz_db::Db;
 
@@ -54,7 +54,16 @@ pub(super) struct DeviceHourBucket {
     blocked_domains: HashMap<String, i64>,
 }
 
-pub(super) async fn apply_rollups(db: &Db, rows: &[QueryEvent]) -> Result<(), sqlx::Error> {
+/// Aggregate one flush into per-machine deltas and upsert them.
+///
+/// Every machine owns its own stats rows, so this path never reads a stats
+/// row back: counters are added and top lists are merged by
+/// `stats_merge_top()` inside Postgres.
+pub(super) async fn apply_rollups(
+    db: &Db,
+    machine: &str,
+    rows: &[QueryEvent],
+) -> Result<(), sqlx::Error> {
     if rows.is_empty() {
         return Ok(());
     }
@@ -71,7 +80,7 @@ pub(super) async fn apply_rollups(db: &Db, rows: &[QueryEvent]) -> Result<(), sq
             .fetch_all(db.pool())
             .await?
             .into_iter()
-            .map(|row| row.get::<String, _>("id"))
+            .map(|row| sqlx::Row::get::<String, _>(&row, "id"))
             .collect();
     let valid: Vec<&QueryEvent> = rows
         .iter()
@@ -154,31 +163,33 @@ pub(super) async fn apply_rollups(db: &Db, rows: &[QueryEvent]) -> Result<(), sq
 
     let mut tx = db.pool().begin().await?;
     for bucket in hour_buckets.values() {
-        apply_hour_bucket(&mut tx, bucket).await?;
+        apply_hour_bucket(&mut tx, machine, bucket).await?;
     }
     for bucket in minute_buckets.values() {
-        apply_minute_bucket(&mut tx, bucket).await?;
+        apply_minute_bucket(&mut tx, machine, bucket).await?;
     }
     for bucket in device_hours.values() {
-        apply_device_hour_bucket(&mut tx, bucket).await?;
+        apply_device_hour_bucket(&mut tx, machine, bucket).await?;
     }
-    apply_device_minutes(&mut tx, &valid).await?;
+    apply_device_minutes(&mut tx, machine, &valid).await?;
     tx.commit().await
 }
 
 async fn apply_minute_bucket(
     tx: &mut Transaction<'_, Postgres>,
+    machine: &str,
     bucket: &MinuteBucket,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "insert into stats_minute (profile_id, minute, total_queries, blocked)
-         values ($1, to_timestamp($2), $3, $4)
-         on conflict (profile_id, minute) do update set
+        "insert into stats_minute (profile_id, minute, machine, total_queries, blocked)
+         values ($1, to_timestamp($2), $3, $4, $5)
+         on conflict (profile_id, minute, machine) do update set
            total_queries = stats_minute.total_queries + excluded.total_queries,
            blocked = stats_minute.blocked + excluded.blocked",
     )
     .bind(&bucket.profile)
     .bind(bucket.minute)
+    .bind(machine)
     .bind(bucket.total as i32)
     .bind(bucket.blocked as i32)
     .execute(&mut **tx)

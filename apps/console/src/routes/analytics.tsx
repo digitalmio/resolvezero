@@ -75,7 +75,7 @@ function Analytics() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-[15px] font-semibold tracking-[-0.02em]">Top blocked</h2>
-              <p className="mt-1 text-[12px] text-[var(--muted)]">Last 30 days</p>
+              <p className="mt-1 text-[12px] text-[var(--muted)]">Last 7 days</p>
             </div>
             <TrendingUp size={17} className="text-[var(--muted)]" />
           </div>
