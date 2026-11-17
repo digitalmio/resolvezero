@@ -1,0 +1,48 @@
+# One-off cleanup for the retired test apps:
+#   resolvezero-edge-staging (unused)
+#   resolvezero-edge-node    (superseded by production resolvezero-edge)
+name: decommission-test-apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: "Destroy resolvezero-edge-staging and resolvezero-edge-node"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  decommission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-flyctl
+      - name: inventory
+        run: |
+          for app in resolvezero-edge-staging resolvezero-edge-node; do
+            echo "== $app machines"
+            flyctl machines list -a "$app" --json 2>/dev/null \
+              | jq -r '.[] | [.id, .region, .state, .image_ref.tag, (.checks[0].status // "none")] | @tsv' \
+              || echo "(missing)"
+            echo "== $app ips"
+            flyctl ips list -a "$app" 2>/dev/null || true
+            echo "== $app certs"
+            flyctl certs list -a "$app" 2>/dev/null || true
+          done
+      - name: destroy retired apps
+        if: ${{ inputs.destroy }}
+        run: |
+          for app in resolvezero-edge-staging resolvezero-edge-node; do
+            echo "== destroying $app"
+            ids=$(flyctl machines list -a "$app" --json 2>/dev/null | jq -r '.[].id')
+            for id in $ids; do
+              flyctl machine destroy "$id" -a "$app" --force || true
+            done
+            flyctl apps destroy "$app" --yes || true
+          done
