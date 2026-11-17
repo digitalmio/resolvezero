@@ -1,4 +1,4 @@
-# resolvezero edge — Fly.io deployment
+# resolvezero edge — Fly.io deployment (Node runtime)
 # Multi-region: deploy per region with scripts/deploy.sh (fly deploy --region);
 # every region runs the same image and joins the anycast IPv4 automatically.
 # primary_region = fra (Frankfurt): hosts the EU PlanetScale DB read path on
@@ -10,43 +10,39 @@ primary_region = "fra"
 kill_timeout = 30
 
 [build]
-  dockerfile = "Dockerfile.edge"
+  dockerfile = "Dockerfile.edge-node"
 
 [deploy]
   # Fly starts a new set, waits for health, then cuts over; CI rolls back the
   # previous image if the post-deploy smoke checks fail.
   strategy = "bluegreen"
 
-# Rust edge (apps/edge). Binds 53/853 as root, then drops to UID/GID 1000.
-# Production shape: 2 shared cores + 512 MB. Blocklists are lazy by default, so
-# a cold machine starts around 8 MB RSS with an empty catalog; the first query
-# for a profile pulls only that profile's artifacts. With lists resident the
-# edge runs at ~14-20 MB RSS, leaving >300 MB for the 50 MB DNS cache and log
-# buffers, while the second core keeps async workers free during lazy loads.
+# Node edge (apps/edge-node). Binds 53/853 as root, then drops privileges.
+# Blocklists are lazy, so a cold machine starts with an empty catalog and the
+# first query for a profile pulls only that profile's artifacts. 1 GB covers
+# the 64M global budget plus the per-profile JSON/log buffers.
 [vm]
   cpu_kind = "shared"
-  cpus = 2
-  memory = "512mb"
+  cpus = 1
+  memory = "1gb"
 
 [env]
   PORT = "8080"
   LOG_LEVEL = "info"
-  # Explicit hosted mode: tokenless profiles are refused and artifacts are the
-  # only list source. Do not rely on FLY_REGION detection alone.
-  HOSTED = "1"
-  # Household router IPs aggregate every device; 10 qps was too low.
-  # These are abuse ceilings, not per-account quotas: a household averages
-  # 1-5 qps and the ceiling only matters during bursts/attacks.
+  # Hosted mode: artifacts are the only list source; tokenless profiles are
+  # rejected by the Node edge unless ALLOW_TOKENLESS_PROFILES=1.
+  ARTIFACT_ONLY_LISTS = "1"
+  CONFIG_POLL_MS = "5000"
+  # Abuse ceilings, not plan quotas: a household averages 1-5 qps.
   DOH_RATE_LIMIT_PER_MIN = "6000"
   UDP_RATE_LIMIT_PER_MIN = "6000"
-  # TEMPORARY: the Rust lazy loader double-counts an existing table plus its
-  # replacement, so a 440k profile + a 207k refreshed list exceeded the 500k
-  # cap and left /readyz red. The Rust edge is being replaced by Node; keep
-  # this at 1.5M until cutover, then remove with the app.
-  BLOCKLIST_MAX_ENTRIES_PER_PROFILE = "1500000"
-  # Raw-log persistence is the in-process S3 sink (S3_* secrets in Fly): one
-  # object per profile per minute, so console lag stays near 1–2 min. The logs
-  # API lists the last two UTC days when no date is given.
+  TCP_RATE_LIMIT_PER_MIN = "6000"
+  # 500k plan + 10% headroom for normal list growth.
+  BLOCKLIST_MAX_ENTRIES_PER_PROFILE = "550000"
+  BLOCKLIST_MAX_TOTAL_ENTRIES = "64000000"
+  S3_LOG_PREFIX = "logs"
+  # Only the primary region runs retention pruning; every PoP syncs rules.
+  PRUNE_ENABLED = "1"
   # Secrets (set once, shared by all regions):
   #   DATABASE_URL           — app role (EU PlanetScale)
   #   S3_*                   — iDrive E2 eu-central-1 archive bucket
